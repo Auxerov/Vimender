@@ -94,6 +94,24 @@ NUDGE_DIRS = {
     'NUMPAD_8': (0, 1), 'NUMPAD_2': (0, -1),
     'NUMPAD_4': (-1, 0), 'NUMPAD_6': (1, 0),
 }
+ARROW_DIRS = {
+    'UP_ARROW': (0, 1), 'DOWN_ARROW': (0, -1),
+    'LEFT_ARROW': (-1, 0), 'RIGHT_ARROW': (1, 0),
+}
+ALL_DIRS = {
+    'NUMPAD_8': (0, 1), 'NUMPAD_2': (0, -1),
+    'NUMPAD_4': (-1, 0), 'NUMPAD_6': (1, 0),
+    'UP_ARROW': (0, 1), 'DOWN_ARROW': (0, -1),
+    'LEFT_ARROW': (-1, 0), 'RIGHT_ARROW': (1, 0),
+    'K': (0, 1), 'J': (0, -1),
+    'H': (-1, 0), 'L': (1, 0),
+    'k': (0, 1), 'j': (0, -1),
+    'h': (-1, 0), 'l': (1, 0),
+    'EIGHT': (0, 1), 'TWO': (0, -1),
+    'FOUR': (-1, 0), 'SIX': (1, 0),
+    '8': (0, 1), '2': (0, -1),
+    '4': (-1, 0), '6': (1, 0),
+}
 PREFIX_DIRS = {
     'LEFT_ARROW': 'LEFT', 'RIGHT_ARROW': 'RIGHT', 'UP_ARROW': 'UP', 'DOWN_ARROW': 'DOWN',
     'H': 'LEFT', 'L': 'RIGHT', 'K': 'UP', 'J': 'DOWN',
@@ -101,11 +119,10 @@ PREFIX_DIRS = {
 PREFIX_TIMEOUT = 3.0
 PREFIX_REPEAT_TIMEOUT = 0.8
 
-TRANSFORM_KEYWORDS = ('transform', '_move', 'extrude', 'duplicate', 'bevel', 'shrink_fatten', 'push_pull')
-
-WHEEL_KEYMAPS = (
-    ("Transform Modal Map", "PROPORTIONAL_SIZE_UP", "PROPORTIONAL_SIZE_DOWN"),
-    ("Bevel Modal Map", "SEGMENTS_UP", "SEGMENTS_DOWN"),
+TRANSFORM_KEYWORDS = (
+    'transform', '_move', 'extrude', 'duplicate', 'bevel',
+    'shrink_fatten', 'push_pull', 'translate', 'rotate', 'resize',
+    'scale', 'tosphere', 'shear', 'bend', 'trackball', 'edge_slide', 'vert_slide'
 )
 
 
@@ -163,8 +180,8 @@ class _SmoothCursor:
         dt = min(max(now - self.last_t, 0.001), 0.05)
         self.last_t = now
 
-        dx = sum(NUDGE_DIRS[k][0] for k in self.held if k in NUDGE_DIRS)
-        dy = sum(NUDGE_DIRS[k][1] for k in self.held if k in NUDGE_DIRS)
+        dx = sum(ALL_DIRS[k][0] for k in self.held if k in ALL_DIRS)
+        dy = sum(ALL_DIRS[k][1] for k in self.held if k in ALL_DIRS)
 
         sens = SENS_LEVELS[S.sens_idx]
         max_spd = CURSOR_MAX_SPEED * sens
@@ -254,8 +271,8 @@ class _SmoothBox:
         dt = min(max(now - self.last_t, 0.001), 0.05)
         self.last_t = now
 
-        dx = sum(NUDGE_DIRS[k][0] for k in self.held if k in NUDGE_DIRS)
-        dy = sum(NUDGE_DIRS[k][1] for k in self.held if k in NUDGE_DIRS)
+        dx = sum(ALL_DIRS[k][0] for k in self.held if k in ALL_DIRS)
+        dy = sum(ALL_DIRS[k][1] for k in self.held if k in ALL_DIRS)
 
         sens = SENS_LEVELS[S.sens_idx]
         max_spd = CURSOR_MAX_SPEED * sens * 1.25
@@ -320,8 +337,8 @@ class _Smooth3DCursor:
         dt = min(max(now - self.last_t, 0.001), 0.05)
         self.last_t = now
 
-        dx = sum(NUDGE_DIRS[k][0] for k in self.held if k in NUDGE_DIRS)
-        dy = sum(NUDGE_DIRS[k][1] for k in self.held if k in NUDGE_DIRS)
+        dx = sum(ALL_DIRS[k][0] for k in self.held if k in ALL_DIRS)
+        dy = sum(ALL_DIRS[k][1] for k in self.held if k in ALL_DIRS)
 
         if dx != 0 or dy != 0:
             mag = math.hypot(dx, dy)
@@ -396,7 +413,7 @@ class _SmoothNavigator:
 
     def on_key(self, key, val, shift=False):
         self.shift = shift
-        if key in {'NUMPAD_PLUS', 'NUMPAD_MINUS'}:
+        if key in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL', 'PAGE_UP', 'PAGE_DOWN'}:
             if val == 'PRESS':
                 if not self.held_zoom and abs(self.vz) < 1e-3:
                     self.last_t = time.perf_counter()
@@ -419,8 +436,8 @@ class _SmoothNavigator:
         dt = min(max(now - self.last_t, 0.001), 0.05)
         self.last_t = now
 
-        dx = sum(NUDGE_DIRS[k][0] for k in self.held if k in NUDGE_DIRS)
-        dy = sum(NUDGE_DIRS[k][1] for k in self.held if k in NUDGE_DIRS)
+        dx = sum(ALL_DIRS[k][0] for k in self.held if k in ALL_DIRS)
+        dy = sum(ALL_DIRS[k][1] for k in self.held if k in ALL_DIRS)
 
         if dx != 0 or dy != 0:
             mag = math.hypot(dx, dy)
@@ -437,9 +454,9 @@ class _SmoothNavigator:
                 self.vy = 0.0
 
         dz = 0
-        if 'NUMPAD_PLUS' in self.held_zoom:
+        if any(k in self.held_zoom for k in ('NUMPAD_PLUS', 'PLUS', 'EQUAL', 'PAGE_UP')):
             dz += 1
-        if 'NUMPAD_MINUS' in self.held_zoom:
+        if any(k in self.held_zoom for k in ('NUMPAD_MINUS', 'MINUS', 'PAGE_DOWN')):
             dz -= 1
 
         if dz != 0:
@@ -744,29 +761,29 @@ def make_labels(n):
 
 
 def transform_active(win):
-    """Checks whether a transform modal operator (G/S/R/E) is currently running."""
+    if not win:
+        return False
     try:
         ops = win.modal_operators
-    except AttributeError:
+    except (AttributeError, Exception):
         return False
     for op in ops:
-        name = getattr(op, "bl_idname", "").lower()
-        if any(k in name for k in TRANSFORM_KEYWORDS):
+        op_id = (getattr(op, "bl_idname", "") or getattr(op, "name", "") or getattr(getattr(op, "bl_rna", None), "identifier", "")).lower()
+        if any(k in op_id for k in TRANSFORM_KEYWORDS):
             return True
     return False
 
 
 def get_active_transform_type(win):
-    """Returns the active transform modal operator type: 'ROTATE', 'RESIZE', or 'TRANSLATE'."""
     try:
-        ops = win.modal_operators
-    except AttributeError:
+        ops = win.modal_operators if win else ()
+    except (AttributeError, Exception):
         return getattr(S, 'last_transform_type', 'TRANSLATE')
     for op in ops:
-        name = getattr(op, "bl_idname", "").lower()
+        name = (getattr(op, "bl_idname", "") or getattr(op, "name", "") or getattr(getattr(op, "bl_rna", None), "identifier", "")).lower()
         if "rotate" in name or "trackball" in name:
             return 'ROTATE'
-        if "resize" in name or "shrink_fatten" in name or "push_pull" in name:
+        if "resize" in name or "shrink_fatten" in name or "push_pull" in name or "scale" in name:
             return 'RESIZE'
         if any(k in name for k in TRANSFORM_KEYWORDS):
             return 'TRANSLATE'
@@ -778,6 +795,34 @@ def change_sens(delta):
     a = area_by_ptr(bpy.context.window, S.hover_ptr)
     if a:
         a.tag_redraw()
+
+
+def _exec_view3d_op(context, win, target_area, op_func, **kwargs):
+    if not target_area or target_area.type != 'VIEW_3D':
+        target_area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None)
+    if target_area and target_area.type == 'VIEW_3D':
+        region = window_region(target_area)
+        if region:
+            space = target_area.spaces.active if target_area.spaces else None
+            try:
+                with context.temp_override(window=win, area=target_area, region=region, space_data=space):
+                    res = op_func(**kwargs)
+                    if op_func == bpy.ops.view3d.view_orbit and res != {'FINISHED'}:
+                        rv3d = space.region_3d if space else None
+                        if rv3d:
+                            rv3d.view_rotation = rv3d.view_rotation @ Quaternion((0.0, 1.0, 0.0), math.pi)
+            except Exception:
+                if op_func == bpy.ops.view3d.view_orbit:
+                    rv3d = getattr(target_area.spaces.active, 'region_3d', None) if target_area.spaces else None
+                    if rv3d:
+                        rv3d.view_rotation = rv3d.view_rotation @ Quaternion((0.0, 1.0, 0.0), math.pi)
+                elif op_func == bpy.ops.view3d.view_persportho:
+                    rv3d = getattr(target_area.spaces.active, 'region_3d', None) if target_area.spaces else None
+                    if rv3d:
+                        rv3d.view_perspective = 'ORTHO' if rv3d.view_perspective == 'PERSP' else 'PERSP'
+            target_area.tag_redraw()
+            return True
+    return False
 
 
 def neighbor_area(win, cur, direction):
@@ -810,7 +855,6 @@ def neighbor_area(win, cur, direction):
 
 
 def cycle_workspace(context, direction='NEXT'):
-    """Cycles through workspaces in tab order."""
     win = context.window
     if not win:
         return
@@ -819,6 +863,10 @@ def cycle_workspace(context, direction='NEXT'):
         with context.temp_override(window=win):
             res = bpy.ops.screen.workspace_cycle('INVOKE_DEFAULT', direction=direction)
             if 'FINISHED' in res:
+                if win.screen and win.screen.areas:
+                    first_area = win.screen.areas[0]
+                    S.hover_ptr = first_area.as_pointer()
+                    win.cursor_warp(int(first_area.x + first_area.width / 2), int(first_area.y + first_area.height / 2))
                 tag_all()
                 return
     except Exception:
@@ -850,13 +898,18 @@ def cycle_workspace(context, direction='NEXT'):
     target = workspaces[(idx + step) % len(workspaces)]
     try:
         win.workspace = target
+        if win.screen and win.screen.areas:
+            first_area = win.screen.areas[0]
+            S.hover_ptr = first_area.as_pointer()
+            win.cursor_warp(int(first_area.x + first_area.width / 2), int(first_area.y + first_area.height / 2))
         tag_all()
     except Exception as e:
         print(f"[Vimender] Workspace switch error: {e}")
 
 
 def navigate_in_editor(context, win, area, direction='DOWN'):
-    """Navigates sequentially within editors (Outliner, Properties, View3D, Node, etc.) using Numpad 8/2."""
+    if not area:
+        area = area_by_ptr(win, S.hover_ptr) or (win.screen.areas[0] if win and win.screen and win.screen.areas else None)
     if not area:
         return
     atype = area.type
@@ -1807,77 +1860,36 @@ def remove_draw_handlers():
     _handlers.clear()
 
 
-def register_wheel_keys():
-    wm = bpy.context.window_manager
-    if not wm or not wm.keyconfigs:
+def clean_modal_keymaps():
+    wm = getattr(bpy.context, 'window_manager', None)
+    if not wm or not getattr(wm, 'keyconfigs', None):
         return
-
-    target_kcs = []
+    modified = False
     for kc in (wm.keyconfigs.default, wm.keyconfigs.user, getattr(wm.keyconfigs, 'active', None)):
-        if kc and kc not in target_kcs:
-            target_kcs.append(kc)
-
-    KEY_PAIRS = [
-        ('NUMPAD_PLUS', 'NUMPAD_MINUS'),
-        ('PLUS', 'MINUS'),
-        ('EQUAL', 'MINUS'),
-        ('PAGE_UP', 'PAGE_DOWN'),
-    ]
-
-    for kc in target_kcs:
-        for map_name, up, down in WHEEL_KEYMAPS:
+        if not kc:
+            continue
+        for map_name in ('Transform Modal Map', 'Bevel Modal Map'):
             km = kc.keymaps.get(map_name)
-            if not km:
-                try:
-                    km = kc.keymaps.new(map_name, space_type='EMPTY', region_type='WINDOW', modal=True)
-                except Exception:
-                    continue
-            for up_key, down_key in KEY_PAIRS:
-                for key, action in ((up_key, up), (down_key, down)):
-                    existing = next((item for item in km.keymap_items if item.type == key and item.propvalue == action), None)
-                    if existing:
-                        existing.active = True
-                        if (km, existing) not in _addon_keymaps:
-                            _addon_keymaps.append((km, existing))
-                        continue
-                    try:
-                        kmi = km.keymap_items.new_modal(action, key, 'PRESS')
+            if km:
+                for kmi in list(km.keymap_items):
+                    if getattr(kmi, 'propvalue', '') in {'PROPORTIONAL_SIZE_UP', 'PROPORTIONAL_SIZE_DOWN', 'SEGMENTS_UP', 'SEGMENTS_DOWN'}:
                         try:
-                            kmi.repeat = True
+                            km.keymap_items.remove(kmi)
+                            modified = True
                         except Exception:
                             pass
-                        kmi.active = True
-                        _addon_keymaps.append((km, kmi))
-                    except Exception as e:
-                        print(f"[Vimender] Failed to add shortcut {key} to '{map_name}': {e}")
-
-
-def set_wheel_keys_active(state):
-    for _km, kmi in _addon_keymaps:
+    prefs = get_preferences()
+    if prefs and getattr(prefs, 'key_orbit_pan', '') == 'NUMPAD_5':
         try:
-            kmi.active = state
+            prefs.key_orbit_pan = 'U'
+            modified = True
         except Exception:
             pass
-    wm = bpy.context.window_manager
-    if wm and wm.keyconfigs:
-        for kc in (wm.keyconfigs.user, getattr(wm.keyconfigs, 'active', None)):
-            if not kc:
-                continue
-            for map_name, up, down in WHEEL_KEYMAPS:
-                km = kc.keymaps.get(map_name)
-                if km:
-                    for kmi in km.keymap_items:
-                        if kmi.propvalue in {up, down}:
-                            kmi.active = state
-
-
-def unregister_wheel_keys():
-    for km, kmi in _addon_keymaps:
+    if modified and not getattr(bpy.app, 'background', False):
         try:
-            km.keymap_items.remove(kmi)
+            bpy.ops.wm.save_userpref()
         except Exception:
             pass
-    _addon_keymaps.clear()
 
 
 def shutdown():
@@ -1891,7 +1903,6 @@ def shutdown():
     S.nav.reset()
     S.clear_hint()
     S.hover_ptr = 0
-    set_wheel_keys_active(False)
     remove_draw_handlers()
     try:
         tag_all()
@@ -1973,9 +1984,6 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         S.nav.reset()
         S.mover.reset()
 
-        register_wheel_keys()
-        set_wheel_keys_active(True)
-
         self.locked_axis = None
         self.axis_press_count = 0
         self.axis_dir_2d = None
@@ -2020,7 +2028,10 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.008, window=context.window)
         wm.modal_handler_add(self)
-        self._set_status(context)
+        try:
+            context.workspace.status_text_set(None)
+        except Exception:
+            pass
         return {'RUNNING_MODAL'}
 
     def _cleanup(self, context):
@@ -2037,7 +2048,15 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         self.axis_dir_2d = None
         self.held_nudge.clear()
         try:
-            context.workspace.status_text_set(None)
+            if S.cursor_mode:
+                txt = f"Vimender: CURSOR MODE - {S.cursor_plane}"
+            elif S.navigation_mode or S.workspace_nav:
+                txt = "Vimender: NAVIGATION MODE"
+            elif S.preview_mode:
+                txt = "Vimender: PREVIEW MODE"
+            else:
+                txt = f"Vimender: {S.nav_mode} MODE"
+            context.workspace.status_text_set(txt)
         except Exception:
             pass
 
@@ -2130,11 +2149,7 @@ class WM_OT_vim_nudge(bpy.types.Operator):
 
     def _set_status(self, context):
         try:
-            if self.locked_axis:
-                txt = f"Vimender: TRANSFORM MODE - {self.locked_axis}"
-            else:
-                txt = "Vimender: TRANSFORM MODE"
-            context.workspace.status_text_set(txt)
+            context.workspace.status_text_set(None)
         except Exception:
             pass
 
@@ -2147,7 +2162,11 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         t, v = event.type, event.value
         area = self.area if (self.area and self.area in list(context.screen.areas)) else (area_at(win, event.mouse_x, event.mouse_y) or context.area)
 
-        if t in {'X', 'Y', 'Z'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
+        if (t in {'ESC', 'RET', 'NUMPAD_ENTER', 'LEFTMOUSE', 'RIGHTMOUSE'}) and v == 'PRESS':
+            self._cleanup(context)
+            return {'PASS_THROUGH'}
+
+        if t in {'X', 'Y', 'Z'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey or event.shift):
             if self.locked_axis == t:
                 self.axis_press_count += 1
                 if self.axis_press_count >= 3:
@@ -2165,7 +2184,6 @@ class WM_OT_vim_nudge(bpy.types.Operator):
             self.vy = 0.0
             self.ang_vel = 0.0
             self.held_nudge.clear()
-            self._set_status(context)
             return {'PASS_THROUGH'}
 
         if t == 'C' and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
@@ -2176,19 +2194,21 @@ class WM_OT_vim_nudge(bpy.types.Operator):
             self.vy = 0.0
             self.ang_vel = 0.0
             self.held_nudge.clear()
-            self._set_status(context)
             return {'PASS_THROUGH'}
 
         NUDGE_KEYS = {
             'NUMPAD_8', 'NUMPAD_2', 'NUMPAD_4', 'NUMPAD_6',
-            'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW'
+            'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW',
+            'H', 'J', 'K', 'L'
         }
-        if t in NUDGE_KEYS and not (event.ctrl or event.alt or event.oskey):
-            if v == 'PRESS':
+        if t in NUDGE_KEYS:
+            if v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
                 self.held_nudge.add(t)
+                return {'RUNNING_MODAL'}
             elif v == 'RELEASE':
-                self.held_nudge.discard(t)
-            return {'RUNNING_MODAL'}
+                if t in self.held_nudge:
+                    self.held_nudge.discard(t)
+                    return {'RUNNING_MODAL'}
 
         if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL', 'PAGE_UP', 'PAGE_DOWN'}
                 or (event.unicode in {'+', '-'} and event.ctrl)) and event.ctrl and v == 'PRESS':
@@ -2217,19 +2237,9 @@ class WM_OT_vim_nudge(bpy.types.Operator):
                 return {'PASS_THROUGH'}
 
         if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
-            now = time.perf_counter()
-            if now - self.last_wrap_time < 0.15:
-                dx = abs(event.mouse_x - self.sub_x)
-                dy = abs(event.mouse_y - self.sub_y)
-                if abs(dx - self.last_span_x) < 60.0 or abs(dy - self.last_span_y) < 60.0:
-                    return {'PASS_THROUGH'}
-                if dx > self.last_span_x * 0.4 or dy > self.last_span_y * 0.4:
-                    return {'PASS_THROUGH'}
-
-            if math.hypot(event.mouse_x - self.sub_x, event.mouse_y - self.sub_y) > 25.0:
-                if self.min_x <= event.mouse_x <= self.max_x and self.min_y <= event.mouse_y <= self.max_y:
-                    self.sub_x = float(event.mouse_x)
-                    self.sub_y = float(event.mouse_y)
+            if not self.held_nudge and math.hypot(self.vx, self.vy) < 0.1:
+                self.sub_x = float(event.mouse_x)
+                self.sub_y = float(event.mouse_y)
             return {'PASS_THROUGH'}
 
         if t in {'TIMER', 'TIMER_REPORT'}:
@@ -2244,10 +2254,10 @@ class WM_OT_vim_nudge(bpy.types.Operator):
 
             tr_type = get_active_transform_type(win)
 
-            up_held = ('NUMPAD_8' in self.held_nudge) or ('UP_ARROW' in self.held_nudge)
-            down_held = ('NUMPAD_2' in self.held_nudge) or ('DOWN_ARROW' in self.held_nudge)
-            right_held = ('NUMPAD_6' in self.held_nudge) or ('RIGHT_ARROW' in self.held_nudge)
-            left_held = ('NUMPAD_4' in self.held_nudge) or ('LEFT_ARROW' in self.held_nudge)
+            up_held = ('NUMPAD_8' in self.held_nudge) or ('UP_ARROW' in self.held_nudge) or ('K' in self.held_nudge)
+            down_held = ('NUMPAD_2' in self.held_nudge) or ('DOWN_ARROW' in self.held_nudge) or ('J' in self.held_nudge)
+            right_held = ('NUMPAD_6' in self.held_nudge) or ('RIGHT_ARROW' in self.held_nudge) or ('L' in self.held_nudge)
+            left_held = ('NUMPAD_4' in self.held_nudge) or ('LEFT_ARROW' in self.held_nudge) or ('H' in self.held_nudge)
 
             if tr_type == 'ROTATE':
                 rot_input = (1.0 if (up_held or right_held) else 0.0) - (1.0 if (down_held or left_held) else 0.0)
@@ -2357,8 +2367,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         self._timer = wm.event_timer_add(0.008, window=context.window)
         wm.modal_handler_add(self)
         install_draw_handlers()
-        register_wheel_keys()
-        set_wheel_keys_active(True)
+        clean_modal_keymaps()
         tag_all()
         self._set_status(context)
         save_vimender_state(True)
@@ -2435,8 +2444,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if not raw:
             self.report({'INFO'}, "No selectable elements found")
             return
+        lx = mx - region.x
+        ly = my - region.y
         if kind not in {'OUTLINER', 'PROPERTIES'}:
-            lx, ly = mx - region.x, my - region.y
             raw.sort(key=lambda r: (r[0] - lx) ** 2 + (r[1] - ly) ** 2)
         if len(raw) > MAX_HINTS:
             raw = raw[:MAX_HINTS]
@@ -2671,8 +2681,10 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if S.mode:
             return self._modal_hint(context, event, win, mx, my)
 
-        if not S.nudge_on and transform_active(win):
-            self._start_nudge(context, win)
+        if transform_active(win):
+            if not S.nudge_on:
+                self._start_nudge(context, win)
+            return {'PASS_THROUGH'}
 
         if t in {'G', 'R', 'S'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
             if t == 'R':
@@ -2683,6 +2695,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 S.last_transform_type = 'TRANSLATE'
 
         prefs = get_preferences(context)
+        use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
         plain = not (event.alt or event.oskey)
 
         if (check_shortcut(prefs, 'search_object', event, 'SPACE', fallback_ctrl=True) or
@@ -2690,8 +2703,12 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             bpy.ops.wm.vim_search_object('INVOKE_DEFAULT')
             return {'RUNNING_MODAL'}
 
+        anim_editors = {'DOPESHEET_EDITOR', 'NLA_EDITOR', 'GRAPH_EDITOR', 'SEQUENCE_EDITOR', 'CLIP_EDITOR'}
+        if t == 'SPACE' and not event.ctrl and area and (area.type in anim_editors or area.type in PASS_KEYS_IN):
+            return {'PASS_THROUGH'}
+
         if check_shortcut(prefs, 'search_menu', event, 'SPACE', fallback_ctrl=False) and v == 'PRESS':
-            if not S.mode and not (area and area.type in PASS_KEYS_IN) and not transform_active(win):
+            if not S.mode and not (area and (area.type in PASS_KEYS_IN or area.type in anim_editors)) and not transform_active(win):
                 target_area = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
                 if not target_area or target_area.type != 'VIEW_3D':
                     target_area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), target_area or context.area)
@@ -2710,7 +2727,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     print(f"[Vimender] search_menu error: {e}")
                 return {'RUNNING_MODAL'}
 
-        if check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) and v == 'PRESS':
+        if (check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) or
+            (use_arrow_layout and t == 'FIVE' and event.ctrl and not (event.alt or event.shift or event.oskey))) and v == 'PRESS':
             if not S.cursor_mode:
                 self._enter_cursor_mode(context)
             else:
@@ -2718,7 +2736,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             return {'RUNNING_MODAL'}
 
         if S.cursor_mode:
-            if t == 'NUMPAD_5' and not event.ctrl:
+            if (t == 'NUMPAD_5' or (use_arrow_layout and t in {'FIVE', 'TAB'})) and not event.ctrl:
                 if v == 'PRESS':
                     S.cursor_plane = 'ZY' if S.cursor_plane == 'XY' else 'XY'
                     S.smooth_cursor.reset()
@@ -2727,7 +2745,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     tag_all()
                 return {'RUNNING_MODAL'}
 
-            if t in NUDGE_DIRS:
+            if t in NUDGE_DIRS or (use_arrow_layout and t in ARROW_DIRS):
                 S.smooth_cursor.on_key(t, v, shift=event.shift)
                 return {'RUNNING_MODAL'}
 
@@ -2735,8 +2753,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 self._exit_cursor_mode(context)
                 return {'RUNNING_MODAL'}
 
-            if t in {'NUMPAD_PLUS', 'NUMPAD_MINUS'} and v == 'PRESS':
-                change_sens(1 if t == 'NUMPAD_PLUS' else -1)
+            if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS'} or (use_arrow_layout and (t in {'PLUS', 'MINUS', 'EQUAL'} or event.unicode in {'+', '-'}))) and v == 'PRESS':
+                change_sens(1 if (t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL'} or event.unicode == '+') else -1)
                 return {'RUNNING_MODAL'}
 
             if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
@@ -2744,79 +2762,81 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
             return {'RUNNING_MODAL'}
 
-        if check_shortcut(prefs, 'nav', event, 'B', fallback_ctrl=True) and v == 'PRESS':
-            if S.navigation_mode or S.workspace_nav:
-                S.navigation_mode = False
-                S.workspace_nav = False
-                S.preview_mode = True
-                self.report({'INFO'}, "Vimender: PREVIEW MODE")
-                self._set_status(context)
-                tag_all()
+        if check_shortcut(prefs, 'nav', event, 'B', fallback_ctrl=True):
+            if v == 'RELEASE':
                 return {'RUNNING_MODAL'}
-            elif S.preview_mode:
-                if not is_edit_mode(context):
-                    if S.cursor_mode:
-                        self._exit_cursor_mode(context)
-                    S.preview_mode = False
+            if v == 'PRESS':
+                if S.cursor_mode:
+                    self._exit_cursor_mode(context)
+                if S.mode:
+                    self._cancel_hint(context, win)
+                if S.navigation_mode or S.workspace_nav:
+                    S.navigation_mode = False
+                    S.workspace_nav = False
+                    S.preview_mode = True
+                    self.report({'INFO'}, "Vimender: PREVIEW MODE")
+                    self._set_status(context)
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+                elif S.preview_mode:
+                    if not is_edit_mode(context):
+                        S.preview_mode = False
+                        S.navigation_mode = True
+                        S.workspace_nav = True
+                        self.report({'INFO'}, "Vimender: NAVIGATION MODE")
+                        self._set_status(context)
+                        tag_all()
+                        return {'RUNNING_MODAL'}
+                    else:
+                        return {'PASS_THROUGH'}
+                else:
                     S.navigation_mode = True
                     S.workspace_nav = True
                     self.report({'INFO'}, "Vimender: NAVIGATION MODE")
                     self._set_status(context)
                     tag_all()
                     return {'RUNNING_MODAL'}
-                else:
-                    return {'PASS_THROUGH'}
-            else:
+
+        if check_shortcut(prefs, 'preview', event, 'Y', fallback_ctrl=True):
+            if v == 'RELEASE':
+                return {'RUNNING_MODAL'}
+            if v == 'PRESS':
                 if S.cursor_mode:
                     self._exit_cursor_mode(context)
-                S.navigation_mode = True
-                S.workspace_nav = True
-                self.report({'INFO'}, "Vimender: NAVIGATION MODE")
+                if S.mode:
+                    self._cancel_hint(context, win)
+                if S.preview_mode or S.navigation_mode or S.workspace_nav:
+                    S.preview_mode = False
+                    S.navigation_mode = False
+                    S.workspace_nav = False
+                    self.report({'INFO'}, f"Vimender: {S.nav_mode} MODE")
+                else:
+                    S.navigation_mode = False
+                    S.workspace_nav = False
+                    S.preview_mode = True
+                    self.report({'INFO'}, "Vimender: PREVIEW MODE")
                 self._set_status(context)
                 tag_all()
                 return {'RUNNING_MODAL'}
 
-        if check_shortcut(prefs, 'preview', event, 'Y', fallback_ctrl=True) and v == 'PRESS':
-            if S.cursor_mode:
-                self._exit_cursor_mode(context)
-            if S.preview_mode:
-                S.preview_mode = False
-                if not is_edit_mode(context):
-                    S.navigation_mode = True
-                    S.workspace_nav = True
-                    self.report({'INFO'}, "Vimender: NAVIGATION MODE")
-                else:
-                    self.report({'INFO'}, f"Vimender: {S.nav_mode} MODE")
-            else:
-                S.navigation_mode = False
-                S.workspace_nav = False
-                S.preview_mode = True
-                self.report({'INFO'}, "Vimender: PREVIEW MODE")
-            self._set_status(context)
-            tag_all()
-            return {'RUNNING_MODAL'}
-
-        if S.preview_mode:
-            return {'PASS_THROUGH'}
-
         if S.navigation_mode or S.workspace_nav:
             now = time.perf_counter()
-            if t in {'NUMPAD_4', 'NUMPAD_6'}:
+            if t in {'NUMPAD_4', 'NUMPAD_6', 'LEFT_ARROW', 'RIGHT_ARROW'}:
                 if v == 'PRESS':
                     if now - getattr(self, '_last_ws_cycle_t', 0.0) >= 0.16:
                         self._last_ws_cycle_t = now
-                        cycle_workspace(context, 'PREV' if t == 'NUMPAD_4' else 'NEXT')
+                        cycle_workspace(context, 'PREV' if t in {'NUMPAD_4', 'LEFT_ARROW'} else 'NEXT')
                         self._set_status(context)
                         tag_all()
                     return {'RUNNING_MODAL'}
                 elif v == 'RELEASE':
                     return {'RUNNING_MODAL'}
 
-            if t in {'NUMPAD_8', 'NUMPAD_2'}:
+            if t in {'NUMPAD_8', 'NUMPAD_2', 'UP_ARROW', 'DOWN_ARROW'}:
                 if v == 'PRESS':
                     if now - getattr(self, '_last_editor_nav_t', 0.0) >= 0.12:
                         self._last_editor_nav_t = now
-                        direction = 'UP' if t == 'NUMPAD_8' else 'DOWN'
+                        direction = 'UP' if t in {'NUMPAD_8', 'UP_ARROW'} else 'DOWN'
                         navigate_in_editor(context, win, area, direction)
                         self._set_status(context)
                         tag_all()
@@ -2824,10 +2844,12 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 elif v == 'RELEASE':
                     return {'RUNNING_MODAL'}
 
-            if t in PREFIX_DIRS and not (event.ctrl or event.alt or event.oskey):
+            if t in {'H', 'J', 'K', 'L'} and not (event.ctrl or event.alt or event.oskey):
                 if v == 'PRESS':
-                    if area is not None:
-                        tgt = neighbor_area(win, area, PREFIX_DIRS[t])
+                    target_a = area or area_by_ptr(win, S.hover_ptr)
+                    if target_a is not None:
+                        dir_map = {'H': 'LEFT', 'L': 'RIGHT', 'K': 'UP', 'J': 'DOWN'}
+                        tgt = neighbor_area(win, target_a, dir_map[t])
                         if tgt is not None:
                             self._focus_area(win, tgt)
                 return {'RUNNING_MODAL'}
@@ -2836,14 +2858,16 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if v == 'PRESS':
                     areas = sorted(focusable_areas(win), key=lambda a: (-a.y, a.x))
                     ptrs = [a.as_pointer() for a in areas]
-                    if area and area.as_pointer() in ptrs:
-                        nxt = areas[(ptrs.index(area.as_pointer()) + 1) % len(areas)]
+                    target_a = area or area_by_ptr(win, S.hover_ptr)
+                    if target_a and target_a.as_pointer() in ptrs:
+                        nxt = areas[(ptrs.index(target_a.as_pointer()) + 1) % len(areas)]
                         self._focus_area(win, nxt)
+                    elif areas:
+                        self._focus_area(win, areas[0])
                 return {'RUNNING_MODAL'}
 
             if ((t in {'ESC', 'RET', 'NUMPAD_ENTER'}) or
-                check_shortcut(prefs, 'nav', event, 'B', fallback_ctrl=True) or
-                check_shortcut(prefs, 'preview', event, 'Y', fallback_ctrl=True)) and v == 'PRESS':
+                check_shortcut(prefs, 'nav', event, 'B', fallback_ctrl=True)) and v == 'PRESS':
                 S.navigation_mode = False
                 S.workspace_nav = False
                 S.preview_mode = True
@@ -2855,11 +2879,93 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
                 return {'PASS_THROUGH'}
 
-            if t in {'NUMPAD_PLUS', 'NUMPAD_MINUS'} and event.ctrl and v == 'PRESS':
-                change_sens(1 if t == 'NUMPAD_PLUS' else -1)
+            if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL'}) and event.ctrl and v == 'PRESS':
+                change_sens(1 if (t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL'} or event.unicode == '+') else -1)
                 return {'RUNNING_MODAL'}
 
             return {'RUNNING_MODAL'}
+
+        target_v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
+        if not target_v3d or target_v3d.type != 'VIEW_3D':
+            target_v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None)
+
+        if (target_v3d and target_v3d.type == 'VIEW_3D' and
+                not (area and area.type in PASS_KEYS_IN) and
+                not transform_active(win)):
+
+            allow_view_switch = (not S.preview_mode) or (use_arrow_layout and not is_edit_mode(context))
+
+            is_key_1 = t in {'NUMPAD_1', 'ONE'} or (event.unicode == '1' and 'NUMPAD' not in t)
+            if is_key_1 and allow_view_switch and not (event.alt or event.oskey):
+                if v == 'PRESS':
+                    axis = 'BACK' if event.ctrl else 'FRONT'
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
+                return {'RUNNING_MODAL'}
+
+            is_key_3 = t in {'NUMPAD_3', 'THREE'} or (event.unicode == '3' and 'NUMPAD' not in t)
+            if is_key_3 and allow_view_switch and not (event.alt or event.oskey):
+                if v == 'PRESS':
+                    axis = 'LEFT' if event.ctrl else 'RIGHT'
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
+                return {'RUNNING_MODAL'}
+
+            is_key_7 = t in {'NUMPAD_7', 'SEVEN'} or (event.unicode == '7' and 'NUMPAD' not in t)
+            if is_key_7 and allow_view_switch and not (event.alt or event.oskey):
+                if v == 'PRESS':
+                    axis = 'BOTTOM' if event.ctrl else 'TOP'
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
+                return {'RUNNING_MODAL'}
+
+            is_key_9 = t in {'NUMPAD_9', 'NINE'} or (event.unicode == '9' and 'NUMPAD' not in t)
+            if is_key_9 and (allow_view_switch or use_arrow_layout) and not (event.ctrl or event.alt or event.oskey or event.shift):
+                if v == 'PRESS':
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_orbit, angle=math.pi, type='ORBITRIGHT')
+                return {'RUNNING_MODAL'}
+
+            is_key_0 = t in {'NUMPAD_0', 'ZERO'} or (event.unicode == '0' and 'NUMPAD' not in t)
+            if is_key_0 and (allow_view_switch or use_arrow_layout) and not (event.ctrl or event.alt or event.oskey or event.shift):
+                if v == 'PRESS':
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_camera)
+                return {'RUNNING_MODAL'}
+
+            is_key_slash = t in {'NUMPAD_SLASH', 'SLASH'} or (event.unicode == '/' and 'NUMPAD' not in t)
+            if is_key_slash and (allow_view_switch or use_arrow_layout) and not (event.ctrl or event.alt or event.oskey or event.shift):
+                if v == 'PRESS':
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.localview)
+                return {'RUNNING_MODAL'}
+
+            is_key_period = (
+                check_shortcut(prefs, 'view_selected', event, 'NUMPAD_PERIOD', fallback_ctrl=False) or
+                (t in {'NUMPAD_PERIOD', 'NUMPAD_COMMA', 'PERIOD', 'COMMA'} and not (event.ctrl or event.alt or event.oskey)) or
+                (event.unicode in {',', '.'} and not (event.ctrl or event.alt or event.oskey))
+            )
+            if is_key_period and ((not S.preview_mode) or use_arrow_layout):
+                if v == 'PRESS':
+                    region = window_region(target_v3d)
+                    if region:
+                        try:
+                            with context.temp_override(window=win, area=target_v3d, region=region):
+                                bpy.ops.view3d.view_selected(use_all_regions=False)
+                        except Exception:
+                            pass
+                        rv3d = target_v3d.spaces.active.region_3d if target_v3d.spaces else None
+                        if rv3d and rv3d.view_distance < 3.2:
+                            rv3d.view_distance = 3.2
+                        target_v3d.tag_redraw()
+                return {'RUNNING_MODAL'}
+
+            is_key_persp = (
+                check_shortcut(prefs, 'persp_ortho', event, 'NUMPAD_ASTERIX', fallback_ctrl=False) or
+                (t in {'NUMPAD_ASTERIX', 'ASTERISK'} and not (event.ctrl or event.alt or event.oskey)) or
+                (event.unicode == '*' and not (event.ctrl or event.alt or event.oskey))
+            )
+            if is_key_persp and ((not S.preview_mode) or use_arrow_layout):
+                if v == 'PRESS':
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_persportho)
+                return {'RUNNING_MODAL'}
+
+        if S.preview_mode:
+            return {'PASS_THROUGH'}
 
         if check_shortcut(prefs, 'editor_pie', event, 'W', fallback_ctrl=True) and v == 'PRESS':
             if S.prefix:
@@ -2868,86 +2974,73 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 self._open_pie(context, event, win, area)
             return {'RUNNING_MODAL'}
 
-        if event.ctrl and t in {'NUMPAD_4', 'NUMPAD_6'} and v == 'PRESS':
-            cycle_workspace(context, 'PREV' if t == 'NUMPAD_4' else 'NEXT')
+        if event.ctrl and (t in {'NUMPAD_4', 'NUMPAD_6'} or (use_arrow_layout and t in {'LEFT_ARROW', 'RIGHT_ARROW'})) and v == 'PRESS':
+            cycle_workspace(context, 'PREV' if t in {'NUMPAD_4', 'LEFT_ARROW'} else 'NEXT')
             tag_all()
             return {'RUNNING_MODAL'}
 
         if S.prefix:
             return self._modal_prefix(context, event, win, area)
 
-        if t in {'NUMPAD_PLUS', 'NUMPAD_MINUS'} and event.ctrl and not (area and area.type in PASS_KEYS_IN):
+        if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS'} or (use_arrow_layout and (t in {'PLUS', 'MINUS', 'EQUAL'} or event.unicode in {'+', '-'}))) and event.ctrl and not (area and area.type in PASS_KEYS_IN):
             if v == 'PRESS':
-                change_sens(1 if t == 'NUMPAD_PLUS' else -1)
+                change_sens(1 if (t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL'} or event.unicode == '+') else -1)
             return {'RUNNING_MODAL'}
 
         if area and area.type == 'OUTLINER' and not (event.ctrl or event.alt or event.oskey):
-            if t in {'NUMPAD_8', 'NUMPAD_2'}:
+            if t in {'NUMPAD_8', 'NUMPAD_2'} or (use_arrow_layout and t in {'UP_ARROW', 'DOWN_ARROW'}):
                 if v == 'PRESS':
-                    direction = 'UP' if t == 'NUMPAD_8' else 'DOWN'
+                    direction = 'UP' if t in {'NUMPAD_8', 'UP_ARROW'} else 'DOWN'
                     navigate_in_editor(context, win, area, direction)
                     return {'RUNNING_MODAL'}
                 elif v == 'RELEASE':
                     return {'RUNNING_MODAL'}
 
-        if (check_shortcut(prefs, 'persp_ortho', event, 'NUMPAD_ASTERIX', fallback_ctrl=False) or
-            (t == 'ASTERISK' and not (event.ctrl or event.alt or event.oskey))) and not (area and area.type in PASS_KEYS_IN):
-            if v == 'PRESS':
-                if area and area.type == 'VIEW_3D':
-                    region = window_region(area)
-                    if region:
-                        try:
-                            with context.temp_override(window=win, area=area, region=region):
-                                bpy.ops.view3d.view_persportho()
-                        except Exception:
-                            rv3d = area.spaces.active.region_3d
-                            if rv3d:
-                                rv3d.view_perspective = 'ORTHO' if rv3d.view_perspective == 'PERSP' else 'PERSP'
-                                area.tag_redraw()
-                return {'RUNNING_MODAL'}
 
-        if check_shortcut(prefs, 'orbit_pan', event, 'NUMPAD_5', fallback_ctrl=False) and not (area and area.type in PASS_KEYS_IN):
+        if (check_shortcut(prefs, 'orbit_pan', event, 'U', fallback_ctrl=False) or
+            (t in {'U', 'NUMPAD_5'} and not (event.ctrl or event.alt or event.oskey or event.shift)) or
+            (use_arrow_layout and t in {'FIVE', 'U'} and not (event.ctrl or event.alt or event.oskey or event.shift))) and not (area and area.type in PASS_KEYS_IN):
             if v == 'PRESS':
                 S.nav_mode = 'PAN' if S.nav_mode == 'ORBIT' else 'ORBIT'
+                self.report({'INFO'}, f"Vimender: {S.nav_mode} MODE")
+                self._set_status(context)
                 if area:
                     area.tag_redraw()
+                tag_all()
             return {'RUNNING_MODAL'}
 
-        if t in {'NUMPAD_PLUS', 'NUMPAD_MINUS'} and not (area and area.type in PASS_KEYS_IN) and not transform_active(win):
-            if not (event.alt or event.oskey):
+        if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL', 'PAGE_UP', 'PAGE_DOWN'} or event.unicode in {'+', '-'}) and not (area and area.type in PASS_KEYS_IN) and not transform_active(win):
+            if not (event.ctrl or event.alt or event.oskey):
                 S.nav.on_key(t, v)
                 return {'RUNNING_MODAL'}
 
-        if t in NUDGE_DIRS and not (area and area.type in PASS_KEYS_IN) and not transform_active(win):
+        nav_key = None
+        if t in {'NUMPAD_8', 'NUMPAD_2', 'NUMPAD_4', 'NUMPAD_6', 'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW'}:
             if not (event.ctrl or event.alt or event.oskey):
-                S.nav.on_key(t, v, shift=event.shift)
-                return {'RUNNING_MODAL'}
+                nav_key = t
+        elif t in {'K', 'J', 'H', 'L'}:
+            if not (event.ctrl or event.alt or event.oskey or event.shift):
+                nav_key = t
+            elif v == 'RELEASE' and t in S.nav.held:
+                nav_key = t
+        elif t in {'EIGHT', 'TWO', 'FOUR', 'SIX'} or (event.unicode in {'8', '2', '4', '6'} and 'NUMPAD' not in t):
+            num_map = {'EIGHT': 'EIGHT', 'TWO': 'TWO', 'FOUR': 'FOUR', 'SIX': 'SIX',
+                       '8': 'EIGHT', '2': 'TWO', '4': 'FOUR', '6': 'SIX'}
+            k = num_map.get(t) or num_map.get(event.unicode)
+            if not (event.ctrl or event.alt or event.oskey or event.shift):
+                nav_key = k
+            elif v == 'RELEASE' and k in S.nav.held:
+                nav_key = k
 
-        if (check_shortcut(prefs, 'view_selected', event, 'NUMPAD_PERIOD', fallback_ctrl=False) or
-            (t in {'NUMPAD_PERIOD', 'NUMPAD_COMMA'} and not (event.ctrl or event.alt or event.oskey)) or
-            (event.unicode in {',', '.'} and 'NUMPAD' in t and not (event.ctrl or event.alt or event.oskey))) and not (area and area.type in PASS_KEYS_IN):
-            if v == 'PRESS':
-                target_area = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
-                if not target_area or target_area.type != 'VIEW_3D':
-                    target_area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None)
-                if target_area and target_area.type == 'VIEW_3D':
-                    region = window_region(target_area)
-                    if region:
-                        try:
-                            with context.temp_override(window=win, area=target_area, region=region):
-                                bpy.ops.view3d.view_selected(use_all_regions=False)
-                        except Exception:
-                            pass
-                        rv3d = target_area.spaces.active.region_3d if target_area.spaces else None
-                        if rv3d and rv3d.view_distance < 3.2:
-                            rv3d.view_distance = 3.2
-                        target_area.tag_redraw()
-                return {'RUNNING_MODAL'}
+        if nav_key and not (area and area.type in PASS_KEYS_IN) and not transform_active(win):
+            S.nav.on_key(nav_key, v, shift=event.shift)
+            return {'RUNNING_MODAL'}
+
 
         if check_shortcut(prefs, 'hint_select', event, 'F', fallback_ctrl=False, allow_shift_alt_extend=True) and v == 'PRESS':
             target_area = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
             if target_area:
-                if target_area.type in PASS_KEYS_IN:
+                if target_area.type != 'VIEW_3D':
                     return {'PASS_THROUGH'}
                 if event.alt:
                     action = 'ALT'
@@ -2961,7 +3054,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if check_shortcut(prefs, 'box_select', event, 'C', fallback_ctrl=False, allow_shift_alt_extend=True) and v == 'PRESS':
             target_area = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
             if target_area:
-                if target_area.type in PASS_KEYS_IN:
+                if target_area.type != 'VIEW_3D':
                     return {'PASS_THROUGH'}
                 action = 'EXTEND' if event.shift else 'NORMAL'
                 self._start_hint(context, win, target_area, True, action, mx, my)
@@ -2972,7 +3065,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         t, v = event.type, event.value
         prefs = get_preferences(context)
 
-        if check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) and v == 'PRESS':
+        use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
+        if (check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) or
+            (use_arrow_layout and t == 'FIVE' and event.ctrl and not (event.alt or event.shift or event.oskey))) and v == 'PRESS':
             self._cancel_hint(context, win)
             self._enter_cursor_mode(context)
             return {'RUNNING_MODAL'}
@@ -2987,6 +3082,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
         if check_shortcut(prefs, 'nav', event, 'B', fallback_ctrl=True) and v == 'PRESS':
             self._cancel_hint(context, win)
+            S.preview_mode = False
             S.navigation_mode = True
             S.workspace_nav = True
             self.report({'INFO'}, "Vimender: NAVIGATION MODE")
@@ -2995,12 +3091,13 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             return {'RUNNING_MODAL'}
 
         if S.mode == 'BOX2':
-            if t in NUDGE_DIRS:
+            if t in NUDGE_DIRS or (use_arrow_layout and t in ARROW_DIRS):
                 S.smooth_box.on_key(t, v)
                 return {'RUNNING_MODAL'}
 
-            if t in {'NUMPAD_PLUS', 'NUMPAD_MINUS'} and v == 'PRESS':
-                change_sens(1 if t == 'NUMPAD_PLUS' else -1)
+            if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS'} or
+                (use_arrow_layout and (t in {'PLUS', 'MINUS', 'EQUAL'} or event.unicode in {'+', '-'}))) and v == 'PRESS':
+                change_sens(1 if (t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL'} or event.unicode == '+') else -1)
                 return {'RUNNING_MODAL'}
 
             if t in {'C', 'RET', 'NUMPAD_ENTER'} and v == 'PRESS':
@@ -3210,6 +3307,15 @@ def register_search_key():
     _addon_keymaps.extend([(km, kmi1), (km, kmi2)])
 
 
+def unregister_search_key():
+    for km, kmi in _addon_keymaps:
+        try:
+            km.keymap_items.remove(kmi)
+        except Exception:
+            pass
+    _addon_keymaps.clear()
+
+
 def get_config_path():
     try:
         cfg_dir = bpy.utils.user_resource('CONFIG')
@@ -3219,25 +3325,45 @@ def get_config_path():
     return os.path.join(cfg_dir, 'vimender_config.json')
 
 
-def save_vimender_state(enabled: bool):
+def save_vimender_config(data: dict):
     try:
         p = get_config_path()
+        existing = {}
+        if os.path.exists(p):
+            with open(p, 'r', encoding='utf-8') as f:
+                existing = json.load(f)
+        existing.update(data)
         with open(p, 'w', encoding='utf-8') as f:
-            json.dump({'auto_start': bool(enabled)}, f, indent=2)
+            json.dump(existing, f, indent=2)
     except Exception as e:
         print(f"[Vimender] Config save error: {e}")
 
 
-def load_vimender_state() -> bool:
+def load_vimender_config() -> dict:
     try:
         p = get_config_path()
         if os.path.exists(p):
             with open(p, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return bool(data.get('auto_start', False))
+                return json.load(f)
     except Exception as e:
         print(f"[Vimender] Config read error: {e}")
-    return False
+    return {}
+
+
+def save_vimender_state(enabled: bool):
+    save_vimender_config({'auto_start': bool(enabled)})
+
+
+def load_vimender_state() -> bool:
+    return bool(load_vimender_config().get('auto_start', False))
+
+
+def save_arrow_keys_layout(enabled: bool):
+    save_vimender_config({'arrow_keys_layout': bool(enabled)})
+
+
+def load_arrow_keys_layout() -> bool:
+    return bool(load_vimender_config().get('arrow_keys_layout', False))
 
 
 def _auto_start():
@@ -3367,7 +3493,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     shift_cursor: bpy.props.BoolProperty(name="Shift", default=False)
     alt_cursor: bpy.props.BoolProperty(name="Alt", default=False)
 
-    key_orbit_pan: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='NUMPAD_5')
+    key_orbit_pan: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='U')
     ctrl_orbit_pan: bpy.props.BoolProperty(name="Ctrl", default=False)
     shift_orbit_pan: bpy.props.BoolProperty(name="Shift", default=False)
     alt_orbit_pan: bpy.props.BoolProperty(name="Alt", default=False)
@@ -3421,6 +3547,20 @@ class VimenderPreferences(bpy.types.AddonPreferences):
         set=_set_auto_start
     )
 
+    def _get_arrow_keys_layout(self):
+        return load_arrow_keys_layout()
+
+    def _set_arrow_keys_layout(self, val):
+        save_arrow_keys_layout(val)
+
+    arrow_keys_layout: bpy.props.BoolProperty(
+        name="Arrow Keys Layout",
+        description="Enable Arrow Keys Layout for laptops and keyboards without a numpad",
+        default=False,
+        get=_get_arrow_keys_layout,
+        set=_set_arrow_keys_layout
+    )
+
     def _draw_shortcut(self, layout, label, prefix):
         row = layout.row(align=True)
         row.label(text=label)
@@ -3432,6 +3572,10 @@ class VimenderPreferences(bpy.types.AddonPreferences):
 
     def draw(self, context):
         layout = self.layout
+
+        box0 = layout.box()
+        box0.label(text="Keyboard Layout", icon='KEYBOARD')
+        box0.prop(self, "arrow_keys_layout", text="Arrow Keys Layout (Laptop / No Numpad)")
 
         box = layout.box()
         box.label(text="Mode Switching Shortcuts", icon='ARROW_LEFTRIGHT')
@@ -3469,7 +3613,7 @@ def register():
     for c in classes:
         bpy.utils.register_class(c)
     bpy.types.TOPBAR_MT_window.append(_menu_func)
-    register_wheel_keys()
+    clean_modal_keymaps()
     register_search_key()
     if _on_load_post not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(_on_load_post)
@@ -3479,7 +3623,8 @@ def register():
 
 def unregister():
     shutdown()
-    unregister_wheel_keys()
+    clean_modal_keymaps()
+    unregister_search_key()
     if _on_load_post in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(_on_load_post)
     bpy.types.TOPBAR_MT_window.remove(_menu_func)
