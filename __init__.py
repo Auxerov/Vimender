@@ -2954,12 +2954,13 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                         target_v3d.tag_redraw()
                 return {'RUNNING_MODAL'}
 
-            is_key_persp = (
-                check_shortcut(prefs, 'persp_ortho', event, 'NUMPAD_ASTERIX', fallback_ctrl=False) or
+            is_y_persp = (t == 'Y' or event.unicode in {'y', 'Y'}) and not (event.ctrl or event.alt or event.oskey or event.shift)
+            is_asterisk_persp = (
+                check_shortcut(prefs, 'persp_ortho', event, 'Y', fallback_ctrl=False) or
                 (t in {'NUMPAD_ASTERIX', 'ASTERISK'} and not (event.ctrl or event.alt or event.oskey)) or
                 (event.unicode == '*' and not (event.ctrl or event.alt or event.oskey))
             )
-            if is_key_persp and ((not S.preview_mode) or use_arrow_layout):
+            if (is_y_persp and not S.preview_mode) or (is_asterisk_persp and ((not S.preview_mode) or use_arrow_layout)):
                 if v == 'PRESS':
                     _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_persportho)
                 return {'RUNNING_MODAL'}
@@ -3523,7 +3524,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     shift_box_select: bpy.props.BoolProperty(name="Shift", default=False)
     alt_box_select: bpy.props.BoolProperty(name="Alt", default=False)
 
-    key_persp_ortho: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='NUMPAD_ASTERIX')
+    key_persp_ortho: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='Y')
     ctrl_persp_ortho: bpy.props.BoolProperty(name="Ctrl", default=False)
     shift_persp_ortho: bpy.props.BoolProperty(name="Shift", default=False)
     alt_persp_ortho: bpy.props.BoolProperty(name="Alt", default=False)
