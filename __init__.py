@@ -2007,6 +2007,12 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         self.axis_press_count = 0
         self.axis_dir_2d = None
 
+        try:
+            self._prev_continuous = bpy.context.preferences.inputs.use_mouse_continuous
+            bpy.context.preferences.inputs.use_mouse_continuous = False
+        except Exception:
+            pass
+
         area = area_at(context.window, event.mouse_x, event.mouse_y) or context.area
         if not area or area.type != 'VIEW_3D':
             area = next((a for a in context.screen.areas if a.type == 'VIEW_3D'), context.area)
@@ -2014,11 +2020,11 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         self.region = window_region(area) if area else None
 
         win = context.window
-        margin = 12.0
+        margin = 25.0
         self.min_x = margin
-        self.max_x = float(max(win.width - margin, 40.0))
+        self.max_x = float(max(win.width - margin, 50.0))
         self.min_y = margin
-        self.max_y = float(max(win.height - margin, 40.0))
+        self.max_y = float(max(win.height - margin, 50.0))
 
         self.sub_x = float(event.mouse_x)
         self.sub_y = float(event.mouse_y)
@@ -2090,6 +2096,11 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         self.axis_dir_2d = None
         self.scale_vel = 0.0
         self.held_nudge.clear()
+        if hasattr(self, '_prev_continuous'):
+            try:
+                bpy.context.preferences.inputs.use_mouse_continuous = self._prev_continuous
+            except Exception:
+                pass
         win = context.window if context else None
         if win:
             if hasattr(self, 'pivot_2d') and self.pivot_2d is not None:
@@ -2258,8 +2269,8 @@ class WM_OT_vim_nudge(bpy.types.Operator):
                 if new_dist > max_dist:
                     new_dist = max_dist
                     self.scale_vel = 0.0
-                elif new_dist < 0.5:
-                    new_dist = 0.5
+                elif new_dist < 2.0:
+                    new_dist = 2.0
                     self.scale_vel = 0.0
 
                 self.scale_dist = new_dist
