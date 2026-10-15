@@ -574,9 +574,6 @@ class _State:
         self.cursor_mode = False
         self.cursor_plane = 'XY'
         self.right_alt_down = False
-        self.save_prompt = False
-        self.save_action = 'QUIT'
-        self.save_buttons = {}
         self.prev_mode_state = {}
         self.smooth_cursor = _Smooth3DCursor()
         self.preview_mode = True
@@ -585,7 +582,6 @@ class _State:
     def clear_hint(self):
         self.mode = None
         self.kind = None
-        self.save_prompt = False
         self.action = 'NORMAL'
         self.box_extend = False
         self.vertex_mode = False
@@ -905,6 +901,19 @@ def active_modal_tool(win):
 
 def is_blender_modal_active(win):
     return active_modal_tool(win) is not None
+
+
+def active_save_dialog_op(win):
+    try:
+        ops = win.modal_operators
+    except (AttributeError, Exception):
+        return None
+    for op in ops:
+        ident = (getattr(op, "bl_idname", "") or getattr(op, "name", "") or getattr(getattr(op, "bl_rna", None), "identifier", "")).lower()
+        if any(k in ident for k in ("quit", "read_homefile", "open_mainfile", "save_prompt")):
+            return op
+    return None
+
 
 
 def adjust_active_modal_or_modifier(context, is_up):
@@ -2022,81 +2031,38 @@ def draw_cb():
     _fill(_rect(x0, y0, x1, y0 + th + 2 * pad), (0.0, 0.0, 0.0, 0.65))
     _text(x0 + pad, y0 + pad, label, border_col)
 
-    if S.save_prompt:
-        dw = int(460 * ui)
-        dh = int(150 * ui)
-        dx0 = int((w - dw) / 2)
-        dy0 = int((h - dh) / 2)
-        dx1 = dx0 + dw
-        dy1 = dy0 + dh
-
-        _fill(_rect(0, 0, w, h), (0.0, 0.0, 0.0, 0.55))
-        _fill(_rect(dx0, dy0, dx1, dy1), (0.13, 0.13, 0.16, 0.98))
-        border_c = (0.35, 0.35, 0.40, 1.0)
-        bt = int(2 * ui)
-        _fill(_rect(dx0, dy0, dx1, dy0 + bt) + _rect(dx0, dy1 - bt, dx1, dy1) +
-              _rect(dx0, dy0, dx0 + bt, dy1) + _rect(dx1 - bt, dy0, dx1, dy1), border_c)
-
-        if S.save_action == 'QUIT':
-            title = "Save changes before closing?"
-        elif S.save_action == 'OPEN':
-            title = "Save changes before opening file?"
-        else:
-            title = "Save changes before new file?"
-
-        _font_size(int(15 * ui))
-        tw_t, th_t = blf.dimensions(0, title)
-        _text(dx0 + int((dw - tw_t) / 2), dy1 - int(44 * ui), title, (0.95, 0.95, 0.95, 1.0))
-
-        bw = int(122 * ui)
-        bh = int(42 * ui)
-        gap = int(14 * ui)
-        total_w = 3 * bw + 2 * gap
-        bx_start = dx0 + int((dw - total_w) / 2)
-        by0 = dy0 + int(24 * ui)
-        by1 = by0 + bh
-
-        b1_x0, b1_x1 = bx_start, bx_start + bw
-        b2_x0, b2_x1 = b1_x1 + gap, b1_x1 + gap + bw
-        b3_x0, b3_x1 = b2_x1 + gap, b2_x1 + gap + bw
-
-        S.save_buttons = {
-            'SAVE': (b1_x0, by0, b1_x1, by1),
-            'DONT_SAVE': (b2_x0, by0, b2_x1, by1),
-            'CANCEL': (b3_x0, by0, b3_x1, by1),
-        }
-
-        btn_bg = (0.22, 0.22, 0.26, 0.95)
-        btn_border = (0.34, 0.34, 0.38, 0.95)
-        for x0_b, x1_b in ((b1_x0, b1_x1), (b2_x0, b2_x1), (b3_x0, b3_x1)):
-            _fill(_rect(x0_b, by0, x1_b, by1), btn_bg)
-            _fill(_rect(x0_b, by0, x1_b, by0 + 1) + _rect(x0_b, by1 - 1, x1_b, by1) +
-                  _rect(x0_b, by0, x0_b + 1, by1) + _rect(x1_b - 1, by0, x1_b, by1), btn_border)
-
+    dlg_op = active_save_dialog_op(ctx.window)
+    if dlg_op:
         badge_w = int(24 * ui)
         badge_h = int(24 * ui)
-        badge_pad_y = int((bh - badge_h) / 2)
-        badge_y0 = by0 + badge_pad_y
-        badge_y1 = badge_y0 + badge_h
+        bw = int(120 * ui)
+        bh = int(36 * ui)
+        gap = int(14 * ui)
+        total_w = 3 * bw + 2 * gap
+        bx_start = int((w - total_w) / 2)
+        by0 = int(h / 2 - 46 * ui)
+        by1 = by0 + bh
 
         buttons_info = [
-            (b1_x0, b1_x1, "Y", "Save"),
-            (b2_x0, b2_x1, "N", "Don't Save"),
-            (b3_x0, b3_x1, "C", "Cancel"),
+            (bx_start, "Y", "Save"),
+            (bx_start + bw + gap, "N", "Don't Save"),
+            (bx_start + 2 * (bw + gap), "C", "Cancel"),
         ]
-
-        for x0_b, x1_b, key_char, btn_text in buttons_info:
-            bx0 = x0_b + int(8 * ui)
+        for x0_b, key_char, btn_text in buttons_info:
+            x1_b = x0_b + bw
+            _fill(_rect(x0_b, by0, x1_b, by1), (0.16, 0.16, 0.20, 0.95))
+            _fill(_rect(x0_b, by0, x1_b, by0 + 1) + _rect(x0_b, by1 - 1, x1_b, by1) +
+                  _rect(x0_b, by0, x0_b + 1, by1) + _rect(x1_b - 1, by0, x1_b, by1), (0.35, 0.35, 0.40, 0.95))
+            bx0 = x0_b + int(6 * ui)
             bx1 = bx0 + badge_w
+            badge_y0 = by0 + int((bh - badge_h) / 2)
+            badge_y1 = badge_y0 + badge_h
             _fill(_rect(bx0, badge_y0, bx1, badge_y1), HINT_BG)
             _font_size(int(13 * ui))
             kw, kh = blf.dimensions(0, key_char)
             _text(bx0 + int((badge_w - kw) / 2), badge_y0 + int((badge_h - kh) / 2), key_char, HINT_TEXT)
-
-            _font_size(int(13 * ui))
             tw_b, th_b = blf.dimensions(0, btn_text)
-            tx = bx1 + int(8 * ui)
-            _text(tx, by0 + int((bh - th_b) / 2), btn_text, (0.95, 0.95, 0.95, 1.0))
+            _text(bx1 + int(6 * ui), by0 + int((bh - th_b) / 2), btn_text, (0.95, 0.95, 0.95, 1.0))
 
     gpu.state.blend_set('NONE')
 
@@ -3047,10 +3013,11 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             if area:
                 area.tag_redraw()
 
-        if S.save_prompt:
+        dlg_op = active_save_dialog_op(win)
+        if dlg_op:
+            op_name = (getattr(dlg_op, "bl_idname", "") or getattr(dlg_op, "name", "") or getattr(getattr(dlg_op, "bl_rna", None), "identifier", "")).lower()
             if v == 'PRESS':
-                if t in {'Y', 'RET', 'NUMPAD_ENTER'}:
-                    S.save_prompt = False
+                if (t in {'Y', 'y'} or event.unicode in {'y', 'Y'}) and not (event.ctrl or event.alt or event.oskey):
                     try:
                         if bpy.data.filepath:
                             bpy.ops.wm.save_mainfile()
@@ -3058,110 +3025,26 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                             bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT')
                     except Exception as e:
                         print(f"[Vimender] save error: {e}")
-                    act = S.save_action
-                    if act == 'QUIT':
+                    if "quit" in op_name:
                         sys.exit(0)
-                    elif act == 'OPEN':
-                        bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
-                    elif act == 'NEW':
+                    elif "read_homefile" in op_name:
                         bpy.ops.wm.read_homefile('INVOKE_DEFAULT')
-                    tag_all()
-                    return {'RUNNING_MODAL'}
-
-                if t == 'N':
-                    S.save_prompt = False
-                    act = S.save_action
-                    if act == 'QUIT':
-                        sys.exit(0)
-                    elif act == 'OPEN':
+                    elif "open_mainfile" in op_name:
                         bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
-                    elif act == 'NEW':
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+                if (t in {'N', 'n'} or event.unicode in {'n', 'N'}) and not (event.ctrl or event.alt or event.oskey):
+                    if "quit" in op_name:
+                        sys.exit(0)
+                    elif "read_homefile" in op_name:
                         bpy.ops.wm.read_homefile(use_empty=False)
+                    elif "open_mainfile" in op_name:
+                        bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
                     tag_all()
                     return {'RUNNING_MODAL'}
-
-                if t in {'C', 'ESC'}:
-                    S.save_prompt = False
-                    self.report({'INFO'}, "Vimender: Cancelled")
+                if (t in {'C', 'c', 'ESC'} or event.unicode in {'c', 'C'}) and not (event.ctrl or event.alt or event.oskey):
                     tag_all()
-                    return {'RUNNING_MODAL'}
-
-                if t == 'LEFTMOUSE':
-                    btns = getattr(S, 'save_buttons', {})
-                    if btns and area:
-                        r = window_region(area)
-                        rx = mx - (r.x if r else 0)
-                        ry = my - (r.y if r else 0)
-                        b1 = btns.get('SAVE')
-                        b2 = btns.get('DONT_SAVE')
-                        b3 = btns.get('CANCEL')
-                        if b1 and b1[0] <= rx <= b1[2] and b1[1] <= ry <= b1[3]:
-                            S.save_prompt = False
-                            try:
-                                if bpy.data.filepath:
-                                    bpy.ops.wm.save_mainfile()
-                                else:
-                                    bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT')
-                            except Exception:
-                                pass
-                            act = S.save_action
-                            if act == 'QUIT':
-                                sys.exit(0)
-                            elif act == 'OPEN':
-                                bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
-                            elif act == 'NEW':
-                                bpy.ops.wm.read_homefile('INVOKE_DEFAULT')
-                            tag_all()
-                            return {'RUNNING_MODAL'}
-                        elif b2 and b2[0] <= rx <= b2[2] and b2[1] <= ry <= b2[3]:
-                            S.save_prompt = False
-                            act = S.save_action
-                            if act == 'QUIT':
-                                sys.exit(0)
-                            elif act == 'OPEN':
-                                bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
-                            elif act == 'NEW':
-                                bpy.ops.wm.read_homefile(use_empty=False)
-                            tag_all()
-                            return {'RUNNING_MODAL'}
-                        elif b3 and b3[0] <= rx <= b3[2] and b3[1] <= ry <= b3[3]:
-                            S.save_prompt = False
-                            tag_all()
-                            return {'RUNNING_MODAL'}
-                        else:
-                            S.save_prompt = False
-                            tag_all()
-                            return {'RUNNING_MODAL'}
-
-            return {'RUNNING_MODAL'}
-
-        if v == 'PRESS' and event.ctrl and not (event.alt or event.shift or event.oskey):
-            if t == 'Q':
-                if bpy.data.is_dirty:
-                    S.save_prompt = True
-                    S.save_action = 'QUIT'
-                    tag_all()
-                    return {'RUNNING_MODAL'}
-                else:
-                    sys.exit(0)
-            elif t == 'O':
-                if bpy.data.is_dirty:
-                    S.save_prompt = True
-                    S.save_action = 'OPEN'
-                    tag_all()
-                    return {'RUNNING_MODAL'}
-                else:
-                    bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
-                    return {'RUNNING_MODAL'}
-            elif t == 'N':
-                if bpy.data.is_dirty:
-                    S.save_prompt = True
-                    S.save_action = 'NEW'
-                    tag_all()
-                    return {'RUNNING_MODAL'}
-                else:
-                    bpy.ops.wm.read_homefile('INVOKE_DEFAULT')
-                    return {'RUNNING_MODAL'}
+                    return {'PASS_THROUGH'}
 
         if S.mode:
             return self._modal_hint(context, event, win, mx, my, area)
@@ -4526,52 +4409,6 @@ class WM_OT_vim_fuzzy_search(bpy.types.Operator):
         return {'FINISHED'}
 
 
-_orig_topbar_file_draw = None
-
-
-def _vim_topbar_file_draw(self, context):
-    try:
-        from bl_ui.space_topbar import TOPBAR_MT_file_new
-        layout = self.layout
-        layout.operator_context = 'INVOKE_AREA'
-        layout.menu("TOPBAR_MT_file_new", text="New", icon='FILE_NEW')
-        layout.operator("wm.vim_save_prompt", text="Open...", icon='FILE_FOLDER').action = 'OPEN'
-        layout.menu("TOPBAR_MT_file_open_recent")
-        layout.operator("wm.revert_mainfile")
-        layout.menu("TOPBAR_MT_file_recover")
-        layout.separator()
-        layout.operator_context = 'EXEC_AREA' if context.blend_data.is_saved else 'INVOKE_AREA'
-        layout.operator("wm.save_mainfile", text="Save", icon='FILE_TICK')
-        layout.operator_context = 'INVOKE_AREA'
-        layout.operator("wm.save_as_mainfile", text="Save As...")
-        layout.operator("wm.save_as_mainfile", text="Save Copy...").copy = True
-        sub = layout.row()
-        sub.enabled = context.blend_data.is_saved
-        sub.operator_context = 'EXEC_AREA'
-        sub.operator("wm.save_mainfile", text="Save Incremental").incremental = True
-        layout.separator()
-        layout.operator_context = 'INVOKE_AREA'
-        layout.operator("wm.link", text="Link...", icon='LINK_BLEND')
-        layout.operator("wm.append", text="Append...", icon='APPEND_BLEND')
-        layout.menu("TOPBAR_MT_file_previews")
-        layout.separator()
-        layout.menu("TOPBAR_MT_file_import", icon='IMPORT')
-        layout.menu("TOPBAR_MT_file_export", icon='EXPORT')
-        row = layout.row()
-        row.operator("wm.collection_export_all")
-        row.enabled = getattr(context.view_layer, 'has_export_collections', False)
-        layout.separator()
-        layout.menu("TOPBAR_MT_file_external_data")
-        layout.menu("TOPBAR_MT_file_cleanup")
-        layout.separator()
-        layout.menu("TOPBAR_MT_file_defaults")
-        layout.separator()
-        layout.operator("wm.vim_save_prompt", text="Quit", icon='QUIT').action = 'QUIT'
-    except Exception:
-        if _orig_topbar_file_draw:
-            _orig_topbar_file_draw(self, context)
-
-
 class WM_OT_vim_general_search(bpy.types.Operator):
     bl_idname = "wm.vim_general_search"
     bl_label = "General Search"
@@ -4590,41 +4427,6 @@ class WM_OT_vim_general_search(bpy.types.Operator):
         return self.execute(context)
 
 
-class WM_OT_vim_save_prompt(bpy.types.Operator):
-    bl_idname = "wm.vim_save_prompt"
-    bl_label = "Save Changes Prompt"
-    bl_description = "Prompt to save changes before closing, opening, or creating a new file"
-    bl_options = {'REGISTER'}
-
-    action: bpy.props.EnumProperty(
-        name="Action",
-        items=[
-            ('QUIT', "Quit", "Quit Blender"),
-            ('OPEN', "Open", "Open file"),
-            ('NEW', "New", "New file"),
-        ],
-        default='QUIT'
-    )
-
-    def execute(self, context):
-        if not bpy.data.is_dirty:
-            if self.action == 'QUIT':
-                sys.exit(0)
-            elif self.action == 'OPEN':
-                bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
-            elif self.action == 'NEW':
-                bpy.ops.wm.read_homefile('INVOKE_DEFAULT')
-            return {'FINISHED'}
-
-        S.save_prompt = True
-        S.save_action = self.action
-        tag_all()
-        return {'FINISHED'}
-
-    def invoke(self, context, event):
-        return self.execute(context)
-
-
 def register_search_key():
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.addon
@@ -4635,13 +4437,8 @@ def register_search_key():
     kmi2 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'F3', 'PRESS', ctrl=True)
     kmi3 = km.keymap_items.new(WM_OT_vim_search_mode.bl_idname, 'SPACE', 'PRESS', alt=True)
     kmi4 = km.keymap_items.new(WM_OT_vim_fuzzy_search.bl_idname, 'SPACE', 'PRESS', alt=True, ctrl=True)
-    kmi_q = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'Q', 'PRESS', ctrl=True)
-    kmi_q.properties.action = 'QUIT'
-    kmi_o = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'O', 'PRESS', ctrl=True)
-    kmi_o.properties.action = 'OPEN'
-    kmi_n = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'N', 'PRESS', ctrl=True)
-    kmi_n.properties.action = 'NEW'
-    _addon_keymaps.extend([(km, kmi1), (km, kmi2), (km, kmi3), (km, kmi4), (km, kmi_q), (km, kmi_o), (km, kmi_n)])
+    _addon_keymaps.extend([(km, kmi1), (km, kmi2), (km, kmi3), (km, kmi4)])
+
 
 
 def unregister_search_key():
@@ -4715,18 +4512,22 @@ def _auto_start():
 
 
 @bpy.app.handlers.persistent
+def _on_load_pre(dummy):
+    if bpy.app.background:
+        return
+    shutdown()
+
+
+@bpy.app.handlers.persistent
 def _on_load_post(dummy):
     if bpy.app.background:
         return
-    if load_vimender_state() and not S.active:
+    shutdown()
+    clean_modal_keymaps()
+    register_search_key()
+    if load_vimender_state():
         bpy.app.timers.register(_auto_start, first_interval=0.1)
 
-
-def _menu_func(self, context):
-    self.layout.separator()
-    self.layout.operator(WM_OT_vim_mode_toggle.bl_idname, text="Vimender Mode",
-                         icon='CHECKBOX_HLT' if S.active else 'CHECKBOX_DEHLT')
-    self.layout.operator("wm.vim_open_preferences", text="Vimender Preferences...", icon='PREFERENCES')
 
 
 
@@ -4983,41 +4784,48 @@ class VimenderPreferences(bpy.types.AddonPreferences):
         sub.prop(self, f"shift_{prefix}", text="Shift", toggle=True)
         sub.prop(self, f"alt_{prefix}", text="Alt", toggle=True)
 
-    def draw(self, context):
-        layout = self.layout
+    def draw(self, context, layout=None):
+        if layout is None:
+            layout = getattr(self, "layout", None)
+        if layout is None:
+            return
+        try:
+            top_box = layout.box()
+            top_row = top_box.row(align=True)
+            top_row.operator("wm.vim_export_keymap", text="Export Keymap", icon='EXPORT')
+            top_row.operator("wm.vim_import_keymap", text="Import Keymap", icon='IMPORT')
+            top_row.operator("wm.vim_reset_keymap", text="Reset Defaults", icon='LOOP_BACK')
 
-        top_box = layout.box()
-        top_row = top_box.row(align=True)
-        top_row.operator("wm.vim_export_keymap", text="Export Keymap", icon='EXPORT')
-        top_row.operator("wm.vim_import_keymap", text="Import Keymap", icon='IMPORT')
-        top_row.operator("wm.vim_reset_keymap", text="Reset Defaults", icon='LOOP_BACK')
+            box0 = layout.box()
+            box0.label(text="Keyboard Layout", icon='KEYBOARD')
+            box0.prop(self, "arrow_keys_layout", text="Arrow Keys Layout (Laptop / No Numpad)")
 
-        box0 = layout.box()
-        box0.label(text="Keyboard Layout", icon='KEYBOARD')
-        box0.prop(self, "arrow_keys_layout", text="Arrow Keys Layout (Laptop / No Numpad)")
+            box = layout.box()
+            box.label(text="Mode Switching Shortcuts", icon='ARROW_LEFTRIGHT')
+            self._draw_shortcut(box, "Mode Search (Alt+Space)", "search_mode")
+            self._draw_shortcut(box, "Preview Mode Toggle (Ctrl+Y)", "preview")
+            self._draw_shortcut(box, "Navigation Mode Toggle (Ctrl+B)", "nav")
+            self._draw_shortcut(box, "Cursor Mode Toggle (Ctrl+Num5)", "cursor")
+            self._draw_shortcut(box, "Orbit / Pan Mode Toggle (U)", "orbit_pan")
+            self._draw_shortcut(box, "Editor Pie Menu (Ctrl+W)", "editor_pie")
 
-        box = layout.box()
-        box.label(text="Mode Switching Shortcuts", icon='ARROW_LEFTRIGHT')
-        self._draw_shortcut(box, "Mode Search (Alt+Space)", "search_mode")
-        self._draw_shortcut(box, "Preview Mode Toggle (Ctrl+Y)", "preview")
-        self._draw_shortcut(box, "Navigation Mode Toggle (Ctrl+B)", "nav")
-        self._draw_shortcut(box, "Cursor Mode Toggle (Ctrl+Num5)", "cursor")
-        self._draw_shortcut(box, "Orbit / Pan Mode Toggle (U)", "orbit_pan")
-        self._draw_shortcut(box, "Editor Pie Menu (Ctrl+W)", "editor_pie")
+            box2 = layout.box()
+            box2.label(text="Tool & General Shortcuts", icon='EVENT_F')
+            self._draw_shortcut(box2, "General Search (Space)", "search_menu")
+            self._draw_shortcut(box2, "Search Objects / Cursor (Ctrl+Space)", "search_object")
+            self._draw_shortcut(box2, "Data Search (AltGr+Space)", "fuzzy_search")
+            self._draw_shortcut(box2, "Hint Click Select (F)", "hint_select")
+            self._draw_shortcut(box2, "Box Hint Select (C)", "box_select")
+            self._draw_shortcut(box2, "Persp / Ortho View (Y / Asterisk)", "persp_ortho")
+            self._draw_shortcut(box2, "Focus Selected View (Numpad . / I)", "view_selected")
 
-        box2 = layout.box()
-        box2.label(text="Tool & General Shortcuts", icon='EVENT_F')
-        self._draw_shortcut(box2, "General Search (Space)", "search_menu")
-        self._draw_shortcut(box2, "Search Objects / Cursor (Ctrl+Space)", "search_object")
-        self._draw_shortcut(box2, "Data Search (AltGr+Space)", "fuzzy_search")
-        self._draw_shortcut(box2, "Hint Click Select (F)", "hint_select")
-        self._draw_shortcut(box2, "Box Hint Select (C)", "box_select")
-        self._draw_shortcut(box2, "Persp / Ortho View (Y / Asterisk)", "persp_ortho")
-        self._draw_shortcut(box2, "Focus Selected View (Numpad . / I)", "view_selected")
+            box3 = layout.box()
+            box3.label(text="General Settings", icon='PREFERENCES')
+            box3.prop(self, "auto_start", text="Auto-Start Vimender on Launch")
+        except Exception as e:
+            layout.label(text=f"Vimender Preferences error: {e}", icon='ERROR')
+            print(f"[Vimender] Preferences draw error: {e}")
 
-        box3 = layout.box()
-        box3.label(text="General Settings", icon='PREFERENCES')
-        box3.prop(self, "auto_start", text="Auto-Start Vimender on Launch")
 
 
 class WM_OT_vim_export_keymap(bpy.types.Operator, ExportHelper):
@@ -5147,29 +4955,6 @@ class WM_OT_vim_reset_keymap(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class WM_OT_vim_open_preferences(bpy.types.Operator):
-    bl_idname = "wm.vim_open_preferences"
-    bl_label = "Vimender Preferences & Shortcuts"
-    bl_description = "Open Vimender preferences dialog to customize and import/export keymaps"
-    bl_options = {'REGISTER'}
-
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=560)
-
-    def draw(self, context):
-        prefs = get_preferences(context)
-        if prefs:
-            prefs.draw(context)
-        else:
-            self.layout.label(text="Vimender Preferences could not be loaded.", icon='ERROR')
-
-    def execute(self, context):
-        prefs = get_preferences(context)
-        if prefs:
-            save_keymaps_to_config(prefs)
-        return {'FINISHED'}
-
-
 classes = (
     VimenderPreferences,
     WM_OT_vim_mode_toggle,
@@ -5179,11 +4964,9 @@ classes = (
     WM_OT_vim_search_mode,
     WM_OT_vim_fuzzy_search,
     WM_OT_vim_general_search,
-    WM_OT_vim_save_prompt,
     WM_OT_vim_export_keymap,
     WM_OT_vim_import_keymap,
     WM_OT_vim_reset_keymap,
-    WM_OT_vim_open_preferences,
     VIM_MT_editor_more,
 )
 
@@ -5191,17 +4974,10 @@ classes = (
 def register():
     for c in classes:
         bpy.utils.register_class(c)
-    global _orig_topbar_file_draw
-    try:
-        from bl_ui.space_topbar import TOPBAR_MT_file
-        if _orig_topbar_file_draw is None:
-            _orig_topbar_file_draw = TOPBAR_MT_file.draw
-            TOPBAR_MT_file.draw = _vim_topbar_file_draw
-    except Exception:
-        pass
-    bpy.types.TOPBAR_MT_window.append(_menu_func)
     clean_modal_keymaps()
     register_search_key()
+    if _on_load_pre not in bpy.app.handlers.load_pre:
+        bpy.app.handlers.load_pre.append(_on_load_pre)
     if _on_load_post not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(_on_load_post)
     if not bpy.app.background and load_vimender_state():
@@ -5212,19 +4988,13 @@ def unregister():
     shutdown()
     clean_modal_keymaps()
     unregister_search_key()
-    global _orig_topbar_file_draw
-    try:
-        from bl_ui.space_topbar import TOPBAR_MT_file
-        if _orig_topbar_file_draw is not None:
-            TOPBAR_MT_file.draw = _orig_topbar_file_draw
-            _orig_topbar_file_draw = None
-    except Exception:
-        pass
+    if _on_load_pre in bpy.app.handlers.load_pre:
+        bpy.app.handlers.load_pre.remove(_on_load_pre)
     if _on_load_post in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(_on_load_post)
-    bpy.types.TOPBAR_MT_window.remove(_menu_func)
     for c in reversed(classes):
         bpy.utils.unregister_class(c)
+
 
 
 if __name__ == "__main__":
