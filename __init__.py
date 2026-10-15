@@ -607,6 +607,7 @@ class _State:
         self.save_dialog_open = False
         self.save_dialog_action = 'QUIT'
         self.pie_active = False
+        self.view_pie_active = False
         self.pie_open_time = 0.0
         self.pie_just_selected_time = 0.0
         self.prev_mode_state = {}
@@ -620,6 +621,7 @@ class _State:
         self.search_active = False
         self.save_dialog_open = False
         self.pie_active = False
+        self.view_pie_active = False
         self.pie_open_time = 0.0
         self.pie_just_selected_time = 0.0
         self.action = 'NORMAL'
@@ -974,6 +976,18 @@ def is_altgr_pressed(event=None):
                         return True
         except Exception:
             pass
+    return False
+
+
+def is_view_pie_trigger(event):
+    if not event:
+        return False
+    if event.ctrl or event.alt or event.oskey:
+        return False
+    if getattr(event, 'unicode', '') in {'"', 'é', '`', '~'}:
+        return True
+    if getattr(event, 'type', '') in {'ACCENT_GRAVE', 'TILDE'}:
+        return True
     return False
 
 
@@ -2225,6 +2239,55 @@ class VIM_MT_editor_more(bpy.types.Menu):
         _pie_item(l, "Info", 'INFO', ("INFO",))
 
 
+def draw_vim_view_pie(self, context):
+    pie = self.layout.menu_pie()
+    pie.operator("view3d.view_axis", text="Left (4)", icon='AXIS_SIDE').type = 'LEFT'
+    pie.operator("view3d.view_axis", text="Right (3)", icon='AXIS_SIDE').type = 'RIGHT'
+    pie.operator("view3d.view_axis", text="Front (1)", icon='AXIS_FRONT').type = 'FRONT'
+    pie.operator("view3d.view_axis", text="Top (7)", icon='AXIS_TOP').type = 'TOP'
+    pie.operator("view3d.view_axis", text="Back (8)").type = 'BACK'
+    pie.operator("view3d.view_orbit", text="Opposite (9)").type = 'ORBITRIGHT'
+    pie.operator("view3d.view_camera", text="Camera (0)", icon='CAMERA_DATA')
+    pie.operator("view3d.view_selected", text="Selected (.)", icon='ZOOM_SELECTED')
+
+    col = pie.column()
+    col.operator("view3d.view_persportho", text="Persp/Ortho (5)")
+    col.operator("view3d.view_axis", text="Bottom (2)").type = 'BOTTOM'
+    col.operator("view3d.localview", text="Local View (/)")
+
+
+class VIEW3D_MT_vim_view_pie(bpy.types.Menu):
+    bl_label = "View"
+    bl_idname = "VIEW3D_MT_vim_view_pie"
+
+    def draw(self, context):
+        draw_vim_view_pie(self, context)
+
+
+_ORIGINAL_VIEW_PIE_DRAW = None
+
+
+def patch_view_pie():
+    global _ORIGINAL_VIEW_PIE_DRAW
+    try:
+        import bl_ui.space_view3d as sv
+        if hasattr(sv, 'VIEW3D_MT_view_pie'):
+            _ORIGINAL_VIEW_PIE_DRAW = getattr(sv.VIEW3D_MT_view_pie, 'draw', None)
+            sv.VIEW3D_MT_view_pie.draw = draw_vim_view_pie
+    except Exception:
+        pass
+
+
+def unpatch_view_pie():
+    global _ORIGINAL_VIEW_PIE_DRAW
+    try:
+        import bl_ui.space_view3d as sv
+        if hasattr(sv, 'VIEW3D_MT_view_pie') and _ORIGINAL_VIEW_PIE_DRAW is not None:
+            sv.VIEW3D_MT_view_pie.draw = _ORIGINAL_VIEW_PIE_DRAW
+    except Exception:
+        pass
+
+
 class WM_OT_vim_set_editor(bpy.types.Operator):
     bl_idname = "wm.vim_set_editor"
     bl_label = "Change Editor Type"
@@ -2951,6 +3014,23 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         with context.temp_override(window=win, area=area, region=region):
             context.window_manager.popup_menu_pie(event, draw_editor_pie, title="Editor")
 
+    def _open_view_pie(self, context, event, win, area):
+        v3d = area or area_at(win, event.mouse_x, event.mouse_y) or area_by_ptr(win, S.hover_ptr) or context.area
+        if not v3d or v3d.type != 'VIEW_3D':
+            v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), v3d or context.area)
+        region = window_region(v3d) if v3d else None
+        if not v3d or not region:
+            return
+        S.pie_ptr = v3d.as_pointer()
+        S.pie_active = True
+        S.view_pie_active = True
+        S.pie_open_time = time.time()
+        try:
+            with context.temp_override(window=win, area=v3d, region=region):
+                context.window_manager.popup_menu_pie(event, draw_vim_view_pie, title="View")
+        except Exception as e:
+            print(f"[Vimender] view_pie error: {e}")
+
     def _begin_prefix(self, context, repeat=False):
         S.prefix = True
         S.prefix_t = time.time()
@@ -3035,6 +3115,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 self._end_prefix(context)
             if S.pie_active and time.time() - S.pie_open_time > 5.0:
                 S.pie_active = False
+                S.view_pie_active = False
             if S.mode == 'BOX2':
                 a = area_by_ptr(win, S.hint_ptr)
                 r = window_region(a) if a else None
@@ -3090,6 +3171,133 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if time.time() - S.search_open_time > 0.4:
                     S.search_active = False
                     tag_all()
+
+        if S.view_pie_active:
+            if t in {'ESC', 'RET', 'NUMPAD_ENTER', 'TAB'} and v == 'PRESS':
+                S.view_pie_active = False
+                S.pie_active = False
+                send_fake_escape()
+                tag_all()
+                return {'RUNNING_MODAL'}
+            if t in MOUSE_CANCEL and v == 'PRESS' and time.time() - S.pie_open_time > 0.15:
+                S.view_pie_active = False
+                S.pie_active = False
+            if is_view_pie_trigger(event) and v == 'PRESS' and time.time() - S.pie_open_time > 0.15:
+                S.view_pie_active = False
+                S.pie_active = False
+                send_fake_escape()
+                tag_all()
+                return {'RUNNING_MODAL'}
+            if v == 'PRESS':
+                v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
+                if not v3d or v3d.type != 'VIEW_3D':
+                    v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), v3d or context.area)
+
+                if (t in {'ZERO', 'NUMPAD_0', 'O'} or event.unicode == '0') and not (event.ctrl or event.alt or event.oskey):
+                    S.view_pie_active = False
+                    S.pie_active = False
+                    send_fake_escape()
+                    _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_camera)
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if (t in {'ONE', 'NUMPAD_1'} or event.unicode == '1') and not (event.alt or event.oskey):
+                    S.view_pie_active = False
+                    S.pie_active = False
+                    send_fake_escape()
+                    axis = 'BACK' if event.ctrl else 'FRONT'
+                    _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if (t in {'THREE', 'NUMPAD_3'} or event.unicode == '3') and not (event.alt or event.oskey):
+                    S.view_pie_active = False
+                    S.pie_active = False
+                    send_fake_escape()
+                    axis = 'LEFT' if event.ctrl else 'RIGHT'
+                    _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if (t in {'SEVEN', 'NUMPAD_7'} or event.unicode == '7') and not (event.alt or event.oskey):
+                    S.view_pie_active = False
+                    S.pie_active = False
+                    send_fake_escape()
+                    axis = 'BOTTOM' if event.ctrl else 'TOP'
+                    _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if (t in {'NINE', 'NUMPAD_9'} or event.unicode == '9') and not (event.ctrl or event.alt or event.oskey or event.shift):
+                    S.view_pie_active = False
+                    S.pie_active = False
+                    send_fake_escape()
+                    _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_orbit, angle=math.pi, type='ORBITRIGHT')
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if (t in {'FOUR', 'NUMPAD_4'} or event.unicode == '4') and not (event.ctrl or event.alt or event.oskey or event.shift):
+                    S.view_pie_active = False
+                    S.pie_active = False
+                    send_fake_escape()
+                    _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_axis, type='LEFT')
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if (t in {'EIGHT', 'NUMPAD_8'} or event.unicode == '8') and not (event.ctrl or event.alt or event.oskey or event.shift):
+                    S.view_pie_active = False
+                    S.pie_active = False
+                    send_fake_escape()
+                    _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_axis, type='BACK')
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if (t in {'TWO', 'NUMPAD_2'} or event.unicode == '2') and not (event.ctrl or event.alt or event.oskey or event.shift):
+                    S.view_pie_active = False
+                    S.pie_active = False
+                    send_fake_escape()
+                    _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_axis, type='BOTTOM')
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if (t in {'FIVE', 'NUMPAD_5'} or event.unicode == '5') and not (event.ctrl or event.alt or event.oskey or event.shift):
+                    S.view_pie_active = False
+                    S.pie_active = False
+                    send_fake_escape()
+                    _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_persportho)
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if (t in {'NUMPAD_PERIOD', 'NUMPAD_COMMA', 'PERIOD', 'COMMA'} or event.unicode in {'.', ','}) and not (event.ctrl or event.alt or event.oskey):
+                    S.view_pie_active = False
+                    S.pie_active = False
+                    send_fake_escape()
+                    _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_selected, use_all_regions=False)
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if (t in {'NUMPAD_SLASH', 'SLASH'} or event.unicode == '/') and not (event.ctrl or event.alt or event.oskey):
+                    S.view_pie_active = False
+                    S.pie_active = False
+                    send_fake_escape()
+                    _exec_view3d_op(context, win, v3d, bpy.ops.view3d.localview)
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+            elif v == 'RELEASE' and t in CONSUME_KEYS:
+                return {'RUNNING_MODAL'}
+
+        if is_view_pie_trigger(event) and not (area and area.type in PASS_KEYS_IN) and not S.mode and not S.search_active and not S.save_dialog_open:
+            if v == 'PRESS':
+                if S.view_pie_active:
+                    S.view_pie_active = False
+                    S.pie_active = False
+                    send_fake_escape()
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+                self._open_view_pie(context, event, win, area)
+                return {'RUNNING_MODAL'}
+            elif v == 'RELEASE':
+                return {'RUNNING_MODAL'}
 
         if S.mode:
             return self._modal_hint(context, event, win, mx, my, area)
@@ -5207,6 +5415,7 @@ classes = (
     WM_OT_vim_import_keymap,
     WM_OT_vim_reset_keymap,
     VIM_MT_editor_more,
+    VIEW3D_MT_vim_view_pie,
 )
 
 
@@ -5219,6 +5428,7 @@ def _window_menu_draw(self, context):
 def register():
     for c in classes:
         bpy.utils.register_class(c)
+    patch_view_pie()
     clean_modal_keymaps()
     register_search_key()
     bpy.types.TOPBAR_MT_window.append(_window_menu_draw)
@@ -5231,6 +5441,7 @@ def register():
 
 
 def unregister():
+    unpatch_view_pie()
     shutdown()
     clean_modal_keymaps()
     unregister_search_key()
