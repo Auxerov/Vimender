@@ -2014,18 +2014,11 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         self.region = window_region(area) if area else None
 
         win = context.window
-        if self.area and self.area in list(context.screen.areas):
-            pad = 32.0
-            self.min_x = float(self.area.x + pad)
-            self.max_x = float(max(self.area.x + self.area.width - pad, self.min_x + 40.0))
-            self.min_y = float(self.area.y + pad)
-            self.max_y = float(max(self.area.y + self.area.height - pad, self.min_y + 40.0))
-        else:
-            pad = 32.0
-            self.min_x = pad
-            self.max_x = float(max(win.width - pad, 100.0))
-            self.min_y = pad
-            self.max_y = float(max(win.height - pad, 100.0))
+        margin = 12.0
+        self.min_x = margin
+        self.max_x = float(max(win.width - margin, 40.0))
+        self.min_y = margin
+        self.max_y = float(max(win.height - margin, 40.0))
 
         self.sub_x = float(event.mouse_x)
         self.sub_y = float(event.mouse_y)
@@ -2059,8 +2052,10 @@ class WM_OT_vim_nudge(bpy.types.Operator):
             self.rot_angle = 0.0
             self.rot_radius = max(min(120.0, max_safe_r), 30.0)
         else:
-            self.scale_dir = Vector((dx_p, dy_p)).normalized()
-            self.scale_dist = min(dist_p, max(edge_dist - 10.0, 30.0))
+            dx_abs = abs(dx_p) if abs(dx_p) > 0.01 else 0.7071
+            dy_abs = abs(dy_p) if abs(dy_p) > 0.01 else 0.7071
+            self.scale_dir = Vector((dx_abs, dy_abs)).normalized()
+            self.scale_dist = max(dist_p, 25.0)
             self.rot_angle = math.atan2(dy_p, dx_p)
             self.rot_radius = max(min(120.0, max_safe_r), 30.0)
 
@@ -2096,13 +2091,16 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         self.scale_vel = 0.0
         self.held_nudge.clear()
         win = context.window if context else None
-        if win and self.area and self.area in list(context.screen.areas):
+        if win:
             if hasattr(self, 'pivot_2d') and self.pivot_2d is not None:
                 reset_x = int(round(max(min(self.pivot_2d.x + 80.0, self.max_x - 30.0), self.min_x + 30.0)))
                 reset_y = int(round(max(min(self.pivot_2d.y + 80.0, self.max_y - 30.0), self.min_y + 30.0)))
-            else:
+            elif self.area and self.area in list(context.screen.areas):
                 reset_x = int(round(self.area.x + self.area.width * 0.5))
                 reset_y = int(round(self.area.y + self.area.height * 0.5))
+            else:
+                reset_x = int(round(win.width * 0.5))
+                reset_y = int(round(win.height * 0.5))
             try:
                 win.cursor_warp(reset_x, reset_y)
             except Exception:
@@ -2260,8 +2258,8 @@ class WM_OT_vim_nudge(bpy.types.Operator):
                 if new_dist > max_dist:
                     new_dist = max_dist
                     self.scale_vel = 0.0
-                elif new_dist < 18.0:
-                    new_dist = 18.0
+                elif new_dist < 0.5:
+                    new_dist = 0.5
                     self.scale_vel = 0.0
 
                 self.scale_dist = new_dist
@@ -2418,14 +2416,10 @@ class WM_OT_vim_nudge(bpy.types.Operator):
                 dist_p = math.hypot(dx_p, dy_p)
                 if dist_p >= 15.0:
                     self.rot_angle = math.atan2(dy_p, dx_p)
-                    edge_dist = min(
-                        self.pivot_2d.x - self.min_x,
-                        self.max_x - self.pivot_2d.x,
-                        self.pivot_2d.y - self.min_y,
-                        self.max_y - self.pivot_2d.y
-                    )
-                    self.scale_dist = min(dist_p, max(edge_dist - 10.0, 30.0))
-                    self.scale_dir = Vector((dx_p, dy_p)).normalized()
+                    self.scale_dist = max(dist_p, 1.0)
+                    dx_abs = abs(dx_p) if abs(dx_p) > 0.01 else 0.7071
+                    dy_abs = abs(dy_p) if abs(dy_p) > 0.01 else 0.7071
+                    self.scale_dir = Vector((dx_abs, dy_abs)).normalized()
             return {'PASS_THROUGH'}
 
         if t in {'TIMER', 'TIMER_REPORT'}:
