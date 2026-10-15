@@ -2013,27 +2013,39 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         self.min_y = margin
         self.max_y = float(max(win.height - margin, 40.0))
 
-        self.pivot_2d = Vector((float(event.mouse_x), float(event.mouse_y)))
-        center_info = get_selection_center_2d(context, self.area)
-        if center_info and center_info[0] is not None and center_info[1] is not None:
-            self.pivot_2d = Vector((float(center_info[0]), float(center_info[1])))
-
         self.sub_x = float(event.mouse_x)
         self.sub_y = float(event.mouse_y)
         self.sub_x = max(min(self.sub_x, self.max_x), self.min_x)
         self.sub_y = max(min(self.sub_y, self.max_y), self.min_y)
 
+        self.pivot_2d = Vector((self.sub_x, self.sub_y))
+        center_info = get_selection_center_2d(context, self.area)
+        if center_info and center_info[0] is not None and center_info[1] is not None:
+            self.pivot_2d = Vector((float(center_info[0]), float(center_info[1])))
+
         dx_p = self.sub_x - self.pivot_2d.x
         dy_p = self.sub_y - self.pivot_2d.y
         dist_p = math.hypot(dx_p, dy_p)
-        if dist_p < 20.0:
-            self.rot_angle = 0.0
-            self.scale_dist = 20.0
+        self.initial_dist = dist_p
+
+        edge_dist = min(
+            self.pivot_2d.x - self.min_x,
+            self.max_x - self.pivot_2d.x,
+            self.pivot_2d.y - self.min_y,
+            self.max_y - self.pivot_2d.y
+        )
+        max_safe_r = max(edge_dist - 20.0, 30.0)
+
+        if dist_p < 15.0:
             self.scale_dir = Vector((1.0, 0.0))
+            self.scale_dist = 15.0
+            self.rot_angle = 0.0
+            self.rot_radius = min(max_safe_r, 120.0)
         else:
-            self.rot_angle = math.atan2(dy_p, dx_p)
-            self.scale_dist = dist_p
             self.scale_dir = Vector((dx_p, dy_p)).normalized()
+            self.scale_dist = dist_p
+            self.rot_angle = math.atan2(dy_p, dx_p)
+            self.rot_radius = min(max(dist_p, 40.0), max_safe_r)
 
         self.vx = 0.0
         self.vy = 0.0
@@ -2041,6 +2053,7 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         self.scale_vel = 0.0
         self.held_nudge = set()
         self.last_t = time.perf_counter()
+        self._shift_held = bool(event.shift)
 
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.008, window=context.window)
@@ -2163,6 +2176,120 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         except Exception:
             pass
 
+    def _step(self, context, win, dt, is_press=False):
+        tr_type = get_active_transform_type(win)
+        sens = SENS_LEVELS[S.sens_idx]
+        if getattr(self, '_shift_held', False):
+            sens *= 0.15
+
+        up_held = ('NUMPAD_8' in self.held_nudge) or ('UP_ARROW' in self.held_nudge) or ('K' in self.held_nudge)
+        down_held = ('NUMPAD_2' in self.held_nudge) or ('DOWN_ARROW' in self.held_nudge) or ('J' in self.held_nudge)
+        right_held = ('NUMPAD_6' in self.held_nudge) or ('RIGHT_ARROW' in self.held_nudge) or ('L' in self.held_nudge)
+        left_held = ('NUMPAD_4' in self.held_nudge) or ('LEFT_ARROW' in self.held_nudge) or ('H' in self.held_nudge)
+
+        if tr_type == 'ROTATE':
+            rot_input = (1.0 if (up_held or right_held) else 0.0) - (1.0 if (down_held or left_held) else 0.0)
+            target_w = rot_input * (2.8 * sens)
+
+            if rot_input != 0.0:
+                if is_press and abs(self.ang_vel) < 0.5:
+                    self.ang_vel = target_w * 0.5
+                alpha = 1.0 - math.exp(-48.0 * dt)
+                self.ang_vel += (target_w - self.ang_vel) * alpha
+            else:
+                self.ang_vel = 0.0
+
+            if abs(self.ang_vel) > 0.001:
+                self.rot_angle += self.ang_vel * dt
+                raw_x = self.pivot_2d.x + self.rot_radius * math.cos(self.rot_angle)
+                raw_y = self.pivot_2d.y + self.rot_radius * math.sin(self.rot_angle)
+                self.sub_x = max(min(raw_x, self.max_x), self.min_x)
+                self.sub_y = max(min(raw_y, self.max_y), self.min_y)
+                win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
+            return
+
+        elif tr_type == 'RESIZE':
+            scale_input = (1.0 if (up_held or right_held) else 0.0) - (1.0 if (down_held or left_held) else 0.0)
+            base_dist = max(getattr(self, 'initial_dist', 100.0), 80.0)
+            target_v = scale_input * (base_dist * 1.8 * sens)
+
+            if scale_input != 0.0:
+                if is_press and abs(self.scale_vel) < 5.0:
+                    self.scale_vel = target_v * 0.5
+                alpha = 1.0 - math.exp(-48.0 * dt)
+                self.scale_vel += (target_v - self.scale_vel) * alpha
+            else:
+                self.scale_vel = 0.0
+
+            if abs(self.scale_vel) > 0.1:
+                new_dist = self.scale_dist + self.scale_vel * dt
+                min_dist = max(base_dist * 0.05, 12.0)
+                if new_dist < min_dist:
+                    new_dist = min_dist
+                    self.scale_vel = 0.0
+
+                raw_x = self.pivot_2d.x + self.scale_dir.x * new_dist
+                raw_y = self.pivot_2d.y + self.scale_dir.y * new_dist
+
+                clamped_x = max(min(raw_x, self.max_x), self.min_x)
+                clamped_y = max(min(raw_y, self.max_y), self.min_y)
+
+                if (clamped_x != raw_x or clamped_y != raw_y) and self.scale_vel > 0.0:
+                    self.scale_vel = 0.0
+
+                self.scale_dist = new_dist
+                self.sub_x = clamped_x
+                self.sub_y = clamped_y
+                win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
+            return
+
+        elif self.locked_axis is not None and self.axis_dir_2d is not None:
+            axis_input = (1.0 if (up_held or right_held) else 0.0) - (1.0 if (down_held or left_held) else 0.0)
+            max_spd = CURSOR_MAX_SPEED * sens
+            target_v = self.axis_dir_2d * (axis_input * max_spd)
+
+            if axis_input != 0.0:
+                if is_press and math.hypot(self.vx, self.vy) < 10.0:
+                    self.vx = target_v.x * 0.5
+                    self.vy = target_v.y * 0.5
+                alpha = 1.0 - math.exp(-48.0 * dt)
+                self.vx += (target_v.x - self.vx) * alpha
+                self.vy += (target_v.y - self.vy) * alpha
+            else:
+                self.vx = 0.0
+                self.vy = 0.0
+
+            if math.hypot(self.vx, self.vy) > 0.1:
+                self.sub_x += self.vx * dt
+                self.sub_y += self.vy * dt
+                self._clamp_to_bounds(win)
+            return
+
+        else:
+            dx = (1.0 if right_held else 0.0) - (1.0 if left_held else 0.0)
+            dy = (1.0 if up_held else 0.0) - (1.0 if down_held else 0.0)
+            max_spd = CURSOR_MAX_SPEED * sens
+
+            if dx != 0.0 or dy != 0.0:
+                mag = math.hypot(dx, dy)
+                target_vx = (dx / mag) * max_spd
+                target_vy = (dy / mag) * max_spd
+                if is_press and math.hypot(self.vx, self.vy) < 10.0:
+                    self.vx = target_vx * 0.5
+                    self.vy = target_vy * 0.5
+                alpha = 1.0 - math.exp(-48.0 * dt)
+                self.vx += (target_vx - self.vx) * alpha
+                self.vy += (target_vy - self.vy) * alpha
+            else:
+                self.vx = 0.0
+                self.vy = 0.0
+
+            if math.hypot(self.vx, self.vy) > 0.1:
+                self.sub_x += self.vx * dt
+                self.sub_y += self.vy * dt
+                self._clamp_to_bounds(win)
+            return
+
     def modal(self, context, event):
         win = context.window
         if not S.active or not transform_active(win):
@@ -2216,10 +2343,17 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         if t in NUDGE_KEYS:
             if v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
                 self.held_nudge.add(t)
+                self._shift_held = bool(event.shift)
+                self._step(context, win, 0.016, is_press=True)
                 return {'RUNNING_MODAL'}
             elif v == 'RELEASE':
                 if t in self.held_nudge:
                     self.held_nudge.discard(t)
+                    if not self.held_nudge:
+                        self.vx = 0.0
+                        self.vy = 0.0
+                        self.ang_vel = 0.0
+                        self.scale_vel = 0.0
                     return {'RUNNING_MODAL'}
 
         if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL', 'PAGE_UP', 'PAGE_DOWN'}
@@ -2255,7 +2389,7 @@ class WM_OT_vim_nudge(bpy.types.Operator):
                 dx_p = self.sub_x - self.pivot_2d.x
                 dy_p = self.sub_y - self.pivot_2d.y
                 dist_p = math.hypot(dx_p, dy_p)
-                if dist_p >= 20.0:
+                if dist_p >= 15.0:
                     self.rot_angle = math.atan2(dy_p, dx_p)
                     self.scale_dist = dist_p
                     self.scale_dir = Vector((dx_p, dy_p)).normalized()
@@ -2265,129 +2399,9 @@ class WM_OT_vim_nudge(bpy.types.Operator):
             now = time.perf_counter()
             dt = min(max(now - self.last_t, 0.001), 0.05)
             self.last_t = now
-
-            sens = SENS_LEVELS[S.sens_idx]
-            if event.shift:
-                sens *= 0.12
-            max_spd = CURSOR_MAX_SPEED * sens
-
-            tr_type = get_active_transform_type(win)
-
-            up_held = ('NUMPAD_8' in self.held_nudge) or ('UP_ARROW' in self.held_nudge) or ('K' in self.held_nudge)
-            down_held = ('NUMPAD_2' in self.held_nudge) or ('DOWN_ARROW' in self.held_nudge) or ('J' in self.held_nudge)
-            right_held = ('NUMPAD_6' in self.held_nudge) or ('RIGHT_ARROW' in self.held_nudge) or ('L' in self.held_nudge)
-            left_held = ('NUMPAD_4' in self.held_nudge) or ('LEFT_ARROW' in self.held_nudge) or ('H' in self.held_nudge)
-
-            if tr_type == 'ROTATE':
-                rot_input = (1.0 if (up_held or right_held) else 0.0) - (1.0 if (down_held or left_held) else 0.0)
-                min_dist_to_edge = min(
-                    self.pivot_2d.x - self.min_x,
-                    self.max_x - self.pivot_2d.x,
-                    self.pivot_2d.y - self.min_y,
-                    self.max_y - self.pivot_2d.y
-                )
-                radius = min(max(min_dist_to_edge - 15.0, 30.0), 160.0)
-
-                target_w = rot_input * (max_spd / radius)
-                if rot_input != 0.0:
-                    alpha = 1.0 - math.exp(-CURSOR_ACCEL_RATE * dt)
-                    self.ang_vel += (target_w - self.ang_vel) * alpha
-                else:
-                    decay = math.exp(-CURSOR_FRICTION * dt)
-                    self.ang_vel *= decay
-                    if abs(self.ang_vel) < 0.01:
-                        self.ang_vel = 0.0
-
-                if abs(self.ang_vel) > 0.001:
-                    self.rot_angle += self.ang_vel * dt
-                    raw_x = self.pivot_2d.x + radius * math.cos(self.rot_angle)
-                    raw_y = self.pivot_2d.y + radius * math.sin(self.rot_angle)
-                    self.sub_x = max(min(raw_x, self.max_x), self.min_x)
-                    self.sub_y = max(min(raw_y, self.max_y), self.min_y)
-                    win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
-                return {'PASS_THROUGH'}
-
-            elif tr_type == 'RESIZE':
-                scale_input = (1.0 if (up_held or right_held) else 0.0) - (1.0 if (down_held or left_held) else 0.0)
-                target_v = scale_input * max_spd
-
-                if scale_input != 0.0:
-                    alpha = 1.0 - math.exp(-CURSOR_ACCEL_RATE * dt)
-                    self.scale_vel += (target_v - self.scale_vel) * alpha
-                else:
-                    decay = math.exp(-CURSOR_FRICTION * dt)
-                    self.scale_vel *= decay
-                    if abs(self.scale_vel) < 2.0:
-                        self.scale_vel = 0.0
-
-                if abs(self.scale_vel) > 0.1:
-                    new_dist = self.scale_dist + self.scale_vel * dt
-                    min_dist = 20.0
-                    if new_dist < min_dist:
-                        new_dist = min_dist
-                        if self.scale_vel < 0.0:
-                            self.scale_vel = 0.0
-
-                    raw_x = self.pivot_2d.x + self.scale_dir.x * new_dist
-                    raw_y = self.pivot_2d.y + self.scale_dir.y * new_dist
-
-                    clamped_x = max(min(raw_x, self.max_x), self.min_x)
-                    clamped_y = max(min(raw_y, self.max_y), self.min_y)
-
-                    if (clamped_x != raw_x or clamped_y != raw_y) and self.scale_vel > 0.0:
-                        self.scale_vel = 0.0
-
-                    self.scale_dist = new_dist
-                    self.sub_x = clamped_x
-                    self.sub_y = clamped_y
-                    win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
-                return {'PASS_THROUGH'}
-
-            elif self.locked_axis is not None and self.axis_dir_2d is not None:
-                axis_input = (1.0 if (up_held or right_held) else 0.0) - (1.0 if (down_held or left_held) else 0.0)
-                target_v = self.axis_dir_2d * (axis_input * max_spd)
-
-                if axis_input != 0.0:
-                    alpha = 1.0 - math.exp(-CURSOR_ACCEL_RATE * dt)
-                    self.vx += (target_v.x - self.vx) * alpha
-                    self.vy += (target_v.y - self.vy) * alpha
-                else:
-                    decay = math.exp(-CURSOR_FRICTION * dt)
-                    self.vx *= decay
-                    self.vy *= decay
-                    if math.hypot(self.vx, self.vy) < 2.0:
-                        self.vx = 0.0
-                        self.vy = 0.0
-
-                if math.hypot(self.vx, self.vy) > 0.1:
-                    self.sub_x += self.vx * dt
-                    self.sub_y += self.vy * dt
-                    self._clamp_to_bounds(win)
-                return {'PASS_THROUGH'}
-
-            else:
-                dx = (1.0 if right_held else 0.0) - (1.0 if left_held else 0.0)
-                dy = (1.0 if up_held else 0.0) - (1.0 if down_held else 0.0)
-                if dx != 0.0 or dy != 0.0:
-                    mag = math.hypot(dx, dy)
-                    target_vx = (dx / mag) * max_spd
-                    target_vy = (dy / mag) * max_spd
-                    alpha = 1.0 - math.exp(-CURSOR_ACCEL_RATE * dt)
-                    self.vx += (target_vx - self.vx) * alpha
-                    self.vy += (target_vy - self.vy) * alpha
-                else:
-                    decay = math.exp(-CURSOR_FRICTION * dt)
-                    self.vx *= decay
-                    self.vy *= decay
-                    if math.hypot(self.vx, self.vy) < 2.0:
-                        self.vx = 0.0
-                        self.vy = 0.0
-
-                if math.hypot(self.vx, self.vy) > 0.1:
-                    self.sub_x += self.vx * dt
-                    self.sub_y += self.vy * dt
-                    self._clamp_to_bounds(win)
-                return {'PASS_THROUGH'}
+            self._shift_held = bool(event.shift)
+            self._step(context, win, dt, is_press=False)
+            return {'PASS_THROUGH'}
 
         return {'PASS_THROUGH'}
 
@@ -2749,22 +2763,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 S.last_transform_type = 'RESIZE'
             else:
                 S.last_transform_type = 'TRANSLATE'
-            if area and area.type == 'VIEW_3D':
-                center_info = get_selection_center_2d(context, area)
-                if center_info and center_info[0] is not None and center_info[1] is not None:
-                    cx, cy = center_info[0], center_info[1]
-                    margin = 40
-                    if margin < cx < win.width - margin and margin < cy < win.height - margin:
-                        if t == 'G':
-                            win.cursor_warp(int(cx), int(cy))
-                        elif t in {'R', 'S'}:
-                            if cx + 140 <= win.width - margin:
-                                warp_x = cx + 140
-                            elif cx - 140 >= margin:
-                                warp_x = cx - 140
-                            else:
-                                warp_x = cx + max(min(140, win.width - margin - cx), -(cx - margin))
-                            win.cursor_warp(int(warp_x), int(cy))
 
         prefs = get_preferences(context)
         use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
