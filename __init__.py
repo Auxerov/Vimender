@@ -574,9 +574,7 @@ class _State:
         self.cursor_mode = False
         self.cursor_plane = 'XY'
         self.right_alt_down = False
-        self.tab_down = False
-        self.space_down = False
-        self.active_search_title = None
+        self.search_active = False
         self.search_open_time = 0.0
         self.save_dialog_open = False
         self.save_dialog_action = 'QUIT'
@@ -588,7 +586,7 @@ class _State:
     def clear_hint(self):
         self.mode = None
         self.kind = None
-        self.active_search_title = None
+        self.search_active = False
         self.save_dialog_open = False
         self.action = 'NORMAL'
         self.box_extend = False
@@ -2052,59 +2050,6 @@ def draw_cb():
     _fill(_rect(x0, y0, x1, y0 + th + 2 * pad), (0.0, 0.0, 0.0, 0.65))
     _text(x0 + pad, y0 + pad, label, border_col)
 
-    if S.active_search_title:
-        title = S.active_search_title.upper()
-        _font_size(int(15 * ui))
-        tw_s, th_s = blf.dimensions(0, title)
-        hint_s = "[Tab + Space] Kapat"
-        _font_size(int(11 * ui))
-        hw_s, hh_s = blf.dimensions(0, hint_s)
-        bw_s = max(tw_s, hw_s) + int(36 * ui)
-        bh_s = th_s + hh_s + int(18 * ui)
-        bx0 = int((w - bw_s) / 2)
-        by0 = h - bh_s - int(20 * ui)
-        bx1 = bx0 + bw_s
-        by1 = by0 + bh_s
-        _fill(_rect(bx0, by0, bx1, by1), (0.10, 0.11, 0.14, 0.95))
-        _fill(_rect(bx0, by0, bx1, by0 + 2) + _rect(bx0, by1 - 2, bx1, by1) +
-              _rect(bx0, by0, bx0 + 2, by1) + _rect(bx1 - 2, by0, bx1, by1), (0.2, 0.85, 0.5, 0.95))
-        _font_size(int(15 * ui))
-        _text(bx0 + int((bw_s - tw_s) / 2), by0 + hh_s + int(10 * ui), title, (1.0, 1.0, 1.0, 1.0))
-        _font_size(int(11 * ui))
-        _text(bx0 + int((bw_s - hw_s) / 2), by0 + int(6 * ui), hint_s, (0.7, 0.7, 0.7, 1.0))
-
-    if S.save_dialog_open:
-        badge_w = int(24 * ui)
-        badge_h = int(24 * ui)
-        bw = int(120 * ui)
-        bh = int(36 * ui)
-        gap = int(14 * ui)
-        total_w = 3 * bw + 2 * gap
-        bx_start = int((w - total_w) / 2)
-        by0 = int(h / 2 - 46 * ui)
-        by1 = by0 + bh
-
-        buttons_info = [
-            (bx_start, "Y", "Save"),
-            (bx_start + bw + gap, "N", "Don't Save"),
-            (bx_start + 2 * (bw + gap), "C", "Cancel"),
-        ]
-        for x0_b, key_char, btn_text in buttons_info:
-            x1_b = x0_b + bw
-            _fill(_rect(x0_b, by0, x1_b, by1), (0.16, 0.16, 0.20, 0.95))
-            _fill(_rect(x0_b, by0, x1_b, by0 + 1) + _rect(x0_b, by1 - 1, x1_b, by1) +
-                  _rect(x0_b, by0, x0_b + 1, by1) + _rect(x1_b - 1, by0, x1_b, by1), (0.35, 0.35, 0.40, 0.95))
-            bx0 = x0_b + int(6 * ui)
-            bx1 = bx0 + badge_w
-            badge_y0 = by0 + int((bh - badge_h) / 2)
-            badge_y1 = badge_y0 + badge_h
-            _fill(_rect(bx0, badge_y0, bx1, badge_y1), HINT_BG)
-            _font_size(int(13 * ui))
-            kw, kh = blf.dimensions(0, key_char)
-            _text(bx0 + int((badge_w - kw) / 2), badge_y0 + int((badge_h - kh) / 2), key_char, HINT_TEXT)
-            tw_b, th_b = blf.dimensions(0, btn_text)
-            _text(bx1 + int(6 * ui), by0 + int((bh - th_b) / 2), btn_text, (0.95, 0.95, 0.95, 1.0))
-
     gpu.state.blend_set('NONE')
 
 
@@ -3062,41 +3007,24 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if (t in {'N', 'n'} or event.unicode in {'n', 'N'}) and not (event.ctrl or event.alt or event.oskey):
                     execute_save_action(S.save_dialog_action, 'DONT_SAVE')
                     return {'RUNNING_MODAL'}
-                if (t in {'C', 'c', 'ESC'} or event.unicode in {'c', 'C'}) and not (event.ctrl or event.alt or event.oskey):
+                if (t in {'C', 'c', 'ESC', 'TAB'} or event.unicode in {'c', 'C'}) and not (event.ctrl or event.alt or event.oskey):
                     execute_save_action(S.save_dialog_action, 'CANCEL')
                     return {'RUNNING_MODAL'}
 
-        if t == 'TAB':
-            if v == 'PRESS':
-                S.tab_down = True
-                if S.space_down or getattr(event, 'key_modifier', None) == 'SPACE':
-                    S.active_search_title = None
-                    S.save_dialog_open = False
-                    send_fake_escape()
-                    tag_all()
-                    return {'RUNNING_MODAL'}
-            elif v == 'RELEASE':
-                S.tab_down = False
+        if t == 'TAB' and v == 'PRESS':
+            if S.search_active:
+                S.search_active = False
+                send_fake_escape()
+                tag_all()
+                return {'RUNNING_MODAL'}
 
-        if t == 'SPACE':
-            if v == 'PRESS':
-                S.space_down = True
-                if S.tab_down or getattr(event, 'key_modifier', None) == 'TAB':
-                    S.active_search_title = None
-                    S.save_dialog_open = False
-                    send_fake_escape()
-                    tag_all()
-                    return {'RUNNING_MODAL'}
-            elif v == 'RELEASE':
-                S.space_down = False
-
-        if S.active_search_title:
+        if S.search_active:
             if t == 'ESC' and v == 'PRESS':
-                S.active_search_title = None
+                S.search_active = False
                 tag_all()
             elif t in MOUSE_CANCEL and v == 'PRESS':
                 if time.time() - S.search_open_time > 0.4:
-                    S.active_search_title = None
+                    S.search_active = False
                     tag_all()
 
         if S.mode:
@@ -3163,11 +3091,24 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
         if check_shortcut(prefs, 'search_menu', event, 'SPACE', fallback_ctrl=False) and v == 'PRESS':
             if not S.mode and not (area and (area.type in PASS_KEYS_IN or area.type in anim_editors)) and not transform_active(win):
+                target_area = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
+                if not target_area or target_area.type != 'VIEW_3D':
+                    target_area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), target_area or context.area)
+                target_region = window_region(target_area) if target_area else None
                 try:
-                    with context.temp_override(window=win):
-                        bpy.ops.wm.vim_general_search('INVOKE_DEFAULT')
+                    if target_area and target_region:
+                        if not (target_region.x <= mx <= target_region.x + target_region.width and
+                                target_region.y <= my <= target_region.y + target_region.height):
+                            win.cursor_warp(int(target_region.x + target_region.width / 2),
+                                            int(target_region.y + target_region.height / 2))
+                        with context.temp_override(window=win, area=target_area, region=target_region):
+                            bpy.ops.wm.search_menu('INVOKE_DEFAULT')
+                    else:
+                        bpy.ops.wm.search_menu('INVOKE_DEFAULT')
+                    S.search_active = True
+                    S.search_open_time = time.time()
                 except Exception as e:
-                    print(f"[Vimender] general_search error: {e}")
+                    print(f"[Vimender] search_menu error: {e}")
                 return {'RUNNING_MODAL'}
 
         if check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) and v == 'PRESS':
@@ -3895,6 +3836,8 @@ class WM_OT_vim_search_object(bpy.types.Operator):
         return {'CANCELLED'}
 
     def invoke(self, context, event):
+        S.search_active = True
+        S.search_open_time = time.time()
         context.window_manager.invoke_search_popup(self)
         return {'FINISHED'}
 
@@ -3913,7 +3856,7 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
             ("VIM_PAN", "Pan Mode", "Vimender: Camera Pan navigation", 'VIEW_PAN', 2),
             ("VIM_CURSOR", "3D Cursor Mode", "Vimender: Smooth 3D Cursor control (HJKL)", 'PIVOT_CURSOR', 3),
             ("VIM_PREVIEW", "Preview Mode", "Vimender: Preview hover and select mode", 'RESTRICT_VIEW_OFF', 4),
-            ("VIM_PREFERENCES", "Vimender: Preferences / Kısayollar", "Open Vimender preferences and customize keymaps", 'PREFERENCES', 5),
+            ("VIM_PREFERENCES", "Vimender: Preferences / Keymaps", "Open Vimender preferences and customize keymaps", 'PREFERENCES', 5),
 
             ("BL_OBJECT", "Blender: Object Mode", "Switch active object to Object Mode", 'OBJECT_DATAMODE', 10),
             ("BL_EDIT", "Blender: Edit Mode", "Switch active object to Edit Mode", 'EDITMODE_HLT', 11),
@@ -3962,7 +3905,7 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
     )
 
     def execute(self, context):
-        S.active_search_title = None
+        S.search_active = False
         tgt = self.target
         win = context.window
 
@@ -4081,7 +4024,7 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
         return {'CANCELLED'}
 
     def invoke(self, context, event):
-        S.active_search_title = "Mode Search"
+        S.search_active = True
         S.search_open_time = time.time()
         tag_all()
         context.window_manager.invoke_search_popup(self)
@@ -4177,7 +4120,7 @@ class WM_OT_vim_fuzzy_search(bpy.types.Operator):
     )
 
     def execute(self, context):
-        S.active_search_title = None
+        S.search_active = False
         tgt = self.target
         if not tgt or tgt == "NONE":
             return {'CANCELLED'}
@@ -4452,7 +4395,7 @@ class WM_OT_vim_fuzzy_search(bpy.types.Operator):
         return {'CANCELLED'}
 
     def invoke(self, context, event):
-        S.active_search_title = "Data Search"
+        S.search_active = True
         S.search_open_time = time.time()
         tag_all()
         context.window_manager.invoke_search_popup(self)
@@ -4466,12 +4409,12 @@ class WM_OT_vim_general_search(bpy.types.Operator):
     bl_options = {'REGISTER'}
 
     def execute(self, context):
-        S.active_search_title = None
+        S.search_active = False
         tag_all()
         return {'FINISHED'}
 
     def invoke(self, context, event):
-        S.active_search_title = "General Search"
+        S.search_active = True
         S.search_open_time = time.time()
         tag_all()
         win = context.window
@@ -4480,6 +4423,8 @@ class WM_OT_vim_general_search(bpy.types.Operator):
         target_region = window_region(target_area) if target_area else None
         try:
             if target_area and target_region:
+                win.cursor_warp(int(target_region.x + target_region.width / 2),
+                                int(target_region.y + target_region.height / 2))
                 with context.temp_override(window=win, area=target_area, region=target_region):
                     bpy.ops.wm.search_menu('INVOKE_DEFAULT')
             else:
@@ -4577,8 +4522,12 @@ class WM_OT_vim_close_search(bpy.types.Operator):
     bl_description = "Close active search bar or popup"
     bl_options = {'REGISTER', 'INTERNAL'}
 
+    @classmethod
+    def poll(cls, context):
+        return bool(S.search_active)
+
     def execute(self, context):
-        S.active_search_title = None
+        S.search_active = False
         S.save_dialog_open = False
         send_fake_escape()
         tag_all()
@@ -4595,8 +4544,7 @@ def register_search_key():
     kmi2 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'F3', 'PRESS', ctrl=True)
     kmi3 = km.keymap_items.new(WM_OT_vim_search_mode.bl_idname, 'SPACE', 'PRESS', alt=True)
     kmi4 = km.keymap_items.new(WM_OT_vim_fuzzy_search.bl_idname, 'SPACE', 'PRESS', alt=True, ctrl=True)
-    kmi_close1 = km.keymap_items.new(WM_OT_vim_close_search.bl_idname, 'SPACE', 'PRESS', key_modifier='TAB')
-    kmi_close2 = km.keymap_items.new(WM_OT_vim_close_search.bl_idname, 'TAB', 'PRESS', key_modifier='SPACE')
+    kmi_close = km.keymap_items.new(WM_OT_vim_close_search.bl_idname, 'TAB', 'PRESS')
     kmi_quit = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'Q', 'PRESS', ctrl=True)
     kmi_quit.properties.action = 'QUIT'
     kmi_new = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'N', 'PRESS', ctrl=True)
@@ -4604,7 +4552,7 @@ def register_search_key():
     kmi_open = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'O', 'PRESS', ctrl=True)
     kmi_open.properties.action = 'OPEN'
     _addon_keymaps.extend([(km, kmi1), (km, kmi2), (km, kmi3), (km, kmi4),
-                           (km, kmi_close1), (km, kmi_close2),
+                           (km, kmi_close),
                            (km, kmi_quit), (km, kmi_new), (km, kmi_open)])
 
 
