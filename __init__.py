@@ -92,6 +92,34 @@ CONSUME_KEYS = {
     'SPACE', 'RET', 'NUMPAD_ENTER', 'TAB', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE',
     'SIX', 'SEVEN', 'EIGHT', 'NINE', 'ZERO',
 }
+NUM_TO_PAD = {
+    'ONE': (1, 'NUMPAD_1'),
+    'TWO': (2, 'NUMPAD_2'),
+    'THREE': (3, 'NUMPAD_3'),
+    'FOUR': (4, 'NUMPAD_4'),
+    'FIVE': (5, 'NUMPAD_5'),
+    'SIX': (6, 'NUMPAD_6'),
+    'SEVEN': (7, 'NUMPAD_7'),
+    'EIGHT': (8, 'NUMPAD_8'),
+    'NINE': (9, 'NUMPAD_9'),
+    'ZERO': (0, 'NUMPAD_0'),
+}
+UNICODE_TO_PAD = {
+    '1': (1, 'NUMPAD_1'),
+    '2': (2, 'NUMPAD_2'),
+    '3': (3, 'NUMPAD_3'),
+    '4': (4, 'NUMPAD_4'),
+    '5': (5, 'NUMPAD_5'),
+    '6': (6, 'NUMPAD_6'),
+    '7': (7, 'NUMPAD_7'),
+    '8': (8, 'NUMPAD_8'),
+    '9': (9, 'NUMPAD_9'),
+    '0': (0, 'NUMPAD_0'),
+}
+NUMPAD_PIE_KEYS = {
+    'NUMPAD_0', 'NUMPAD_1', 'NUMPAD_2', 'NUMPAD_3', 'NUMPAD_4',
+    'NUMPAD_5', 'NUMPAD_6', 'NUMPAD_7', 'NUMPAD_8', 'NUMPAD_9',
+}
 NUDGE_DIRS = {
     'NUMPAD_8': (0, 1), 'NUMPAD_2': (0, -1),
     'NUMPAD_4': (-1, 0), 'NUMPAD_6': (1, 0),
@@ -578,6 +606,9 @@ class _State:
         self.search_open_time = 0.0
         self.save_dialog_open = False
         self.save_dialog_action = 'QUIT'
+        self.pie_active = False
+        self.pie_open_time = 0.0
+        self.pie_just_selected_time = 0.0
         self.prev_mode_state = {}
         self.smooth_cursor = _Smooth3DCursor()
         self.preview_mode = True
@@ -588,6 +619,9 @@ class _State:
         self.kind = None
         self.search_active = False
         self.save_dialog_open = False
+        self.pie_active = False
+        self.pie_open_time = 0.0
+        self.pie_just_selected_time = 0.0
         self.action = 'NORMAL'
         self.box_extend = False
         self.vertex_mode = False
@@ -852,6 +886,32 @@ def send_fake_escape():
             return
         d_ptr = ctypes.c_void_p(disp)
         sym = 0xff1b
+        kc = x11.XKeysymToKeycode(d_ptr, ctypes.c_ulong(sym))
+        if kc:
+            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), True, 0)
+            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), False, 0)
+            x11.XFlush(d_ptr)
+    except Exception:
+        pass
+    finally:
+        if disp and x11:
+            try:
+                x11.XCloseDisplay(ctypes.c_void_p(disp))
+            except Exception:
+                pass
+
+
+def send_fake_numpad(num):
+    x11, xtst = _get_x11()
+    if not x11 or not xtst:
+        return
+    disp = None
+    try:
+        disp = x11.XOpenDisplay(None)
+        if not disp:
+            return
+        d_ptr = ctypes.c_void_p(disp)
+        sym = 0xffb0 + int(num)
         kc = x11.XKeysymToKeycode(d_ptr, ctypes.c_ulong(sym))
         if kc:
             xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), True, 0)
@@ -2886,6 +2946,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if region is None:
             return
         S.pie_ptr = area.as_pointer()
+        S.pie_active = True
+        S.pie_open_time = time.time()
         with context.temp_override(window=win, area=area, region=region):
             context.window_manager.popup_menu_pie(event, draw_editor_pie, title="Editor")
 
@@ -2971,6 +3033,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if t in {'TIMER', 'TIMER_REPORT'}:
             if S.prefix and time.time() - S.prefix_t > S.prefix_timeout:
                 self._end_prefix(context)
+            if S.pie_active and time.time() - S.pie_open_time > 5.0:
+                S.pie_active = False
             if S.mode == 'BOX2':
                 a = area_by_ptr(win, S.hint_ptr)
                 r = window_region(a) if a else None
@@ -3384,6 +3448,62 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
         if S.preview_mode:
             return {'PASS_THROUGH'}
+
+        if not S.navigation_mode and not S.cursor_mode and not S.mode:
+            is_pie_trigger = False
+            if v == 'PRESS':
+                if t in {'Z', 'ACCENT_GRAVE', 'TILDE', 'Q'} and not (event.ctrl or event.alt or event.oskey):
+                    is_pie_trigger = True
+                elif t == 'W' and event.ctrl and not (event.alt or event.oskey):
+                    is_pie_trigger = True
+                elif t == 'TAB' and event.ctrl and not (event.alt or event.oskey):
+                    is_pie_trigger = True
+                elif t == 'S' and event.shift and not (event.ctrl or event.alt or event.oskey):
+                    is_pie_trigger = True
+                elif t == 'SPACE' and event.shift and not (event.ctrl or event.alt or event.oskey):
+                    is_pie_trigger = True
+                elif t in {'COMMA', 'PERIOD'} and (event.alt or event.ctrl or event.shift):
+                    is_pie_trigger = True
+            if is_pie_trigger:
+                S.pie_active = True
+                S.pie_open_time = time.time()
+
+        if time.time() - getattr(S, 'pie_just_selected_time', 0.0) < 0.15:
+            if t in NUMPAD_PIE_KEYS:
+                return {'PASS_THROUGH'}
+
+        is_pie = False
+        if not S.search_active and not S.save_dialog_open and not S.mode:
+            if S.pie_active and (time.time() - S.pie_open_time < 5.0):
+                is_pie = True
+            elif getattr(context, 'region_popup', None) is not None:
+                is_pie = True
+
+        if is_pie:
+            if t in {'ESC', 'RET', 'NUMPAD_ENTER', 'TAB'} and v == 'PRESS':
+                S.pie_active = False
+            elif t in MOUSE_CANCEL and v == 'PRESS' and time.time() - S.pie_open_time > 0.15:
+                S.pie_active = False
+            elif t in NUMPAD_PIE_KEYS:
+                S.pie_active = False
+                return {'PASS_THROUGH'}
+            elif not (event.ctrl or event.alt or event.oskey):
+                target_pair = NUM_TO_PAD.get(t) or UNICODE_TO_PAD.get(event.unicode)
+                if target_pair:
+                    num_val, pad_name = target_pair
+                    if v == 'PRESS':
+                        S.pie_active = False
+                        S.pie_just_selected_time = time.time()
+                        try:
+                            win.event_simulate(type=pad_name, value='PRESS')
+                            win.event_simulate(type=pad_name, value='RELEASE')
+                        except Exception:
+                            pass
+                        send_fake_numpad(num_val)
+                        tag_all()
+                        return {'RUNNING_MODAL'}
+                    elif v == 'RELEASE':
+                        return {'RUNNING_MODAL'}
 
         target_v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
         if not target_v3d or target_v3d.type != 'VIEW_3D':
