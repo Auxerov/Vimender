@@ -2773,33 +2773,17 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     S.workspace_nav = False
                     S.preview_mode = True
                     self.report({'INFO'}, "Vimender: PREVIEW MODE")
-                    self._set_status(context)
-                    tag_all()
-                    return {'RUNNING_MODAL'}
-                elif S.preview_mode:
-                    if not is_edit_mode(context):
-                        S.preview_mode = False
-                        S.navigation_mode = True
-                        S.workspace_nav = True
-                        target_a = area or area_at(win, mx, my) or (win.screen.areas[0] if win and win.screen and win.screen.areas else None)
-                        if target_a:
-                            S.hover_ptr = target_a.as_pointer()
-                        self.report({'INFO'}, "Vimender: NAVIGATION MODE")
-                        self._set_status(context)
-                        tag_all()
-                        return {'RUNNING_MODAL'}
-                    else:
-                        return {'PASS_THROUGH'}
                 else:
+                    S.preview_mode = False
                     S.navigation_mode = True
                     S.workspace_nav = True
                     target_a = area or area_at(win, mx, my) or (win.screen.areas[0] if win and win.screen and win.screen.areas else None)
                     if target_a:
                         S.hover_ptr = target_a.as_pointer()
                     self.report({'INFO'}, "Vimender: NAVIGATION MODE")
-                    self._set_status(context)
-                    tag_all()
-                    return {'RUNNING_MODAL'}
+                self._set_status(context)
+                tag_all()
+                return {'RUNNING_MODAL'}
 
         if check_shortcut(prefs, 'preview', event, 'Y', fallback_ctrl=True):
             if v == 'RELEASE':
@@ -2809,7 +2793,12 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     self._exit_cursor_mode(context)
                 if S.mode:
                     self._cancel_hint(context, win)
-                if S.preview_mode or S.navigation_mode or S.workspace_nav:
+                if S.navigation_mode or S.workspace_nav:
+                    S.navigation_mode = False
+                    S.workspace_nav = False
+                    S.preview_mode = True
+                    self.report({'INFO'}, "Vimender: PREVIEW MODE")
+                elif S.preview_mode:
                     S.preview_mode = False
                     S.navigation_mode = False
                     S.workspace_nav = False
@@ -2830,7 +2819,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 return {'PASS_THROUGH'}
 
             if ((t in {'ESC', 'RET', 'NUMPAD_ENTER'}) or
-                check_shortcut(prefs, 'nav', event, 'B', fallback_ctrl=True)) and v == 'PRESS':
+                check_shortcut(prefs, 'nav', event, 'B', fallback_ctrl=True) or
+                check_shortcut(prefs, 'preview', event, 'Y', fallback_ctrl=True)) and v == 'PRESS':
                 S.navigation_mode = False
                 S.workspace_nav = False
                 S.preview_mode = True
@@ -3110,6 +3100,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if check_shortcut(prefs, 'preview', event, 'Y', fallback_ctrl=True) and v == 'PRESS':
             self._cancel_hint(context, win)
             S.preview_mode = True
+            S.navigation_mode = False
+            S.workspace_nav = False
             self.report({'INFO'}, "Vimender: PREVIEW MODE")
             self._set_status(context)
             tag_all()
