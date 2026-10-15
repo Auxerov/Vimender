@@ -857,7 +857,10 @@ def cycle_workspace(context, direction='NEXT'):
 
     try:
         with context.temp_override(window=win):
-            res = bpy.ops.screen.workspace_cycle('INVOKE_DEFAULT', direction=direction)
+            try:
+                res = bpy.ops.screen.workspace_cycle(direction=direction)
+            except Exception:
+                res = bpy.ops.screen.workspace_cycle('EXEC_DEFAULT', direction=direction)
             if 'FINISHED' in res:
                 if win.screen and win.screen.areas:
                     first_area = win.screen.areas[0]
@@ -2778,6 +2781,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                         S.preview_mode = False
                         S.navigation_mode = True
                         S.workspace_nav = True
+                        target_a = area or area_at(win, mx, my) or (win.screen.areas[0] if win and win.screen and win.screen.areas else None)
+                        if target_a:
+                            S.hover_ptr = target_a.as_pointer()
                         self.report({'INFO'}, "Vimender: NAVIGATION MODE")
                         self._set_status(context)
                         tag_all()
@@ -2787,6 +2793,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 else:
                     S.navigation_mode = True
                     S.workspace_nav = True
+                    target_a = area or area_at(win, mx, my) or (win.screen.areas[0] if win and win.screen and win.screen.areas else None)
+                    if target_a:
+                        S.hover_ptr = target_a.as_pointer()
                     self.report({'INFO'}, "Vimender: NAVIGATION MODE")
                     self._set_status(context)
                     tag_all()
@@ -2816,50 +2825,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
         if S.navigation_mode or S.workspace_nav:
             now = time.perf_counter()
-            if t in {'NUMPAD_4', 'NUMPAD_6', 'LEFT_ARROW', 'RIGHT_ARROW'}:
-                if v == 'PRESS':
-                    if now - getattr(self, '_last_ws_cycle_t', 0.0) >= 0.16:
-                        self._last_ws_cycle_t = now
-                        cycle_workspace(context, 'PREV' if t in {'NUMPAD_4', 'LEFT_ARROW'} else 'NEXT')
-                        self._set_status(context)
-                        tag_all()
-                    return {'RUNNING_MODAL'}
-                elif v == 'RELEASE':
-                    return {'RUNNING_MODAL'}
 
-            if t in {'NUMPAD_8', 'NUMPAD_2', 'UP_ARROW', 'DOWN_ARROW'}:
-                if v == 'PRESS':
-                    if now - getattr(self, '_last_editor_nav_t', 0.0) >= 0.12:
-                        self._last_editor_nav_t = now
-                        direction = 'UP' if t in {'NUMPAD_8', 'UP_ARROW'} else 'DOWN'
-                        navigate_in_editor(context, win, area, direction)
-                        self._set_status(context)
-                        tag_all()
-                    return {'RUNNING_MODAL'}
-                elif v == 'RELEASE':
-                    return {'RUNNING_MODAL'}
-
-            if t in {'H', 'J', 'K', 'L'} and not (event.ctrl or event.alt or event.oskey):
-                if v == 'PRESS':
-                    target_a = area or area_by_ptr(win, S.hover_ptr)
-                    if target_a is not None:
-                        dir_map = {'H': 'LEFT', 'L': 'RIGHT', 'K': 'UP', 'J': 'DOWN'}
-                        tgt = neighbor_area(win, target_a, dir_map[t])
-                        if tgt is not None:
-                            self._focus_area(win, tgt)
-                return {'RUNNING_MODAL'}
-
-            if t == 'O' and not (event.ctrl or event.alt or event.oskey):
-                if v == 'PRESS':
-                    areas = sorted(focusable_areas(win), key=lambda a: (-a.y, a.x))
-                    ptrs = [a.as_pointer() for a in areas]
-                    target_a = area or area_by_ptr(win, S.hover_ptr)
-                    if target_a and target_a.as_pointer() in ptrs:
-                        nxt = areas[(ptrs.index(target_a.as_pointer()) + 1) % len(areas)]
-                        self._focus_area(win, nxt)
-                    elif areas:
-                        self._focus_area(win, areas[0])
-                return {'RUNNING_MODAL'}
+            if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
+                return {'PASS_THROUGH'}
 
             if ((t in {'ESC', 'RET', 'NUMPAD_ENTER'}) or
                 check_shortcut(prefs, 'nav', event, 'B', fallback_ctrl=True)) and v == 'PRESS':
@@ -2871,12 +2839,73 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 tag_all()
                 return {'RUNNING_MODAL'}
 
-            if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
-                return {'PASS_THROUGH'}
-
             if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL'}) and event.ctrl and v == 'PRESS':
                 change_sens(1 if (t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL'} or event.unicode == '+') else -1)
                 return {'RUNNING_MODAL'}
+
+            is_alt = bool(event.alt) and not (event.ctrl or event.oskey)
+
+            if is_alt:
+                ws_dir = None
+                if t in {'H', 'LEFT_ARROW', 'NUMPAD_4'} or event.unicode in {'h', 'H'}:
+                    ws_dir = 'PREV'
+                elif t in {'L', 'RIGHT_ARROW', 'NUMPAD_6'} or event.unicode in {'l', 'L'}:
+                    ws_dir = 'NEXT'
+                elif t in {'K', 'UP_ARROW', 'NUMPAD_8'} or event.unicode in {'k', 'K'}:
+                    ws_dir = 'PREV'
+                elif t in {'J', 'DOWN_ARROW', 'NUMPAD_2'} or event.unicode in {'j', 'J'}:
+                    ws_dir = 'NEXT'
+
+                if ws_dir:
+                    if v == 'PRESS':
+                        if now - getattr(self, '_last_ws_cycle_t', 0.0) >= 0.16:
+                            self._last_ws_cycle_t = now
+                            cycle_workspace(context, ws_dir)
+                            if win and win.workspace:
+                                self.report({'INFO'}, f"Vimender: Workspace -> {win.workspace.name}")
+                            self._set_status(context)
+                            tag_all()
+                    return {'RUNNING_MODAL'}
+
+            if not (event.ctrl or event.alt or event.oskey):
+                area_dir = None
+                if t in {'H', 'LEFT_ARROW', 'NUMPAD_4'} or event.unicode in {'h', 'H'}:
+                    area_dir = 'LEFT'
+                elif t in {'L', 'RIGHT_ARROW', 'NUMPAD_6'} or event.unicode in {'l', 'L'}:
+                    area_dir = 'RIGHT'
+                elif t in {'K', 'UP_ARROW', 'NUMPAD_8'} or event.unicode in {'k', 'K'}:
+                    area_dir = 'UP'
+                elif t in {'J', 'DOWN_ARROW', 'NUMPAD_2'} or event.unicode in {'j', 'J'}:
+                    area_dir = 'DOWN'
+
+                if area_dir:
+                    if v == 'PRESS':
+                        target_a = area or area_by_ptr(win, S.hover_ptr) or area_at(win, mx, my) or context.area
+                        if not target_a and win and win.screen and win.screen.areas:
+                            target_a = win.screen.areas[0]
+                        if target_a is not None:
+                            tgt = neighbor_area(win, target_a, area_dir)
+                            if tgt is not None:
+                                self._focus_area(win, tgt)
+                            else:
+                                self._focus_area(win, target_a)
+                            self._set_status(context)
+                            tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if t == 'O' or event.unicode in {'o', 'O'}:
+                    if v == 'PRESS':
+                        areas = sorted(focusable_areas(win), key=lambda a: (-a.y, a.x))
+                        ptrs = [a.as_pointer() for a in areas]
+                        target_a = area or area_by_ptr(win, S.hover_ptr) or area_at(win, mx, my)
+                        if target_a and target_a.as_pointer() in ptrs:
+                            nxt = areas[(ptrs.index(target_a.as_pointer()) + 1) % len(areas)]
+                            self._focus_area(win, nxt)
+                        elif areas:
+                            self._focus_area(win, areas[0])
+                        self._set_status(context)
+                        tag_all()
+                    return {'RUNNING_MODAL'}
 
             return {'RUNNING_MODAL'}
 
@@ -3091,6 +3120,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             S.preview_mode = False
             S.navigation_mode = True
             S.workspace_nav = True
+            target_a = area or area_at(win, mx, my) or (win.screen.areas[0] if win and win.screen and win.screen.areas else None)
+            if target_a:
+                S.hover_ptr = target_a.as_pointer()
             self.report({'INFO'}, "Vimender: NAVIGATION MODE")
             self._set_status(context)
             tag_all()
