@@ -355,6 +355,7 @@ class _Smooth3DCursor:
         sens = SENS_LEVELS[S.sens_idx]
         area = area_by_ptr(win, S.hover_ptr) or context.area
         dist_factor = 1.0
+        rv3d = None
         if area and area.type == 'VIEW_3D':
             rv3d = area.spaces.active.region_3d if area.spaces else None
             if rv3d:
@@ -364,16 +365,20 @@ class _Smooth3DCursor:
         if self.shift:
             speed *= 0.15
 
-        if S.cursor_plane == 'XY':
-            dx_val = self.vx * speed * dt
-            dy_val = self.vy * speed * dt
-            dz_val = 0.0
+        if S.cursor_plane == 'VIEW':
+            if rv3d:
+                view_mat = rv3d.view_matrix.inverted()
+                view_r = (view_mat.to_3x3() @ Vector((1.0, 0.0, 0.0))).normalized()
+                view_u = (view_mat.to_3x3() @ Vector((0.0, 1.0, 0.0))).normalized()
+                delta = view_r * (self.vx * speed * dt) + view_u * (self.vy * speed * dt)
+            else:
+                delta = Vector((self.vx * speed * dt, self.vy * speed * dt, 0.0))
+        elif S.cursor_plane == 'XZ':
+            delta = Vector((self.vx * speed * dt, 0.0, self.vy * speed * dt))
+        elif S.cursor_plane in {'YZ', 'ZY'}:
+            delta = Vector((0.0, self.vx * speed * dt, self.vy * speed * dt))
         else:
-            dx_val = 0.0
-            dy_val = self.vx * speed * dt
-            dz_val = self.vy * speed * dt
-
-        delta = Vector((dx_val, dy_val, dz_val))
+            delta = Vector((self.vx * speed * dt, self.vy * speed * dt, 0.0))
         try:
             context.scene.cursor.location = context.scene.cursor.location + delta
             for a in win.screen.areas:
@@ -2118,7 +2123,7 @@ class WM_OT_vim_nudge(bpy.types.Operator):
                 pass
         try:
             if S.cursor_mode:
-                txt = f"Vimender: CURSOR MODE - {S.cursor_plane}"
+                txt = f"Vimender: CURSOR MODE [{S.cursor_plane}] | HJKL: Move | TAB: Plane | 0: Origin | S: Snap | Esc: Exit"
             elif S.navigation_mode or S.workspace_nav:
                 txt = "Vimender: NAVIGATION MODE"
             elif S.preview_mode:
@@ -2444,6 +2449,99 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         return {'PASS_THROUGH'}
 
 
+def enter_cursor_mode(context, report_fn=None):
+    S.prev_mode_state = {
+        'preview_mode': S.preview_mode,
+        'navigation_mode': S.navigation_mode,
+        'workspace_nav': S.workspace_nav,
+        'nav_mode': S.nav_mode,
+    }
+    S.preview_mode = False
+    S.navigation_mode = False
+    S.workspace_nav = False
+    S.cursor_mode = True
+    S.smooth_cursor.reset()
+    if report_fn:
+        report_fn({'INFO'}, f"Vimender: CURSOR MODE - {S.cursor_plane}")
+    try:
+        context.workspace.status_text_set(f"Vimender: CURSOR MODE [{S.cursor_plane}] | HJKL: Move | TAB: Plane | 0: Origin | S: Snap | Esc: Exit")
+    except Exception:
+        pass
+    tag_all()
+
+
+def exit_cursor_mode(context, report_fn=None):
+    S.cursor_mode = False
+    S.smooth_cursor.reset()
+    prev = getattr(S, 'prev_mode_state', {})
+    S.preview_mode = prev.get('preview_mode', True)
+    S.navigation_mode = prev.get('navigation_mode', False)
+    S.workspace_nav = prev.get('workspace_nav', False)
+    S.nav_mode = prev.get('nav_mode', 'ORBIT')
+    mode_name = "PREVIEW" if S.preview_mode else ("NAVIGATION" if S.navigation_mode else S.nav_mode)
+    if report_fn:
+        report_fn({'INFO'}, f"Vimender: {mode_name} MODE")
+    try:
+        context.workspace.status_text_set(f"Vimender: {mode_name} MODE")
+    except Exception:
+        pass
+    tag_all()
+
+
+def start_hint_global(context, win, area, box, action, mx, my, report_fn=None):
+    region = window_region(area)
+    if region is None:
+        return
+    kind, raw = collect(context, area, region)
+    if kind == 'GRID' and box:
+        if report_fn:
+            report_fn({'WARNING'}, "Box selection is not supported in this editor (3D Viewport and Node editors only)")
+        return
+    if not raw:
+        if report_fn:
+            report_fn({'INFO'}, "No selectable elements found")
+        return
+    lx = mx - region.x
+    ly = my - region.y
+    if kind not in {'OUTLINER', 'PROPERTIES'}:
+        raw.sort(key=lambda r: (r[0] - lx) ** 2 + (r[1] - ly) ** 2)
+    if len(raw) > MAX_HINTS:
+        raw = raw[:MAX_HINTS]
+    labels = make_labels(len(raw))
+    hints = [Hint(lb, r[0], r[1], r[2]) for lb, r in zip(labels, raw)]
+
+    vertex_mode = kind == 'MESH' and context.tool_settings.mesh_select_mode[0]
+    if kind not in {'GRID', 'OUTLINER', 'PROPERTIES'}:
+        declutter(hints, region)
+        if vertex_mode:
+            assign_cluster_colors(hints)
+            try:
+                attach_vertex_edges(context, area, region, hints)
+            except Exception as e:
+                print(f"[Vimender] Edge coloring error: {e}")
+
+    S.nav.reset()
+    S.hints = hints
+    S.kind = kind
+    S.action = action
+    S.box_extend = (action == 'EXTEND')
+    S.vertex_mode = vertex_mode
+    S.typed = ""
+    S.box_a = None
+    S.hint_ptr = area.as_pointer()
+    S.mouse = (lx, ly)
+    S.mode = 'BOX1' if box else 'HINT'
+    S.mover.reset()
+    S.smooth_box.reset(lx, ly)
+    try:
+        txt = "Vimender: BOX SELECT MODE" if box else "Vimender: HINT MODE"
+        context.workspace.status_text_set(txt)
+    except Exception:
+        pass
+    area.tag_redraw()
+    tag_all()
+
+
 class WM_OT_vim_mode_toggle(bpy.types.Operator):
     bl_idname = "wm.vim_mode_toggle"
     bl_label = "Vimender Mode"
@@ -2502,7 +2600,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
     def _set_status(self, context):
         try:
             if S.cursor_mode:
-                txt = f"Vimender: CURSOR MODE - {S.cursor_plane}"
+                txt = f"Vimender: CURSOR MODE [{S.cursor_plane}] | HJKL: Move | TAB: Plane | 0: Origin | S: Snap | Esc: Exit"
             elif S.preview_mode:
                 txt = "Vimender: PREVIEW MODE"
             elif S.navigation_mode or S.workspace_nav:
@@ -2542,51 +2640,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             S.nudge_on = False
 
     def _start_hint(self, context, win, area, box, action, mx, my):
-        region = window_region(area)
-        if region is None:
-            return
-        kind, raw = collect(context, area, region)
-        if kind == 'GRID' and box:
-            self.report({'WARNING'}, "Box selection is not supported in this editor (3D Viewport and Node editors only)")
-            return
-        if not raw:
-            self.report({'INFO'}, "No selectable elements found")
-            return
-        lx = mx - region.x
-        ly = my - region.y
-        if kind not in {'OUTLINER', 'PROPERTIES'}:
-            raw.sort(key=lambda r: (r[0] - lx) ** 2 + (r[1] - ly) ** 2)
-        if len(raw) > MAX_HINTS:
-            raw = raw[:MAX_HINTS]
-        labels = make_labels(len(raw))
-        hints = [Hint(lb, r[0], r[1], r[2]) for lb, r in zip(labels, raw)]
-
-        vertex_mode = kind == 'MESH' and context.tool_settings.mesh_select_mode[0]
-        if kind not in {'GRID', 'OUTLINER', 'PROPERTIES'}:
-            declutter(hints, region)
-            if vertex_mode:
-                assign_cluster_colors(hints)
-                try:
-                    attach_vertex_edges(context, area, region, hints)
-                except Exception as e:
-                    print(f"[Vimender] Edge coloring error: {e}")
-
-        S.nav.reset()
-        S.hints = hints
-        S.kind = kind
-        S.action = action
-        S.box_extend = (action == 'EXTEND')
-        S.vertex_mode = vertex_mode
-        S.typed = ""
-        S.box_a = None
-        S.hint_ptr = area.as_pointer()
-        S.mouse = (lx, ly)
-        S.mode = 'BOX1' if box else 'HINT'
-        S.mover.reset()
-        S.smooth_box.reset(lx, ly)
-        self._set_status(context)
-        area.tag_redraw()
-        tag_all()
+        start_hint_global(context, win, area, box, action, mx, my, self.report)
 
     def _fire(self, context, win, hint, shift_held):
         area = area_by_ptr(win, S.hint_ptr)
@@ -2634,40 +2688,10 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         self._cancel_hint(context, win)
 
     def _enter_cursor_mode(self, context):
-        S.prev_mode_state = {
-            'preview_mode': S.preview_mode,
-            'navigation_mode': S.navigation_mode,
-            'workspace_nav': S.workspace_nav,
-            'nav_mode': S.nav_mode,
-        }
-        S.preview_mode = False
-        S.navigation_mode = False
-        S.workspace_nav = False
-        S.cursor_mode = True
-        S.cursor_plane = 'XY'
-        S.smooth_cursor.reset()
-        self.report({'INFO'}, "Vimender: CURSOR MODE - XY")
-        self._set_status(context)
-        tag_all()
+        enter_cursor_mode(context, self.report)
 
     def _exit_cursor_mode(self, context):
-        S.cursor_mode = False
-        S.smooth_cursor.reset()
-        prev = getattr(S, 'prev_mode_state', {})
-        S.preview_mode = prev.get('preview_mode', True)
-        S.navigation_mode = prev.get('navigation_mode', False)
-        S.workspace_nav = prev.get('workspace_nav', False)
-        S.nav_mode = prev.get('nav_mode', 'ORBIT')
-        if S.preview_mode:
-            self.report({'INFO'}, "Vimender: PREVIEW MODE")
-        elif S.navigation_mode:
-            self.report({'INFO'}, "Vimender: NAVIGATION MODE")
-        elif S.nav_mode == 'PAN':
-            self.report({'INFO'}, "Vimender: PAN MODE")
-        else:
-            self.report({'INFO'}, "Vimender: ORBIT MODE")
-        self._set_status(context)
-        tag_all()
+        exit_cursor_mode(context, self.report)
 
     def _open_pie(self, context, event, win, area):
         region = window_region(area)
@@ -2806,6 +2830,15 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
         plain = not (event.alt or event.oskey)
 
+        if (check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_alt=True) or
+            (t == 'SPACE' and event.alt and not (event.ctrl or event.shift or event.oskey))) and v == 'PRESS':
+            try:
+                with context.temp_override(window=win):
+                    bpy.ops.wm.vim_search_mode('INVOKE_DEFAULT')
+            except Exception as e:
+                print(f"[Vimender] search_mode error: {e}")
+            return {'RUNNING_MODAL'}
+
         if (check_shortcut(prefs, 'search_object', event, 'SPACE', fallback_ctrl=True) or
             (t == 'F3' and event.ctrl and not (event.alt or event.shift or event.oskey))) and v == 'PRESS':
             bpy.ops.wm.vim_search_object('INVOKE_DEFAULT')
@@ -2843,25 +2876,91 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             return {'RUNNING_MODAL'}
 
         if S.cursor_mode:
-            if (t == 'NUMPAD_5' or (use_arrow_layout and t == 'TAB')) and not event.ctrl:
-                if v == 'PRESS':
-                    S.cursor_plane = 'ZY' if S.cursor_plane == 'XY' else 'XY'
-                    S.smooth_cursor.reset()
-                    self.report({'INFO'}, f"Vimender: CURSOR MODE - {S.cursor_plane}")
-                    self._set_status(context)
+            if (check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_alt=True) or
+                (t == 'SPACE' and event.alt and not (event.ctrl or event.shift or event.oskey))) and v == 'PRESS':
+                try:
+                    with context.temp_override(window=win):
+                        bpy.ops.wm.vim_search_mode('INVOKE_DEFAULT')
+                except Exception as e:
+                    print(f"[Vimender] search_mode error: {e}")
+                return {'RUNNING_MODAL'}
+
+            if (t in {'TAB', 'NUMPAD_5'} or (t == 'P' and not (event.ctrl or event.alt or event.oskey))) and v == 'PRESS':
+                planes = ('XY', 'VIEW', 'XZ', 'YZ')
+                idx = (planes.index(S.cursor_plane) + 1) % len(planes) if S.cursor_plane in planes else 0
+                S.cursor_plane = planes[idx]
+                S.smooth_cursor.reset()
+                self.report({'INFO'}, f"Vimender: CURSOR MODE - {S.cursor_plane}")
+                self._set_status(context)
+                tag_all()
+                return {'RUNNING_MODAL'}
+
+            if t in {'V', 'X', 'Z', 'Y'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey or event.shift):
+                if t == 'V':
+                    S.cursor_plane = 'VIEW'
+                elif t == 'X':
+                    S.cursor_plane = 'XY'
+                elif t == 'Z':
+                    S.cursor_plane = 'XZ'
+                elif t == 'Y':
+                    S.cursor_plane = 'YZ'
+                S.smooth_cursor.reset()
+                self.report({'INFO'}, f"Vimender: CURSOR MODE - {S.cursor_plane}")
+                self._set_status(context)
+                tag_all()
+                return {'RUNNING_MODAL'}
+
+            if t in {'ZERO', 'NUMPAD_0', 'O'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
+                context.scene.cursor.location = Vector((0.0, 0.0, 0.0))
+                tag_all()
+                self.report({'INFO'}, "Vimender: Cursor snapped to World Origin (0,0,0)")
+                return {'RUNNING_MODAL'}
+
+            if t == 'S' and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
+                try:
+                    with context.temp_override(window=win, area=area):
+                        bpy.ops.view3d.snap_cursor_to_selected()
                     tag_all()
+                    self.report({'INFO'}, "Vimender: Cursor snapped to Selected")
+                except Exception:
+                    pass
                 return {'RUNNING_MODAL'}
 
-            if t in NUDGE_DIRS or (use_arrow_layout and t in ARROW_DIRS):
-                S.smooth_cursor.on_key(t, v, shift=event.shift)
+            if t in {'C', 'PERIOD', 'NUMPAD_PERIOD'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey or event.shift):
+                try:
+                    with context.temp_override(window=win, area=area):
+                        bpy.ops.view3d.view_center_cursor()
+                    tag_all()
+                    self.report({'INFO'}, "Vimender: View centered on Cursor")
+                except Exception:
+                    pass
                 return {'RUNNING_MODAL'}
 
-            if t in {'ESC'} and v == 'PRESS':
+            CURSOR_MOVE_KEYS = {
+                'H', 'J', 'K', 'L',
+                'NUMPAD_8', 'NUMPAD_2', 'NUMPAD_4', 'NUMPAD_6',
+                'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW'
+            }
+            if t in CURSOR_MOVE_KEYS:
+                if not (event.ctrl or event.alt or event.oskey):
+                    S.smooth_cursor.on_key(t, v, shift=event.shift)
+                    return {'RUNNING_MODAL'}
+                elif v == 'RELEASE' and t in S.smooth_cursor.held:
+                    S.smooth_cursor.on_key(t, v, shift=event.shift)
+                    return {'RUNNING_MODAL'}
+
+            if t in {'LEFT_SHIFT', 'RIGHT_SHIFT'}:
+                S.smooth_cursor.shift = (v == 'PRESS')
+                return {'RUNNING_MODAL'}
+
+            if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL', 'PAGE_UP', 'PAGE_DOWN'} or
+                (event.unicode in {'+', '-'} and not (event.alt or event.oskey))) and v == 'PRESS':
+                is_up = t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL', 'PAGE_UP'} or event.unicode == '+'
+                change_sens(1 if is_up else -1)
+                return {'RUNNING_MODAL'}
+
+            if t in {'ESC', 'RET', 'NUMPAD_ENTER', 'SPACE'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
                 self._exit_cursor_mode(context)
-                return {'RUNNING_MODAL'}
-
-            if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS'} or (use_arrow_layout and (t in {'PLUS', 'MINUS', 'EQUAL'} or event.unicode in {'+', '-'}))) and v == 'PRESS':
-                change_sens(1 if (t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL'} or event.unicode == '+') else -1)
                 return {'RUNNING_MODAL'}
 
             if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
@@ -2926,6 +3025,17 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
             if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
                 return {'PASS_THROUGH'}
+
+            if (check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_alt=True) or
+                (t == 'SPACE' and event.alt and not (event.ctrl or event.shift or event.oskey))) and v == 'PRESS':
+                S.navigation_mode = False
+                S.workspace_nav = False
+                try:
+                    with context.temp_override(window=win):
+                        bpy.ops.wm.vim_search_mode('INVOKE_DEFAULT')
+                except Exception as e:
+                    print(f"[Vimender] search_mode error: {e}")
+                return {'RUNNING_MODAL'}
 
             if ((t in {'ESC', 'RET', 'NUMPAD_ENTER'}) or
                 check_shortcut(prefs, 'nav', event, 'B', fallback_ctrl=True) or
@@ -3205,6 +3315,16 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         prefs = get_preferences(context)
 
         use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
+        if (check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_alt=True) or
+            (t == 'SPACE' and event.alt and not (event.ctrl or event.shift or event.oskey))) and v == 'PRESS':
+            self._cancel_hint(context, win)
+            try:
+                with context.temp_override(window=win):
+                    bpy.ops.wm.vim_search_mode('INVOKE_DEFAULT')
+            except Exception as e:
+                print(f"[Vimender] search_mode error: {e}")
+            return {'RUNNING_MODAL'}
+
         if check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) and v == 'PRESS':
             self._cancel_hint(context, win)
             self._enter_cursor_mode(context)
@@ -3439,6 +3559,168 @@ class WM_OT_vim_search_object(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class WM_OT_vim_search_mode(bpy.types.Operator):
+    bl_idname = "wm.vim_search_mode"
+    bl_label = "Search Modes"
+    bl_description = "Search and switch between Vimender and Blender modes"
+    bl_property = "target"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def get_items(self, context):
+        items = [
+            ("VIM_PREVIEW", "Preview Mode", "Vimender: Preview hover and select mode", 'RESTRICT_VIEW_OFF', 0),
+            ("VIM_ORBIT", "Orbit Mode", "Vimender: Turntable/Trackball orbit camera navigation", 'VIEW_ORBIT', 1),
+            ("VIM_PAN", "Pan Mode", "Vimender: Camera Pan navigation", 'VIEW_PAN', 2),
+            ("VIM_CURSOR", "3D Cursor Mode", "Vimender: Smooth 3D Cursor control (HJKL)", 'PIVOT_CURSOR', 3),
+            ("VIM_NAV", "Navigation Mode", "Vimender: Workspace & Area window navigation (Ctrl+B)", 'SCREEN_BACK', 4),
+            ("VIM_HINT", "Hint Select (F)", "Vimender: Jump & select elements visually", 'RESTRICT_SELECT_OFF', 5),
+            ("VIM_BOX", "Box Select (C)", "Vimender: 2D region visual box selection", 'BORDERMOVE', 6),
+            ("BL_OBJECT", "Object Mode", "Blender: Switch to Object Mode", 'OBJECT_DATAMODE', 10),
+            ("BL_EDIT", "Edit Mode", "Blender: Switch to Edit Mode", 'EDITMODE_HLT', 11),
+            ("BL_SCULPT", "Sculpt Mode", "Blender: Switch to Sculpt Mode", 'SCULPTMODE_HLT', 12),
+            ("BL_VERTEX_PAINT", "Vertex Paint Mode", "Blender: Switch to Vertex Paint Mode", 'VPAINT_HLT', 13),
+            ("BL_WEIGHT_PAINT", "Weight Paint Mode", "Blender: Switch to Weight Paint Mode", 'WPAINT_HLT', 14),
+            ("BL_TEXTURE_PAINT", "Texture Paint Mode", "Blender: Switch to Texture Paint Mode", 'TPAINT_HLT', 15),
+            ("BL_POSE", "Pose Mode", "Blender: Switch to Pose Mode (Armature)", 'POSE_HLT', 16),
+            ("BL_PARTICLE_EDIT", "Particle Edit Mode", "Blender: Switch to Particle Edit Mode", 'PARTICLEMODE', 17),
+        ]
+        return items
+
+    target: bpy.props.EnumProperty(
+        name="Mode",
+        description="Select mode to activate",
+        items=get_items,
+    )
+
+    def execute(self, context):
+        tgt = self.target
+        win = context.window
+
+        if not S.active:
+            try:
+                bpy.ops.wm.vim_mode_toggle('INVOKE_DEFAULT')
+            except Exception:
+                pass
+
+        if tgt == "VIM_PREVIEW":
+            S.cursor_mode = False
+            S.navigation_mode = False
+            S.workspace_nav = False
+            S.preview_mode = True
+            S.clear_hint()
+            S.nav.reset()
+            S.smooth_cursor.reset()
+            self.report({'INFO'}, "Vimender: PREVIEW MODE")
+            try:
+                context.workspace.status_text_set("Vimender: PREVIEW MODE")
+            except Exception:
+                pass
+            tag_all()
+            return {'FINISHED'}
+
+        if tgt == "VIM_ORBIT":
+            S.cursor_mode = False
+            S.navigation_mode = False
+            S.workspace_nav = False
+            S.preview_mode = False
+            S.nav_mode = 'ORBIT'
+            S.clear_hint()
+            S.nav.reset()
+            S.smooth_cursor.reset()
+            self.report({'INFO'}, "Vimender: ORBIT MODE")
+            try:
+                context.workspace.status_text_set("Vimender: ORBIT MODE")
+            except Exception:
+                pass
+            tag_all()
+            return {'FINISHED'}
+
+        if tgt == "VIM_PAN":
+            S.cursor_mode = False
+            S.navigation_mode = False
+            S.workspace_nav = False
+            S.preview_mode = False
+            S.nav_mode = 'PAN'
+            S.clear_hint()
+            S.nav.reset()
+            S.smooth_cursor.reset()
+            self.report({'INFO'}, "Vimender: PAN MODE")
+            try:
+                context.workspace.status_text_set("Vimender: PAN MODE")
+            except Exception:
+                pass
+            tag_all()
+            return {'FINISHED'}
+
+        if tgt == "VIM_CURSOR":
+            enter_cursor_mode(context, self.report)
+            return {'FINISHED'}
+
+        if tgt == "VIM_NAV":
+            S.cursor_mode = False
+            S.preview_mode = False
+            S.navigation_mode = True
+            S.workspace_nav = True
+            S.clear_hint()
+            S.nav.reset()
+            S.smooth_cursor.reset()
+            area = context.area or (win.screen.areas[0] if win and win.screen and win.screen.areas else None)
+            if area:
+                S.hover_ptr = area.as_pointer()
+            self.report({'INFO'}, "Vimender: NAVIGATION MODE")
+            try:
+                context.workspace.status_text_set("Vimender: NAVIGATION MODE")
+            except Exception:
+                pass
+            tag_all()
+            return {'FINISHED'}
+
+        if tgt == "VIM_HINT":
+            S.cursor_mode = False
+            S.navigation_mode = False
+            S.workspace_nav = False
+            S.preview_mode = True
+            area = context.area
+            if not area or area.type != 'VIEW_3D':
+                area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), context.area)
+            if area:
+                mx = area.x + int(area.width * 0.5)
+                my = area.y + int(area.height * 0.5)
+                start_hint_global(context, win, area, False, 'NORMAL', mx, my, self.report)
+            return {'FINISHED'}
+
+        if tgt == "VIM_BOX":
+            S.cursor_mode = False
+            S.navigation_mode = False
+            S.workspace_nav = False
+            S.preview_mode = True
+            area = context.area
+            if not area or area.type != 'VIEW_3D':
+                area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), context.area)
+            if area:
+                mx = area.x + int(area.width * 0.5)
+                my = area.y + int(area.height * 0.5)
+                start_hint_global(context, win, area, True, 'NORMAL', mx, my, self.report)
+            return {'FINISHED'}
+
+        if tgt.startswith("BL_"):
+            mode_name = tgt[3:]
+            try:
+                bpy.ops.object.mode_set(mode=mode_name)
+                self.report({'INFO'}, f"Blender Mode: {mode_name.replace('_', ' ').title()}")
+                tag_all()
+                return {'FINISHED'}
+            except Exception as e:
+                self.report({'WARNING'}, f"Cannot switch mode: {e}")
+                return {'CANCELLED'}
+
+        return {'CANCELLED'}
+
+    def invoke(self, context, event):
+        context.window_manager.invoke_search_popup(self)
+        return {'FINISHED'}
+
+
 def register_search_key():
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.addon
@@ -3447,7 +3729,8 @@ def register_search_key():
     km = kc.keymaps.new('Window', space_type='EMPTY', region_type='WINDOW')
     kmi1 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'SPACE', 'PRESS', ctrl=True)
     kmi2 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'F3', 'PRESS', ctrl=True)
-    _addon_keymaps.extend([(km, kmi1), (km, kmi2)])
+    kmi3 = km.keymap_items.new(WM_OT_vim_search_mode.bl_idname, 'SPACE', 'PRESS', alt=True)
+    _addon_keymaps.extend([(km, kmi1), (km, kmi2), (km, kmi3)])
 
 
 def unregister_search_key():
@@ -3646,6 +3929,11 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     shift_editor_pie: bpy.props.BoolProperty(name="Shift", default=False)
     alt_editor_pie: bpy.props.BoolProperty(name="Alt", default=False)
 
+    key_search_mode: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE')
+    ctrl_search_mode: bpy.props.BoolProperty(name="Ctrl", default=False)
+    shift_search_mode: bpy.props.BoolProperty(name="Shift", default=False)
+    alt_search_mode: bpy.props.BoolProperty(name="Alt", default=True)
+
     key_search_menu: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE')
     ctrl_search_menu: bpy.props.BoolProperty(name="Ctrl", default=False)
     shift_search_menu: bpy.props.BoolProperty(name="Shift", default=False)
@@ -3722,6 +4010,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
 
         box = layout.box()
         box.label(text="Mode Switching Shortcuts", icon='ARROW_LEFTRIGHT')
+        self._draw_shortcut(box, "Mode Search Menu", "search_mode")
         self._draw_shortcut(box, "Preview Mode Toggle", "preview")
         self._draw_shortcut(box, "Navigation Mode Toggle", "nav")
         self._draw_shortcut(box, "Cursor Mode Toggle", "cursor")
@@ -3748,6 +4037,7 @@ classes = (
     WM_OT_vim_nudge,
     WM_OT_vim_set_editor,
     WM_OT_vim_search_object,
+    WM_OT_vim_search_mode,
     VIM_MT_editor_more,
 )
 
