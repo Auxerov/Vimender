@@ -608,37 +608,44 @@ def get_selection_center_2d(context, area):
             return None
         obj = context.active_object
         mode = obj.mode if obj else 'OBJECT'
+        pivot_setting = getattr(context.scene.tool_settings, 'transform_pivot_point', 'MEDIAN_POINT') if context.scene else 'MEDIAN_POINT'
 
         center_3d = None
-        if mode == 'OBJECT':
+        if pivot_setting == 'CURSOR':
+            center_3d = context.scene.cursor.location.copy()
+        elif pivot_setting == 'ACTIVE_ELEMENT' and obj:
+            center_3d = obj.matrix_world.translation.copy()
+        elif mode == 'OBJECT':
             sel = [o for o in context.selected_objects if o.visible_get()]
             if sel:
-                pts = []
-                for o in sel:
-                    try:
-                        c = sum((Vector(v) for v in o.bound_box), Vector()) / 8.0
-                        pts.append(o.matrix_world @ c)
-                    except Exception:
-                        pts.append(o.matrix_world.translation)
-                if pts:
+                if pivot_setting == 'BOUNDING_BOX_CENTER':
+                    pts = []
+                    for o in sel:
+                        try:
+                            c = sum((Vector(v) for v in o.bound_box), Vector()) / 8.0
+                            pts.append(o.matrix_world @ c)
+                        except Exception:
+                            pts.append(o.matrix_world.translation)
                     center_3d = sum(pts, Vector()) / len(pts)
+                else:
+                    center_3d = sum((o.matrix_world.translation for o in sel), Vector()) / len(sel)
             elif obj:
-                center_3d = obj.matrix_world.translation
+                center_3d = obj.matrix_world.translation.copy()
         elif mode == 'EDIT' and obj and obj.type == 'MESH':
             bm = bmesh.from_edit_mesh(obj.data)
             sel_cos = [v.co for v in bm.verts if v.select and not v.hide]
             if sel_cos:
                 center_3d = obj.matrix_world @ (sum(sel_cos, Vector()) / len(sel_cos))
             else:
-                center_3d = obj.matrix_world.translation
+                center_3d = obj.matrix_world.translation.copy()
         elif mode == 'POSE' and obj and obj.type == 'ARMATURE':
             sel_bones = [b for b in obj.pose.bones if b.bone.select]
             if sel_bones:
                 center_3d = obj.matrix_world @ (sum((b.head for b in sel_bones), Vector()) / len(sel_bones))
             else:
-                center_3d = obj.matrix_world.translation
+                center_3d = obj.matrix_world.translation.copy()
         elif obj:
-            center_3d = obj.matrix_world.translation
+            center_3d = obj.matrix_world.translation.copy()
 
         if center_3d is not None:
             pt = location_3d_to_region_2d(region, rv3d, center_3d)
@@ -2007,11 +2014,18 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         self.region = window_region(area) if area else None
 
         win = context.window
-        margin = 12.0
-        self.min_x = margin
-        self.max_x = float(max(win.width - margin, 40.0))
-        self.min_y = margin
-        self.max_y = float(max(win.height - margin, 40.0))
+        if self.area and self.area in list(context.screen.areas):
+            pad = 32.0
+            self.min_x = float(self.area.x + pad)
+            self.max_x = float(max(self.area.x + self.area.width - pad, self.min_x + 40.0))
+            self.min_y = float(self.area.y + pad)
+            self.max_y = float(max(self.area.y + self.area.height - pad, self.min_y + 40.0))
+        else:
+            pad = 32.0
+            self.min_x = pad
+            self.max_x = float(max(win.width - pad, 100.0))
+            self.min_y = pad
+            self.max_y = float(max(win.height - pad, 100.0))
 
         self.sub_x = float(event.mouse_x)
         self.sub_y = float(event.mouse_y)
@@ -2022,6 +2036,9 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         center_info = get_selection_center_2d(context, self.area)
         if center_info and center_info[0] is not None and center_info[1] is not None:
             self.pivot_2d = Vector((float(center_info[0]), float(center_info[1])))
+
+        self.pivot_2d.x = max(min(self.pivot_2d.x, self.max_x - 30.0), self.min_x + 30.0)
+        self.pivot_2d.y = max(min(self.pivot_2d.y, self.max_y - 30.0), self.min_y + 30.0)
 
         dx_p = self.sub_x - self.pivot_2d.x
         dy_p = self.sub_y - self.pivot_2d.y
@@ -2034,18 +2051,18 @@ class WM_OT_vim_nudge(bpy.types.Operator):
             self.pivot_2d.y - self.min_y,
             self.max_y - self.pivot_2d.y
         )
-        max_safe_r = max(edge_dist - 20.0, 30.0)
+        max_safe_r = max(edge_dist - 15.0, 30.0)
 
-        if dist_p < 15.0:
-            self.scale_dir = Vector((1.0, 0.0))
-            self.scale_dist = 15.0
+        if dist_p < 25.0:
+            self.scale_dir = Vector((0.7071, 0.7071))
+            self.scale_dist = 60.0
             self.rot_angle = 0.0
-            self.rot_radius = min(max_safe_r, 120.0)
+            self.rot_radius = max(min(120.0, max_safe_r), 30.0)
         else:
             self.scale_dir = Vector((dx_p, dy_p)).normalized()
-            self.scale_dist = dist_p
+            self.scale_dist = min(dist_p, max(edge_dist - 10.0, 30.0))
             self.rot_angle = math.atan2(dy_p, dx_p)
-            self.rot_radius = min(max(dist_p, 40.0), max_safe_r)
+            self.rot_radius = max(min(120.0, max_safe_r), 30.0)
 
         self.vx = 0.0
         self.vy = 0.0
@@ -2078,6 +2095,18 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         self.axis_dir_2d = None
         self.scale_vel = 0.0
         self.held_nudge.clear()
+        win = context.window if context else None
+        if win and self.area and self.area in list(context.screen.areas):
+            if hasattr(self, 'pivot_2d') and self.pivot_2d is not None:
+                reset_x = int(round(max(min(self.pivot_2d.x + 80.0, self.max_x - 30.0), self.min_x + 30.0)))
+                reset_y = int(round(max(min(self.pivot_2d.y + 80.0, self.max_y - 30.0), self.min_y + 30.0)))
+            else:
+                reset_x = int(round(self.area.x + self.area.width * 0.5))
+                reset_y = int(round(self.area.y + self.area.height * 0.5))
+            try:
+                win.cursor_warp(reset_x, reset_y)
+            except Exception:
+                pass
         try:
             if S.cursor_mode:
                 txt = f"Vimender: CURSOR MODE - {S.cursor_plane}"
@@ -2210,8 +2239,7 @@ class WM_OT_vim_nudge(bpy.types.Operator):
 
         elif tr_type == 'RESIZE':
             scale_input = (1.0 if (up_held or right_held) else 0.0) - (1.0 if (down_held or left_held) else 0.0)
-            base_dist = max(getattr(self, 'initial_dist', 100.0), 80.0)
-            target_v = scale_input * (base_dist * 1.8 * sens)
+            target_v = scale_input * (240.0 * sens)
 
             if scale_input != 0.0:
                 if is_press and abs(self.scale_vel) < 5.0:
@@ -2222,24 +2250,23 @@ class WM_OT_vim_nudge(bpy.types.Operator):
                 self.scale_vel = 0.0
 
             if abs(self.scale_vel) > 0.1:
+                limit_x = (self.max_x - self.pivot_2d.x) if self.scale_dir.x > 0 else (self.pivot_2d.x - self.min_x)
+                limit_y = (self.max_y - self.pivot_2d.y) if self.scale_dir.y > 0 else (self.pivot_2d.y - self.min_y)
+                dist_lim_x = limit_x / max(abs(self.scale_dir.x), 1e-4)
+                dist_lim_y = limit_y / max(abs(self.scale_dir.y), 1e-4)
+                max_dist = max(min(dist_lim_x, dist_lim_y) - 5.0, 30.0)
+
                 new_dist = self.scale_dist + self.scale_vel * dt
-                min_dist = max(base_dist * 0.05, 12.0)
-                if new_dist < min_dist:
-                    new_dist = min_dist
+                if new_dist > max_dist:
+                    new_dist = max_dist
                     self.scale_vel = 0.0
-
-                raw_x = self.pivot_2d.x + self.scale_dir.x * new_dist
-                raw_y = self.pivot_2d.y + self.scale_dir.y * new_dist
-
-                clamped_x = max(min(raw_x, self.max_x), self.min_x)
-                clamped_y = max(min(raw_y, self.max_y), self.min_y)
-
-                if (clamped_x != raw_x or clamped_y != raw_y) and self.scale_vel > 0.0:
+                elif new_dist < 18.0:
+                    new_dist = 18.0
                     self.scale_vel = 0.0
 
                 self.scale_dist = new_dist
-                self.sub_x = clamped_x
-                self.sub_y = clamped_y
+                self.sub_x = self.pivot_2d.x + self.scale_dir.x * self.scale_dist
+                self.sub_y = self.pivot_2d.y + self.scale_dir.y * self.scale_dist
                 win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
             return
 
@@ -2384,14 +2411,20 @@ class WM_OT_vim_nudge(bpy.types.Operator):
 
         if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
             if not self.held_nudge and math.hypot(self.vx, self.vy) < 0.1 and abs(self.ang_vel) < 0.01 and abs(self.scale_vel) < 0.01:
-                self.sub_x = float(event.mouse_x)
-                self.sub_y = float(event.mouse_y)
+                self.sub_x = max(min(float(event.mouse_x), self.max_x), self.min_x)
+                self.sub_y = max(min(float(event.mouse_y), self.max_y), self.min_y)
                 dx_p = self.sub_x - self.pivot_2d.x
                 dy_p = self.sub_y - self.pivot_2d.y
                 dist_p = math.hypot(dx_p, dy_p)
                 if dist_p >= 15.0:
                     self.rot_angle = math.atan2(dy_p, dx_p)
-                    self.scale_dist = dist_p
+                    edge_dist = min(
+                        self.pivot_2d.x - self.min_x,
+                        self.max_x - self.pivot_2d.x,
+                        self.pivot_2d.y - self.min_y,
+                        self.max_y - self.pivot_2d.y
+                    )
+                    self.scale_dist = min(dist_p, max(edge_dist - 10.0, 30.0))
                     self.scale_dir = Vector((dx_p, dy_p)).normalized()
             return {'PASS_THROUGH'}
 
