@@ -3383,6 +3383,71 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     print(f"[Vimender] search_menu error: {e}")
                 return {'RUNNING_MODAL'}
 
+        is_bevel_key = (
+            check_shortcut(prefs, 'bevel', event, 'B', fallback_ctrl=False) or
+            (check_shortcut(prefs, 'bevel', event, 'B', fallback_ctrl=False, allow_shift_alt_extend=True) and not event.alt) or
+            ((t == 'B' or event.unicode in {'b', 'B'}) and not (event.ctrl or event.alt or event.oskey))
+        )
+        if is_bevel_key:
+            if not (area and area.type in PASS_KEYS_IN) and not S.mode and not S.search_active and not S.save_dialog_open and not S.view_pie_active and not transform_active(win) and not is_blender_modal_active(win):
+                if v == 'PRESS':
+                    if S.cursor_mode:
+                        self._exit_cursor_mode(context)
+                    if S.navigation_mode or S.workspace_nav:
+                        S.navigation_mode = False
+                        S.workspace_nav = False
+                        self._set_status(context)
+                    v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
+                    if not v3d or v3d.type != 'VIEW_3D':
+                        v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), v3d or context.area)
+                    region = window_region(v3d) if v3d else None
+                    if v3d and region:
+                        if not (region.x <= mx <= region.x + region.width and
+                                region.y <= my <= region.y + region.height):
+                            win.cursor_warp(int(region.x + region.width / 2),
+                                            int(region.y + region.height / 2))
+                        try:
+                            with context.temp_override(window=win, area=v3d, region=region):
+                                if context.mode == 'EDIT_MESH':
+                                    try:
+                                        bpy.ops.wm.tool_set_by_id(name='builtin.bevel')
+                                    except Exception:
+                                        pass
+                                    ts = context.tool_settings
+                                    is_vert = bool(ts.mesh_select_mode[0] and not (ts.mesh_select_mode[1] or ts.mesh_select_mode[2]))
+                                    affect_type = 'VERTICES' if (event.shift or is_vert) else 'EDGES'
+                                    try:
+                                        bpy.ops.mesh.bevel('INVOKE_DEFAULT', affect=affect_type)
+                                    except Exception:
+                                        try:
+                                            bpy.ops.mesh.bevel('INVOKE_DEFAULT')
+                                        except Exception:
+                                            pass
+                                    self.report({'INFO'}, "Vimender: Bevel Tool")
+                                elif context.mode == 'OBJECT':
+                                    if context.active_object and context.active_object.type == 'MESH':
+                                        bev = next((m for m in context.active_object.modifiers if m.type == 'BEVEL'), None)
+                                        if not bev:
+                                            bpy.ops.object.modifier_add(type='BEVEL')
+                                        else:
+                                            context.active_object.modifiers.active = bev
+                                        self.report({'INFO'}, "Vimender: Bevel Modifier")
+                                    else:
+                                        self.report({'WARNING'}, "Vimender: Select a mesh object to bevel")
+                                else:
+                                    try:
+                                        bpy.ops.wm.tool_set_by_id(name='builtin.bevel')
+                                    except Exception:
+                                        pass
+                                    bpy.ops.mesh.bevel('INVOKE_DEFAULT')
+                                    self.report({'INFO'}, "Vimender: Bevel Tool")
+                        except Exception as e:
+                            print(f"[Vimender] Bevel error: {e}")
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+                elif v == 'RELEASE':
+                    return {'RUNNING_MODAL'}
+
         if check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) and v == 'PRESS':
             if not S.cursor_mode:
                 self._enter_cursor_mode(context)
@@ -5028,6 +5093,7 @@ KEY_PREFIXES = (
     ("fuzzy_search", "Data Search (AltGr+Space)", "SPACE", True, False, True),
     ("hint_select", "Hint Click Select (F)", "F", False, False, False),
     ("box_select", "Box Hint Select (C)", "C", False, False, False),
+    ("bevel", "Bevel Tool (B)", "B", False, False, False),
     ("persp_ortho", "Persp / Ortho View (Y / Asterisk)", "Y", False, False, False),
     ("view_selected", "Focus Selected View (Numpad . / I)", "NUMPAD_PERIOD", False, False, False),
 )
@@ -5181,6 +5247,11 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     shift_box_select: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
     alt_box_select: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
+    key_bevel: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='B', update=_on_keymap_change)
+    ctrl_bevel: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
+    shift_bevel: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_bevel: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
+
     key_persp_ortho: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='Y', update=_on_keymap_change)
     ctrl_persp_ortho: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
     shift_persp_ortho: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
@@ -5260,6 +5331,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             self._draw_shortcut(box2, "Data Search (AltGr+Space)", "fuzzy_search")
             self._draw_shortcut(box2, "Hint Click Select (F)", "hint_select")
             self._draw_shortcut(box2, "Box Hint Select (C)", "box_select")
+            self._draw_shortcut(box2, "Bevel Tool (B)", "bevel")
             self._draw_shortcut(box2, "Persp / Ortho View (Y / Asterisk)", "persp_ortho")
             self._draw_shortcut(box2, "Focus Selected View (Numpad . / I)", "view_selected")
 
