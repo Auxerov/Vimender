@@ -120,7 +120,8 @@ PREFIX_REPEAT_TIMEOUT = 0.8
 TRANSFORM_KEYWORDS = (
     'transform', '_move', 'extrude', 'duplicate', 'bevel',
     'shrink_fatten', 'push_pull', 'translate', 'rotate', 'resize',
-    'scale', 'tosphere', 'shear', 'bend', 'trackball', 'edge_slide', 'vert_slide'
+    'scale', 'tosphere', 'shear', 'bend', 'trackball', 'edge_slide', 'vert_slide',
+    'loopcut', 'slide', 'inset', 'rip', 'knife', 'subdivide', 'smooth', 'modifier'
 )
 
 
@@ -784,6 +785,111 @@ def transform_active(win):
         if any(k in op_id for k in TRANSFORM_KEYWORDS):
             return True
     return False
+
+
+_X11_LIB = None
+_XTST_LIB = None
+
+
+def _get_x11():
+    global _X11_LIB, _XTST_LIB
+    if _X11_LIB is None:
+        try:
+            _X11_LIB = ctypes.cdll.LoadLibrary('libX11.so.6')
+            _X11_LIB.XOpenDisplay.restype = ctypes.c_void_p
+            _X11_LIB.XKeysymToKeycode.restype = ctypes.c_uint
+        except Exception:
+            _X11_LIB = False
+    if _XTST_LIB is None:
+        try:
+            _XTST_LIB = ctypes.cdll.LoadLibrary('libXtst.so.6')
+        except Exception:
+            _XTST_LIB = False
+    return _X11_LIB, _XTST_LIB
+
+
+def send_modal_plus_minus(is_up):
+    x11, xtst = _get_x11()
+    if not x11 or not xtst:
+        return
+    disp = None
+    try:
+        disp = x11.XOpenDisplay(None)
+        if not disp:
+            return
+        d_ptr = ctypes.c_void_p(disp)
+        sym = 0xff55 if is_up else 0xff56
+        kc = x11.XKeysymToKeycode(d_ptr, ctypes.c_ulong(sym))
+        if kc:
+            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), True, 0)
+            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), False, 0)
+            x11.XFlush(d_ptr)
+    except Exception:
+        pass
+    finally:
+        if disp and x11:
+            try:
+                x11.XCloseDisplay(ctypes.c_void_p(disp))
+            except Exception:
+                pass
+
+
+def active_modal_tool(win):
+    if not win:
+        return None
+    try:
+        ops = win.modal_operators
+    except (AttributeError, Exception):
+        return None
+    for op in ops:
+        ident = (getattr(op, "bl_idname", "") or getattr(op, "name", "") or getattr(getattr(op, "bl_rna", None), "identifier", "")).lower()
+        if ident and not ident.startswith("wm_ot_vim_") and not ident.startswith("wm.vim_") and "vim" not in ident:
+            return op
+    return None
+
+
+def is_blender_modal_active(win):
+    return active_modal_tool(win) is not None
+
+
+def adjust_active_modal_or_modifier(context, is_up):
+    step = 1 if is_up else -1
+    try:
+        ts = context.scene.tool_settings
+        is_prop = (
+            getattr(ts, 'use_proportional_edit', False) or
+            getattr(ts, 'use_proportional_edit_objects', False)
+        )
+        if is_prop:
+            factor = 1.15 if is_up else (1.0 / 1.15)
+            ts.proportional_size = max(min(ts.proportional_size * factor, 10000.0), 0.001)
+    except Exception:
+        pass
+
+    try:
+        obj = context.active_object
+        if obj and getattr(obj, 'modifiers', None):
+            act_mod = getattr(obj.modifiers, 'active', None) or (obj.modifiers[-1] if len(obj.modifiers) > 0 else None)
+            if act_mod:
+                mtype = act_mod.type
+                if mtype == 'SUBSURF':
+                    act_mod.levels = max(0, min(act_mod.levels + step, 6))
+                elif mtype == 'BEVEL':
+                    act_mod.segments = max(1, min(act_mod.segments + step, 100))
+                elif mtype == 'ARRAY':
+                    act_mod.count = max(1, act_mod.count + step)
+                elif mtype == 'MULTIRES':
+                    act_mod.levels = max(0, min(act_mod.levels + step, 6))
+                elif mtype == 'SOLIDIFY':
+                    act_mod.thickness = max(0.0001, act_mod.thickness + (0.01 if is_up else -0.01))
+                elif mtype == 'DECIMATE' and hasattr(act_mod, 'iterations'):
+                    act_mod.iterations = max(0, act_mod.iterations + step)
+                elif mtype == 'SCREW':
+                    act_mod.steps = max(1, act_mod.steps + step)
+                elif mtype == 'REMESH' and hasattr(act_mod, 'octree_depth'):
+                    act_mod.octree_depth = max(1, min(act_mod.octree_depth + step, 12))
+    except Exception:
+        pass
 
 
 def get_active_transform_type(win):
@@ -2411,6 +2517,15 @@ class WM_OT_vim_nudge(bpy.types.Operator):
                         pass
                 return {'PASS_THROUGH'}
 
+        if (t in {'N', 'M'} or event.unicode in {'n', 'N', 'm', 'M'}) and not (event.ctrl or event.alt or event.oskey):
+            if v == 'PRESS':
+                is_up = (t == 'N' or event.unicode in {'n', 'N'})
+                adjust_active_modal_or_modifier(context, is_up)
+                send_modal_plus_minus(is_up)
+                if area:
+                    area.tag_redraw()
+            return {'RUNNING_MODAL'}
+
         if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
             if not self.held_nudge and math.hypot(self.vx, self.vy) < 0.1 and abs(self.ang_vel) < 0.01 and abs(self.scale_vel) < 0.01:
                 self.sub_x = max(min(float(event.mouse_x), self.max_x), self.min_x)
@@ -2779,7 +2894,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     a.tag_redraw()
             elif S.cursor_mode:
                 S.smooth_cursor.tick(context, win)
-            elif not S.mode and not S.preview_mode and not S.nudge_on and not transform_active(win):
+            elif not S.mode and not S.preview_mode and not S.nudge_on and not transform_active(win) and not is_blender_modal_active(win):
                 S.nav.tick(context, win)
 
             if not S.preview_mode and not S.navigation_mode and not S.cursor_mode:
@@ -2802,9 +2917,17 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if S.mode:
             return self._modal_hint(context, event, win, mx, my, area)
 
-        if transform_active(win):
+        if transform_active(win) or is_blender_modal_active(win):
             if not S.preview_mode and not S.navigation_mode and not S.cursor_mode:
-                if not S.nudge_on:
+                if (t in {'N', 'M'} or event.unicode in {'n', 'N', 'm', 'M'}) and not (event.ctrl or event.alt or event.oskey):
+                    if v == 'PRESS':
+                        is_up = (t == 'N' or event.unicode in {'n', 'N'})
+                        adjust_active_modal_or_modifier(context, is_up)
+                        send_modal_plus_minus(is_up)
+                        if area:
+                            area.tag_redraw()
+                    return {'RUNNING_MODAL'}
+                if not S.nudge_on and transform_active(win):
                     self._start_nudge(context, win)
             return {'PASS_THROUGH'}
 
@@ -3258,6 +3381,14 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     zoom_key = 'MINUS'
 
         if zoom_key and not (area and area.type in PASS_KEYS_IN) and not transform_active(win):
+            if is_blender_modal_active(win):
+                if v == 'PRESS':
+                    is_up = (zoom_key == 'PLUS')
+                    adjust_active_modal_or_modifier(context, is_up)
+                    send_modal_plus_minus(is_up)
+                    if area:
+                        area.tag_redraw()
+                return {'RUNNING_MODAL'}
             S.nav.on_key(zoom_key, v)
             return {'RUNNING_MODAL'}
 
