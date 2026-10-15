@@ -2934,10 +2934,12 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.localview)
                 return {'RUNNING_MODAL'}
 
+            is_i_selected = ((not S.preview_mode) and (t == 'I' or event.unicode in {'i', 'I'}) and not (event.ctrl or event.alt or event.oskey or event.shift))
             is_key_period = (
                 check_shortcut(prefs, 'view_selected', event, 'NUMPAD_PERIOD', fallback_ctrl=False) or
                 (t in {'NUMPAD_PERIOD', 'NUMPAD_COMMA', 'PERIOD', 'COMMA'} and not (event.ctrl or event.alt or event.oskey)) or
-                (event.unicode in {',', '.'} and not (event.ctrl or event.alt or event.oskey))
+                (event.unicode in {',', '.'} and not (event.ctrl or event.alt or event.oskey)) or
+                is_i_selected
             )
             if is_key_period and ((not S.preview_mode) or use_arrow_layout):
                 if v == 'PRESS':
@@ -3010,10 +3012,28 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 tag_all()
             return {'RUNNING_MODAL'}
 
-        if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL', 'PAGE_UP', 'PAGE_DOWN'} or event.unicode in {'+', '-'}) and not (area and area.type in PASS_KEYS_IN) and not transform_active(win):
+        zoom_key = None
+        if t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL', 'PAGE_UP'} or event.unicode in {'+', '='}:
             if not (event.ctrl or event.alt or event.oskey):
-                S.nav.on_key(t, v)
-                return {'RUNNING_MODAL'}
+                zoom_key = 'PLUS'
+        elif t in {'NUMPAD_MINUS', 'MINUS', 'PAGE_DOWN'} or event.unicode == '-':
+            if not (event.ctrl or event.alt or event.oskey):
+                zoom_key = 'MINUS'
+        elif not S.preview_mode:
+            if t == 'N' or event.unicode in {'n', 'N'}:
+                if not (event.ctrl or event.alt or event.oskey):
+                    zoom_key = 'PLUS'
+                elif v == 'RELEASE' and 'PLUS' in S.nav.held_zoom:
+                    zoom_key = 'PLUS'
+            elif t == 'M' or event.unicode in {'m', 'M'}:
+                if not (event.ctrl or event.alt or event.oskey):
+                    zoom_key = 'MINUS'
+                elif v == 'RELEASE' and 'MINUS' in S.nav.held_zoom:
+                    zoom_key = 'MINUS'
+
+        if zoom_key and not (area and area.type in PASS_KEYS_IN) and not transform_active(win):
+            S.nav.on_key(zoom_key, v)
+            return {'RUNNING_MODAL'}
 
         nav_key = None
         if t in {'NUMPAD_8', 'NUMPAD_2', 'NUMPAD_4', 'NUMPAD_6', 'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW'}:
