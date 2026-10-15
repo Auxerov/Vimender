@@ -2006,17 +2006,12 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         self.area = area
         self.region = window_region(area) if area else None
 
-        if self.region:
-            margin = 8.0
-            self.min_x = float(self.region.x + margin)
-            self.max_x = float(self.region.x + self.region.width - margin)
-            self.min_y = float(self.region.y + margin)
-            self.max_y = float(self.region.y + self.region.height - margin)
-        else:
-            self.min_x = 8.0
-            self.max_x = float(max(context.window.width - 8.0, 20.0))
-            self.min_y = 8.0
-            self.max_y = float(max(context.window.height - 8.0, 20.0))
+        win = context.window
+        margin = 12.0
+        self.min_x = margin
+        self.max_x = float(max(win.width - margin, 40.0))
+        self.min_y = margin
+        self.max_y = float(max(win.height - margin, 40.0))
 
         self.pivot_2d = Vector((float(event.mouse_x), float(event.mouse_y)))
         center_info = get_selection_center_2d(context, self.area)
@@ -2028,14 +2023,24 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         self.sub_x = max(min(self.sub_x, self.max_x), self.min_x)
         self.sub_y = max(min(self.sub_y, self.max_y), self.min_y)
 
+        dx_p = self.sub_x - self.pivot_2d.x
+        dy_p = self.sub_y - self.pivot_2d.y
+        dist_p = math.hypot(dx_p, dy_p)
+        if dist_p < 20.0:
+            self.rot_angle = 0.0
+            self.scale_dist = 20.0
+            self.scale_dir = Vector((1.0, 0.0))
+        else:
+            self.rot_angle = math.atan2(dy_p, dx_p)
+            self.scale_dist = dist_p
+            self.scale_dir = Vector((dx_p, dy_p)).normalized()
+
         self.vx = 0.0
         self.vy = 0.0
         self.ang_vel = 0.0
+        self.scale_vel = 0.0
         self.held_nudge = set()
         self.last_t = time.perf_counter()
-        self.last_wrap_time = 0.0
-        self.last_span_x = 0.0
-        self.last_span_y = 0.0
 
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.008, window=context.window)
@@ -2058,6 +2063,7 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         self.locked_axis = None
         self.axis_press_count = 0
         self.axis_dir_2d = None
+        self.scale_vel = 0.0
         self.held_nudge.clear()
         try:
             if S.cursor_mode:
@@ -2075,32 +2081,24 @@ class WM_OT_vim_nudge(bpy.types.Operator):
     def _get_active_bounds(self, win, area=None):
         return (self.min_x, self.max_x, self.min_y, self.max_y)
 
-    def _warp_and_wrap(self, win, area=None):
-        span_x = max(self.max_x - self.min_x, 20.0)
-        span_y = max(self.max_y - self.min_y, 20.0)
+    def _clamp_to_bounds(self, win):
+        if self.sub_x >= self.max_x:
+            self.sub_x = self.max_x
+            if self.vx > 0.0:
+                self.vx = 0.0
+        elif self.sub_x <= self.min_x:
+            self.sub_x = self.min_x
+            if self.vx < 0.0:
+                self.vx = 0.0
 
-        wrapped = False
-        if self.sub_x > self.max_x:
-            self.sub_x = self.min_x + ((self.sub_x - self.min_x) % span_x)
-            wrapped = True
-        elif self.sub_x < self.min_x:
-            self.sub_x = self.max_x - ((self.max_x - self.sub_x) % span_x)
-            wrapped = True
-
-        if self.sub_y > self.max_y:
-            self.sub_y = self.min_y + ((self.sub_y - self.min_y) % span_y)
-            wrapped = True
-        elif self.sub_y < self.min_y:
-            self.sub_y = self.max_y - ((self.max_y - self.sub_y) % span_y)
-            wrapped = True
-
-        self.sub_x = max(min(self.sub_x, self.max_x), self.min_x)
-        self.sub_y = max(min(self.sub_y, self.max_y), self.min_y)
-
-        if wrapped:
-            self.last_wrap_time = time.perf_counter()
-            self.last_span_x = span_x
-            self.last_span_y = span_y
+        if self.sub_y >= self.max_y:
+            self.sub_y = self.max_y
+            if self.vy > 0.0:
+                self.vy = 0.0
+        elif self.sub_y <= self.min_y:
+            self.sub_y = self.min_y
+            if self.vy < 0.0:
+                self.vy = 0.0
 
         win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
 
@@ -2195,6 +2193,7 @@ class WM_OT_vim_nudge(bpy.types.Operator):
             self.vx = 0.0
             self.vy = 0.0
             self.ang_vel = 0.0
+            self.scale_vel = 0.0
             self.held_nudge.clear()
             return {'PASS_THROUGH'}
 
@@ -2205,6 +2204,7 @@ class WM_OT_vim_nudge(bpy.types.Operator):
             self.vx = 0.0
             self.vy = 0.0
             self.ang_vel = 0.0
+            self.scale_vel = 0.0
             self.held_nudge.clear()
             return {'PASS_THROUGH'}
 
@@ -2249,9 +2249,16 @@ class WM_OT_vim_nudge(bpy.types.Operator):
                 return {'PASS_THROUGH'}
 
         if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
-            if not self.held_nudge and math.hypot(self.vx, self.vy) < 0.1:
+            if not self.held_nudge and math.hypot(self.vx, self.vy) < 0.1 and abs(self.ang_vel) < 0.01 and abs(self.scale_vel) < 0.01:
                 self.sub_x = float(event.mouse_x)
                 self.sub_y = float(event.mouse_y)
+                dx_p = self.sub_x - self.pivot_2d.x
+                dy_p = self.sub_y - self.pivot_2d.y
+                dist_p = math.hypot(dx_p, dy_p)
+                if dist_p >= 20.0:
+                    self.rot_angle = math.atan2(dy_p, dx_p)
+                    self.scale_dist = dist_p
+                    self.scale_dir = Vector((dx_p, dy_p)).normalized()
             return {'PASS_THROUGH'}
 
         if t in {'TIMER', 'TIMER_REPORT'}:
@@ -2273,14 +2280,13 @@ class WM_OT_vim_nudge(bpy.types.Operator):
 
             if tr_type == 'ROTATE':
                 rot_input = (1.0 if (up_held or right_held) else 0.0) - (1.0 if (down_held or left_held) else 0.0)
-                dx_p = self.sub_x - self.pivot_2d.x
-                dy_p = self.sub_y - self.pivot_2d.y
-                radius = max(math.hypot(dx_p, dy_p), 80.0)
-                min_x, max_x, min_y, max_y = self._get_active_bounds(win, area)
-                max_r = max(min(self.pivot_2d.x - min_x, max_x - self.pivot_2d.x,
-                                self.pivot_2d.y - min_y, max_y - self.pivot_2d.y) - 10.0, 40.0)
-                radius = min(radius, max_r)
-                current_angle = math.atan2(dy_p, dx_p)
+                min_dist_to_edge = min(
+                    self.pivot_2d.x - self.min_x,
+                    self.max_x - self.pivot_2d.x,
+                    self.pivot_2d.y - self.min_y,
+                    self.max_y - self.pivot_2d.y
+                )
+                radius = min(max(min_dist_to_edge - 15.0, 30.0), 160.0)
 
                 target_w = rot_input * (max_spd / radius)
                 if rot_input != 0.0:
@@ -2293,9 +2299,47 @@ class WM_OT_vim_nudge(bpy.types.Operator):
                         self.ang_vel = 0.0
 
                 if abs(self.ang_vel) > 0.001:
-                    new_angle = current_angle + self.ang_vel * dt
-                    self.sub_x = self.pivot_2d.x + radius * math.cos(new_angle)
-                    self.sub_y = self.pivot_2d.y + radius * math.sin(new_angle)
+                    self.rot_angle += self.ang_vel * dt
+                    raw_x = self.pivot_2d.x + radius * math.cos(self.rot_angle)
+                    raw_y = self.pivot_2d.y + radius * math.sin(self.rot_angle)
+                    self.sub_x = max(min(raw_x, self.max_x), self.min_x)
+                    self.sub_y = max(min(raw_y, self.max_y), self.min_y)
+                    win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
+                return {'PASS_THROUGH'}
+
+            elif tr_type == 'RESIZE':
+                scale_input = (1.0 if (up_held or right_held) else 0.0) - (1.0 if (down_held or left_held) else 0.0)
+                target_v = scale_input * max_spd
+
+                if scale_input != 0.0:
+                    alpha = 1.0 - math.exp(-CURSOR_ACCEL_RATE * dt)
+                    self.scale_vel += (target_v - self.scale_vel) * alpha
+                else:
+                    decay = math.exp(-CURSOR_FRICTION * dt)
+                    self.scale_vel *= decay
+                    if abs(self.scale_vel) < 2.0:
+                        self.scale_vel = 0.0
+
+                if abs(self.scale_vel) > 0.1:
+                    new_dist = self.scale_dist + self.scale_vel * dt
+                    min_dist = 20.0
+                    if new_dist < min_dist:
+                        new_dist = min_dist
+                        if self.scale_vel < 0.0:
+                            self.scale_vel = 0.0
+
+                    raw_x = self.pivot_2d.x + self.scale_dir.x * new_dist
+                    raw_y = self.pivot_2d.y + self.scale_dir.y * new_dist
+
+                    clamped_x = max(min(raw_x, self.max_x), self.min_x)
+                    clamped_y = max(min(raw_y, self.max_y), self.min_y)
+
+                    if (clamped_x != raw_x or clamped_y != raw_y) and self.scale_vel > 0.0:
+                        self.scale_vel = 0.0
+
+                    self.scale_dist = new_dist
+                    self.sub_x = clamped_x
+                    self.sub_y = clamped_y
                     win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
                 return {'PASS_THROUGH'}
 
@@ -2318,7 +2362,7 @@ class WM_OT_vim_nudge(bpy.types.Operator):
                 if math.hypot(self.vx, self.vy) > 0.1:
                     self.sub_x += self.vx * dt
                     self.sub_y += self.vy * dt
-                    self._warp_and_wrap(win, area)
+                    self._clamp_to_bounds(win)
                 return {'PASS_THROUGH'}
 
             else:
@@ -2342,7 +2386,7 @@ class WM_OT_vim_nudge(bpy.types.Operator):
                 if math.hypot(self.vx, self.vy) > 0.1:
                     self.sub_x += self.vx * dt
                     self.sub_y += self.vy * dt
-                    self._warp_and_wrap(win, area)
+                    self._clamp_to_bounds(win)
                 return {'PASS_THROUGH'}
 
         return {'PASS_THROUGH'}
@@ -2705,6 +2749,22 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 S.last_transform_type = 'RESIZE'
             else:
                 S.last_transform_type = 'TRANSLATE'
+            if area and area.type == 'VIEW_3D':
+                center_info = get_selection_center_2d(context, area)
+                if center_info and center_info[0] is not None and center_info[1] is not None:
+                    cx, cy = center_info[0], center_info[1]
+                    margin = 40
+                    if margin < cx < win.width - margin and margin < cy < win.height - margin:
+                        if t == 'G':
+                            win.cursor_warp(int(cx), int(cy))
+                        elif t in {'R', 'S'}:
+                            if cx + 140 <= win.width - margin:
+                                warp_x = cx + 140
+                            elif cx - 140 >= margin:
+                                warp_x = cx - 140
+                            else:
+                                warp_x = cx + max(min(140, win.width - margin - cx), -(cx - margin))
+                            win.cursor_warp(int(warp_x), int(cy))
 
         prefs = get_preferences(context)
         use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
