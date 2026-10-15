@@ -9,6 +9,7 @@ bl_info = {
 }
 
 from collections import deque
+import ctypes
 import json
 import math
 import os
@@ -561,6 +562,8 @@ class _State:
         self.navigation_mode = False
         self.workspace_nav = False
         self.target_workspace_name = None
+        self.last_target_ws = None
+        self.last_ws_switch_time = 0.0
         self.cursor_mode = False
         self.cursor_plane = 'XY'
         self.prev_mode_state = {}
@@ -850,44 +853,50 @@ def neighbor_area(win, cur, direction):
     return best
 
 
+def get_ordered_workspaces():
+    ws_list = list(bpy.data.workspaces)
+    if len(ws_list) <= 1:
+        return ws_list
+
+    best_offset = None
+    check_offsets = [500] + [o for o in range(300, 700, 4) if o != 500]
+    for off in check_offsets:
+        orders = []
+        for w in ws_list:
+            try:
+                orders.append(ctypes.c_int32.from_address(w.as_pointer() + off).value)
+            except Exception:
+                break
+        if len(orders) == len(ws_list):
+            if all(0 <= v < 500 for v in orders) and len(set(orders)) >= len(orders) - 1:
+                best_offset = off
+                break
+
+    if best_offset is not None:
+        try:
+            return sorted(ws_list, key=lambda w: (ctypes.c_int32.from_address(w.as_pointer() + best_offset).value, w.name))
+        except Exception:
+            pass
+
+    return ws_list
+
+
 def cycle_workspace(context, direction='NEXT'):
     win = context.window
     if not win:
-        return
+        return None
 
-    try:
-        with context.temp_override(window=win):
-            try:
-                res = bpy.ops.screen.workspace_cycle(direction=direction)
-            except Exception:
-                res = bpy.ops.screen.workspace_cycle('EXEC_DEFAULT', direction=direction)
-            if 'FINISHED' in res:
-                if win.screen and win.screen.areas:
-                    first_area = win.screen.areas[0]
-                    S.hover_ptr = first_area.as_pointer()
-                    win.cursor_warp(int(first_area.x + first_area.width / 2), int(first_area.y + first_area.height / 2))
-                tag_all()
-                return
-    except Exception:
-        pass
-
-    canonical_order = [
-        'Layout', 'Modeling', 'Sculpting', 'UV Editing', 'Texture Paint',
-        'Shading', 'Animation', 'Rendering', 'Compositing', 'Geometry Nodes',
-        'Scripting', 'Video Editing'
-    ]
-    def sort_key(ws):
-        name = ws.name.strip().lower()
-        for idx, cname in enumerate(canonical_order):
-            if cname.lower() in name or name in cname.lower():
-                return (0, idx, ws.name)
-        return (1, 0, ws.name)
-
-    workspaces = sorted(bpy.data.workspaces, key=sort_key)
+    workspaces = get_ordered_workspaces()
     if not workspaces:
-        return
+        return None
 
+    now = time.perf_counter()
     cur_ws = win.workspace
+    last_target = getattr(S, 'last_target_ws', None)
+    last_time = getattr(S, 'last_ws_switch_time', 0.0)
+    if last_target and (now - last_time < 0.8) and (last_target in workspaces):
+        cur_ws = last_target
+
     try:
         idx = workspaces.index(cur_ws)
     except ValueError:
@@ -897,13 +906,17 @@ def cycle_workspace(context, direction='NEXT'):
     target = workspaces[(idx + step) % len(workspaces)]
     try:
         win.workspace = target
+        S.last_target_ws = target
+        S.last_ws_switch_time = now
         if win.screen and win.screen.areas:
             first_area = win.screen.areas[0]
             S.hover_ptr = first_area.as_pointer()
             win.cursor_warp(int(first_area.x + first_area.width / 2), int(first_area.y + first_area.height / 2))
         tag_all()
+        return target
     except Exception as e:
         print(f"[Vimender] Workspace switch error: {e}")
+        return None
 
 
 def navigate_in_editor(context, win, area, direction='DOWN'):
@@ -2848,11 +2861,12 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
                 if ws_dir:
                     if v == 'PRESS':
-                        if now - getattr(self, '_last_ws_cycle_t', 0.0) >= 0.16:
+                        if now - getattr(self, '_last_ws_cycle_t', 0.0) >= 0.22:
                             self._last_ws_cycle_t = now
-                            cycle_workspace(context, ws_dir)
-                            if win and win.workspace:
-                                self.report({'INFO'}, f"Vimender: Workspace -> {win.workspace.name}")
+                            tgt_ws = cycle_workspace(context, ws_dir)
+                            ws_name = tgt_ws.name if tgt_ws else (win.workspace.name if win and win.workspace else "")
+                            if ws_name:
+                                self.report({'INFO'}, f"Vimender: Workspace -> {ws_name}")
                             self._set_status(context)
                             tag_all()
                     return {'RUNNING_MODAL'}
@@ -2992,7 +3006,10 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             return {'RUNNING_MODAL'}
 
         if event.ctrl and (t in {'NUMPAD_4', 'NUMPAD_6'} or (use_arrow_layout and t in {'LEFT_ARROW', 'RIGHT_ARROW'})) and v == 'PRESS':
-            cycle_workspace(context, 'PREV' if t in {'NUMPAD_4', 'LEFT_ARROW'} else 'NEXT')
+            tgt_ws = cycle_workspace(context, 'PREV' if t in {'NUMPAD_4', 'LEFT_ARROW'} else 'NEXT')
+            if tgt_ws:
+                self.report({'INFO'}, f"Vimender: Workspace -> {tgt_ws.name}")
+            self._set_status(context)
             tag_all()
             return {'RUNNING_MODAL'}
 
