@@ -2691,7 +2691,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 area.tag_redraw()
 
         if S.mode:
-            return self._modal_hint(context, event, win, mx, my)
+            return self._modal_hint(context, event, win, mx, my, area)
 
         if transform_active(win):
             if not S.nudge_on:
@@ -3104,7 +3104,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
         return {'PASS_THROUGH'}
 
-    def _modal_hint(self, context, event, win, mx, my):
+    def _modal_hint(self, context, event, win, mx, my, area=None):
         t, v = event.type, event.value
         prefs = get_preferences(context)
 
@@ -3129,7 +3129,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             S.preview_mode = False
             S.navigation_mode = True
             S.workspace_nav = True
-            target_a = area or area_at(win, mx, my) or (win.screen.areas[0] if win and win.screen and win.screen.areas else None)
+            target_a = area or area_by_ptr(win, S.hover_ptr) or area_at(win, mx, my) or (win.screen.areas[0] if win and win.screen and win.screen.areas else None)
             if target_a:
                 S.hover_ptr = target_a.as_pointer()
             self.report({'INFO'}, "Vimender: NAVIGATION MODE")
