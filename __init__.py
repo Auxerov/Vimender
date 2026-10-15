@@ -573,6 +573,7 @@ class _State:
         self.last_ws_switch_time = 0.0
         self.cursor_mode = False
         self.cursor_plane = 'XY'
+        self.right_alt_down = False
         self.prev_mode_state = {}
         self.smooth_cursor = _Smooth3DCursor()
         self.preview_mode = True
@@ -832,6 +833,56 @@ def send_modal_plus_minus(is_up):
                 x11.XCloseDisplay(ctypes.c_void_p(disp))
             except Exception:
                 pass
+
+
+_ALTGR_KEYCODES = None
+
+
+def _get_altgr_keycodes():
+    global _ALTGR_KEYCODES
+    if _ALTGR_KEYCODES is not None:
+        return _ALTGR_KEYCODES
+    kcs = [92, 108]
+    x11, _ = _get_x11()
+    if x11:
+        try:
+            disp = x11.XOpenDisplay(None)
+            if disp:
+                d_ptr = ctypes.c_void_p(disp)
+                for sym in (0xfe03, 0xff7e, 0xffea):
+                    kc = x11.XKeysymToKeycode(d_ptr, ctypes.c_ulong(sym))
+                    if kc and kc not in kcs:
+                        kcs.append(kc)
+                x11.XCloseDisplay(d_ptr)
+        except Exception:
+            pass
+    _ALTGR_KEYCODES = tuple(kcs)
+    return _ALTGR_KEYCODES
+
+
+def is_altgr_pressed(event=None):
+    if event is not None and getattr(event, 'alt', False) and getattr(event, 'ctrl', False):
+        return True
+    if getattr(S, 'right_alt_down', False):
+        return True
+    x11, _ = _get_x11()
+    if x11:
+        try:
+            disp = x11.XOpenDisplay(None)
+            if disp:
+                d_ptr = ctypes.c_void_p(disp)
+                buf = (ctypes.c_char * 32)()
+                x11.XQueryKeymap(d_ptr, buf)
+                x11.XCloseDisplay(d_ptr)
+                kcs = _get_altgr_keycodes()
+                for kc in kcs:
+                    b_val = buf[kc >> 3]
+                    b_int = ord(b_val) if isinstance(b_val, (str, bytes)) and isinstance(b_val, str) else (b_val[0] if isinstance(b_val, bytes) else int(b_val))
+                    if (b_int >> (kc & 7)) & 1:
+                        return True
+        except Exception:
+            pass
+    return False
 
 
 def active_modal_tool(win):
@@ -2943,6 +2994,21 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
         plain = not (event.alt or event.oskey)
 
+        if t in {'RIGHT_ALT', 'LINEFEED'}:
+            if v == 'PRESS':
+                S.right_alt_down = True
+            elif v == 'RELEASE':
+                S.right_alt_down = False
+
+        if ((t == 'SPACE' and is_altgr_pressed(event)) or
+            check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
+            try:
+                with context.temp_override(window=win):
+                    bpy.ops.wm.vim_fuzzy_search('INVOKE_DEFAULT')
+            except Exception as e:
+                print(f"[Vimender] fuzzy_search error: {e}")
+            return {'RUNNING_MODAL'}
+
         if (check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_alt=True) or
             (t == 'SPACE' and event.alt and not (event.ctrl or event.shift or event.oskey))) and v == 'PRESS':
             try:
@@ -2989,6 +3055,15 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             return {'RUNNING_MODAL'}
 
         if S.cursor_mode:
+            if ((t == 'SPACE' and is_altgr_pressed(event)) or
+                check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
+                try:
+                    with context.temp_override(window=win):
+                        bpy.ops.wm.vim_fuzzy_search('INVOKE_DEFAULT')
+                except Exception as e:
+                    print(f"[Vimender] fuzzy_search error: {e}")
+                return {'RUNNING_MODAL'}
+
             if (check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_alt=True) or
                 (t == 'SPACE' and event.alt and not (event.ctrl or event.shift or event.oskey))) and v == 'PRESS':
                 try:
@@ -3138,6 +3213,17 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
             if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
                 return {'PASS_THROUGH'}
+
+            if ((t == 'SPACE' and is_altgr_pressed(event)) or
+                check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
+                S.navigation_mode = False
+                S.workspace_nav = False
+                try:
+                    with context.temp_override(window=win):
+                        bpy.ops.wm.vim_fuzzy_search('INVOKE_DEFAULT')
+                except Exception as e:
+                    print(f"[Vimender] fuzzy_search error: {e}")
+                return {'RUNNING_MODAL'}
 
             if (check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_alt=True) or
                 (t == 'SPACE' and event.alt and not (event.ctrl or event.shift or event.oskey))) and v == 'PRESS':
@@ -3436,6 +3522,16 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         prefs = get_preferences(context)
 
         use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
+        if ((t == 'SPACE' and is_altgr_pressed(event)) or
+            check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
+            self._cancel_hint(context, win)
+            try:
+                with context.temp_override(window=win):
+                    bpy.ops.wm.vim_fuzzy_search('INVOKE_DEFAULT')
+            except Exception as e:
+                print(f"[Vimender] fuzzy_search error: {e}")
+            return {'RUNNING_MODAL'}
+
         if (check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_alt=True) or
             (t == 'SPACE' and event.alt and not (event.ctrl or event.shift or event.oskey))) and v == 'PRESS':
             self._cancel_hint(context, win)
@@ -3865,6 +3961,373 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class WM_OT_vim_fuzzy_search(bpy.types.Operator):
+    bl_idname = "wm.vim_fuzzy_search"
+    bl_label = "Fuzzy Scene Search (Objects, Shaders, Textures)"
+    bl_description = "Fuzzy search all objects, shaders, and textures in the scene"
+    bl_property = "target"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def get_items(self, context):
+        items = []
+        idx = 0
+
+        objects = list(context.scene.objects) if context and context.scene else list(bpy.data.objects)
+        for o in objects:
+            otype = getattr(o, 'type', 'MESH')
+            icon_map = {
+                'MESH': 'MESH_DATA',
+                'CURVE': 'CURVE_DATA',
+                'SURFACE': 'SURFACE_DATA',
+                'META': 'META_DATA',
+                'FONT': 'FONT_DATA',
+                'ARMATURE': 'ARMATURE_DATA',
+                'LATTICE': 'LATTICE_DATA',
+                'EMPTY': 'EMPTY_DATA',
+                'GPENCIL': 'GREASEPENCIL',
+                'CAMERA': 'CAMERA_DATA',
+                'LIGHT': 'LIGHT_DATA',
+                'SPEAKER': 'SPEAKER',
+                'VOLUME': 'VOLUME_DATA',
+                'LIGHT_PROBE': 'LIGHTPROBE_CUBEMAP',
+                'POINTCLOUD': 'POINTCLOUD_DATA',
+            }
+            icon = icon_map.get(otype, 'OBJECT_DATA')
+            ident = f"OBJ:{o.name}"
+            name = f"{o.name}  [{otype.capitalize()}]"
+            desc = f"Object ({otype}): {o.name} - Select and focus in 3D Viewport"
+            items.append((ident, name, desc, icon, idx))
+            idx += 1
+
+        for mat in bpy.data.materials:
+            ident = f"MAT:{mat.name}"
+            name = f"{mat.name}  [Shader]"
+            desc = f"Material / Shader: {mat.name} - Open in Shading workspace"
+            items.append((ident, name, desc, 'MATERIAL', idx))
+            idx += 1
+
+        for img in bpy.data.images:
+            ident = f"IMG:{img.name}"
+            dims = f"{img.size[0]}x{img.size[1]}" if (hasattr(img, 'size') and len(img.size) >= 2 and img.size[0] > 0) else "image"
+            name = f"{img.name}  [Texture: {dims}]"
+            desc = f"Texture / Image: {img.name} - Open in UV/Texture editor"
+            items.append((ident, name, desc, 'IMAGE_DATA', idx))
+            idx += 1
+
+        for tex in bpy.data.textures:
+            if tex.name not in [img.name for img in bpy.data.images]:
+                ident = f"TEX:{tex.name}"
+                name = f"{tex.name}  [Texture]"
+                desc = f"Texture: {tex.name} - Open in Texture editor"
+                items.append((ident, name, desc, 'TEXTURE', idx))
+                idx += 1
+
+        for grp in bpy.data.node_groups:
+            gtype = getattr(grp, 'type', 'GEOMETRY')
+            icon = 'GEOMETRY_NODES' if gtype == 'GEOMETRY' else ('NODE_COMPOSITING' if gtype == 'COMPOSITING' else 'NODETREE')
+            ident = f"GRP:{grp.name}"
+            name = f"{grp.name}  [{gtype.capitalize()} NodeTree]"
+            desc = f"Node Group: {grp.name} ({gtype}) - Open in {gtype.capitalize()} editor"
+            items.append((ident, name, desc, icon, idx))
+            idx += 1
+
+        for w in bpy.data.worlds:
+            ident = f"WLD:{w.name}"
+            name = f"{w.name}  [World Shader]"
+            desc = f"World Shader: {w.name} - Environment / World background"
+            items.append((ident, name, desc, 'WORLD', idx))
+            idx += 1
+
+        if not items:
+            items.append(("NONE", "No items found", "Scene is empty", 'INFO', 0))
+
+        return items
+
+    target: bpy.props.EnumProperty(
+        name="Target",
+        description="Select scene item to focus or open in editor",
+        items=get_items,
+    )
+
+    def execute(self, context):
+        tgt = self.target
+        if not tgt or tgt == "NONE":
+            return {'CANCELLED'}
+        win = context.window
+        if not win:
+            return {'CANCELLED'}
+
+        prefix, _, name = tgt.partition(":")
+        ordered_ws = get_ordered_workspaces()
+
+        if prefix == "OBJ":
+            obj = bpy.data.objects.get(name)
+            if not obj:
+                self.report({'WARNING'}, f"Vimender: Object '{name}' not found")
+                return {'CANCELLED'}
+
+            has_v3d = any(a.type == 'VIEW_3D' for a in win.screen.areas) if win.screen else False
+            if not has_v3d:
+                target_ws = next((w for w in ordered_ws if any(k in w.name.lower() for k in ('layout', 'modeling', 'general'))), None)
+                if target_ws and win.workspace != target_ws:
+                    try:
+                        win.workspace = target_ws
+                    except Exception:
+                        pass
+
+            try:
+                if hasattr(obj, 'hide_viewport'):
+                    obj.hide_viewport = False
+                if hasattr(obj, 'hide_set'):
+                    obj.hide_set(False)
+            except Exception:
+                pass
+
+            vl = context.view_layer
+            for o in vl.objects:
+                try:
+                    o.select_set(False)
+                except Exception:
+                    pass
+            try:
+                obj.select_set(True)
+                vl.objects.active = obj
+            except Exception:
+                pass
+
+            for a in win.screen.areas:
+                if a.type == 'VIEW_3D':
+                    for r in a.regions:
+                        if r.type == 'WINDOW':
+                            with context.temp_override(window=win, area=a, region=r):
+                                try:
+                                    bpy.ops.view3d.view_selected(use_all_regions=False)
+                                except Exception:
+                                    rv3d = getattr(a.spaces.active, 'region_3d', None)
+                                    if rv3d:
+                                        rv3d.view_location = obj.matrix_world.translation.copy()
+                    a.tag_redraw()
+
+            self.report({'INFO'}, f"Vimender: Selected and focused on '{obj.name}'")
+            tag_all()
+            return {'FINISHED'}
+
+        elif prefix == "MAT":
+            mat = bpy.data.materials.get(name)
+            if not mat:
+                self.report({'WARNING'}, f"Vimender: Material '{name}' not found")
+                return {'CANCELLED'}
+
+            user_obj = None
+            for o in context.scene.objects:
+                if hasattr(o, 'material_slots'):
+                    for slot in o.material_slots:
+                        if slot.material == mat:
+                            user_obj = o
+                            break
+                if user_obj:
+                    break
+
+            if user_obj:
+                vl = context.view_layer
+                for o in vl.objects:
+                    try:
+                        o.select_set(False)
+                    except Exception:
+                        pass
+                try:
+                    user_obj.select_set(True)
+                    vl.objects.active = user_obj
+                    user_obj.active_material = mat
+                except Exception:
+                    pass
+
+            has_shader_editor = any(a.type == 'NODE_EDITOR' for a in win.screen.areas) if win.screen else False
+            if not has_shader_editor:
+                target_ws = next((w for w in ordered_ws if any(k in w.name.lower() for k in ('shading', 'shader', 'material'))), None)
+                if target_ws and win.workspace != target_ws:
+                    try:
+                        win.workspace = target_ws
+                    except Exception:
+                        pass
+
+            for a in win.screen.areas:
+                if a.type == 'NODE_EDITOR':
+                    space = a.spaces.active if a.spaces else None
+                    if space:
+                        try:
+                            space.tree_type = 'ShaderNodeTree'
+                            space.shader_type = 'OBJECT'
+                            if mat.node_tree:
+                                space.node_tree = mat.node_tree
+                        except Exception:
+                            pass
+                    a.tag_redraw()
+
+            msg = f"Vimender: Shader '{mat.name}'" + (f" on object '{user_obj.name}'" if user_obj else "")
+            self.report({'INFO'}, msg)
+            tag_all()
+            return {'FINISHED'}
+
+        elif prefix in ("IMG", "TEX"):
+            img = bpy.data.images.get(name) if prefix == "IMG" else None
+            tex = bpy.data.textures.get(name) if prefix == "TEX" else None
+
+            user_obj = None
+            user_mat = None
+            if img:
+                for m in bpy.data.materials:
+                    if m.node_tree:
+                        for node in m.node_tree.nodes:
+                            if getattr(node, 'image', None) == img:
+                                user_mat = m
+                                break
+                    if user_mat:
+                        break
+            if user_mat:
+                for o in context.scene.objects:
+                    if hasattr(o, 'material_slots'):
+                        for slot in o.material_slots:
+                            if slot.material == user_mat:
+                                user_obj = o
+                                break
+                    if user_obj:
+                        break
+
+            if user_obj:
+                vl = context.view_layer
+                for o in vl.objects:
+                    try:
+                        o.select_set(False)
+                    except Exception:
+                        pass
+                try:
+                    user_obj.select_set(True)
+                    vl.objects.active = user_obj
+                    if user_mat:
+                        user_obj.active_material = user_mat
+                except Exception:
+                    pass
+
+            has_img_editor = any(a.type == 'IMAGE_EDITOR' for a in win.screen.areas) if win.screen else False
+            if not has_img_editor:
+                target_ws = next((w for w in ordered_ws if any(k in w.name.lower() for k in ('texture', 'uv', 'image', 'shading'))), None)
+                if target_ws and win.workspace != target_ws:
+                    try:
+                        win.workspace = target_ws
+                    except Exception:
+                        pass
+
+            if img:
+                for a in win.screen.areas:
+                    if a.type == 'IMAGE_EDITOR':
+                        space = a.spaces.active if a.spaces else None
+                        if space:
+                            try:
+                                space.image = img
+                            except Exception:
+                                pass
+                        a.tag_redraw()
+
+            msg = f"Vimender: Texture '{name}'" + (f" on object '{user_obj.name}'" if user_obj else "")
+            self.report({'INFO'}, msg)
+            tag_all()
+            return {'FINISHED'}
+
+        elif prefix == "GRP":
+            grp = bpy.data.node_groups.get(name)
+            if not grp:
+                self.report({'WARNING'}, f"Vimender: Node group '{name}' not found")
+                return {'CANCELLED'}
+
+            gtype = getattr(grp, 'type', 'GEOMETRY')
+            user_obj = None
+            if gtype == 'GEOMETRY':
+                for o in context.scene.objects:
+                    for mod in getattr(o, 'modifiers', []):
+                        if getattr(mod, 'node_group', None) == grp:
+                            user_obj = o
+                            break
+                    if user_obj:
+                        break
+
+            if user_obj:
+                vl = context.view_layer
+                for o in vl.objects:
+                    try:
+                        o.select_set(False)
+                    except Exception:
+                        pass
+                try:
+                    user_obj.select_set(True)
+                    vl.objects.active = user_obj
+                except Exception:
+                    pass
+
+            if gtype == 'GEOMETRY':
+                target_ws = next((w for w in ordered_ws if any(k in w.name.lower() for k in ('geometry', 'geo'))), None)
+            elif gtype == 'COMPOSITING':
+                target_ws = next((w for w in ordered_ws if any(k in w.name.lower() for k in ('compositing', 'comp'))), None)
+            else:
+                target_ws = next((w for w in ordered_ws if any(k in w.name.lower() for k in ('shading', 'shader'))), None)
+
+            if target_ws and win.workspace != target_ws:
+                try:
+                    win.workspace = target_ws
+                except Exception:
+                    pass
+
+            for a in win.screen.areas:
+                if a.type == 'NODE_EDITOR':
+                    space = a.spaces.active if a.spaces else None
+                    if space:
+                        try:
+                            if gtype == 'GEOMETRY':
+                                space.tree_type = 'GeometryNodeTree'
+                            elif gtype == 'COMPOSITING':
+                                space.tree_type = 'CompositorNodeTree'
+                            space.node_tree = grp
+                        except Exception:
+                            pass
+                    a.tag_redraw()
+
+            self.report({'INFO'}, f"Vimender: Node group '{grp.name}'")
+            tag_all()
+            return {'FINISHED'}
+
+        elif prefix == "WLD":
+            wld = bpy.data.worlds.get(name)
+            if wld:
+                context.scene.world = wld
+                target_ws = next((w for w in ordered_ws if any(k in w.name.lower() for k in ('shading', 'world'))), None)
+                if target_ws and win.workspace != target_ws:
+                    try:
+                        win.workspace = target_ws
+                    except Exception:
+                        pass
+                for a in win.screen.areas:
+                    if a.type == 'NODE_EDITOR':
+                        space = a.spaces.active if a.spaces else None
+                        if space:
+                            try:
+                                space.tree_type = 'ShaderNodeTree'
+                                space.shader_type = 'WORLD'
+                                if wld.node_tree:
+                                    space.node_tree = wld.node_tree
+                            except Exception:
+                                pass
+                        a.tag_redraw()
+                self.report({'INFO'}, f"Vimender: Active world set to '{wld.name}'")
+                tag_all()
+                return {'FINISHED'}
+
+        return {'CANCELLED'}
+
+    def invoke(self, context, event):
+        context.window_manager.invoke_search_popup(self)
+        return {'FINISHED'}
+
+
 def register_search_key():
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.addon
@@ -3874,7 +4337,8 @@ def register_search_key():
     kmi1 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'SPACE', 'PRESS', ctrl=True)
     kmi2 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'F3', 'PRESS', ctrl=True)
     kmi3 = km.keymap_items.new(WM_OT_vim_search_mode.bl_idname, 'SPACE', 'PRESS', alt=True)
-    _addon_keymaps.extend([(km, kmi1), (km, kmi2), (km, kmi3)])
+    kmi4 = km.keymap_items.new(WM_OT_vim_fuzzy_search.bl_idname, 'SPACE', 'PRESS', alt=True, ctrl=True)
+    _addon_keymaps.extend([(km, kmi1), (km, kmi2), (km, kmi3), (km, kmi4)])
 
 
 def unregister_search_key():
@@ -4013,6 +4477,7 @@ KEY_PREFIXES = (
     ("editor_pie", "Editor Pie Menu (Ctrl+W)", "W", True, False, False),
     ("search_menu", "Search Menu (Space)", "SPACE", False, False, False),
     ("search_object", "Search Objects / Cursor (Ctrl+Space)", "SPACE", True, False, False),
+    ("fuzzy_search", "Scene Fuzzy Search (AltGr+Space)", "SPACE", True, False, True),
     ("hint_select", "Hint Click Select (F)", "F", False, False, False),
     ("box_select", "Box Hint Select (C)", "C", False, False, False),
     ("persp_ortho", "Persp / Ortho View (Y / Asterisk)", "Y", False, False, False),
@@ -4153,6 +4618,11 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     shift_search_object: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
     alt_search_object: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
+    key_fuzzy_search: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE', update=_on_keymap_change)
+    ctrl_fuzzy_search: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
+    shift_fuzzy_search: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_fuzzy_search: bpy.props.BoolProperty(name="Alt", default=True, update=_on_keymap_change)
+
     key_hint_select: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='F', update=_on_keymap_change)
     ctrl_hint_select: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
     shift_hint_select: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
@@ -4236,6 +4706,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
         box2.label(text="Tool & General Shortcuts", icon='EVENT_F')
         self._draw_shortcut(box2, "Search Menu (Space)", "search_menu")
         self._draw_shortcut(box2, "Search Objects / Cursor (Ctrl+Space)", "search_object")
+        self._draw_shortcut(box2, "Scene Fuzzy Search (AltGr+Space)", "fuzzy_search")
         self._draw_shortcut(box2, "Hint Click Select (F)", "hint_select")
         self._draw_shortcut(box2, "Box Hint Select (C)", "box_select")
         self._draw_shortcut(box2, "Persp / Ortho View (Y / Asterisk)", "persp_ortho")
@@ -4403,6 +4874,7 @@ classes = (
     WM_OT_vim_set_editor,
     WM_OT_vim_search_object,
     WM_OT_vim_search_mode,
+    WM_OT_vim_fuzzy_search,
     WM_OT_vim_export_keymap,
     WM_OT_vim_import_keymap,
     WM_OT_vim_reset_keymap,
