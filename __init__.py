@@ -574,6 +574,9 @@ class _State:
         self.cursor_mode = False
         self.cursor_plane = 'XY'
         self.right_alt_down = False
+        self.save_prompt = False
+        self.save_action = 'QUIT'
+        self.save_buttons = {}
         self.prev_mode_state = {}
         self.smooth_cursor = _Smooth3DCursor()
         self.preview_mode = True
@@ -582,6 +585,7 @@ class _State:
     def clear_hint(self):
         self.mode = None
         self.kind = None
+        self.save_prompt = False
         self.action = 'NORMAL'
         self.box_extend = False
         self.vertex_mode = False
@@ -1910,6 +1914,8 @@ def draw_cb():
         return
     ptr = area.as_pointer()
     active_ptr = S.hint_ptr if S.mode else S.hover_ptr
+    if not active_ptr:
+        active_ptr = ptr
     if ptr != active_ptr:
         return
 
@@ -2015,6 +2021,82 @@ def draw_cb():
     y0 = 12 * ui
     _fill(_rect(x0, y0, x1, y0 + th + 2 * pad), (0.0, 0.0, 0.0, 0.65))
     _text(x0 + pad, y0 + pad, label, border_col)
+
+    if S.save_prompt:
+        dw = int(460 * ui)
+        dh = int(150 * ui)
+        dx0 = int((w - dw) / 2)
+        dy0 = int((h - dh) / 2)
+        dx1 = dx0 + dw
+        dy1 = dy0 + dh
+
+        _fill(_rect(0, 0, w, h), (0.0, 0.0, 0.0, 0.55))
+        _fill(_rect(dx0, dy0, dx1, dy1), (0.13, 0.13, 0.16, 0.98))
+        border_c = (0.35, 0.35, 0.40, 1.0)
+        bt = int(2 * ui)
+        _fill(_rect(dx0, dy0, dx1, dy0 + bt) + _rect(dx0, dy1 - bt, dx1, dy1) +
+              _rect(dx0, dy0, dx0 + bt, dy1) + _rect(dx1 - bt, dy0, dx1, dy1), border_c)
+
+        if S.save_action == 'QUIT':
+            title = "Save changes before closing?"
+        elif S.save_action == 'OPEN':
+            title = "Save changes before opening file?"
+        else:
+            title = "Save changes before new file?"
+
+        _font_size(int(15 * ui))
+        tw_t, th_t = blf.dimensions(0, title)
+        _text(dx0 + int((dw - tw_t) / 2), dy1 - int(44 * ui), title, (0.95, 0.95, 0.95, 1.0))
+
+        bw = int(122 * ui)
+        bh = int(42 * ui)
+        gap = int(14 * ui)
+        total_w = 3 * bw + 2 * gap
+        bx_start = dx0 + int((dw - total_w) / 2)
+        by0 = dy0 + int(24 * ui)
+        by1 = by0 + bh
+
+        b1_x0, b1_x1 = bx_start, bx_start + bw
+        b2_x0, b2_x1 = b1_x1 + gap, b1_x1 + gap + bw
+        b3_x0, b3_x1 = b2_x1 + gap, b2_x1 + gap + bw
+
+        S.save_buttons = {
+            'SAVE': (b1_x0, by0, b1_x1, by1),
+            'DONT_SAVE': (b2_x0, by0, b2_x1, by1),
+            'CANCEL': (b3_x0, by0, b3_x1, by1),
+        }
+
+        btn_bg = (0.22, 0.22, 0.26, 0.95)
+        btn_border = (0.34, 0.34, 0.38, 0.95)
+        for x0_b, x1_b in ((b1_x0, b1_x1), (b2_x0, b2_x1), (b3_x0, b3_x1)):
+            _fill(_rect(x0_b, by0, x1_b, by1), btn_bg)
+            _fill(_rect(x0_b, by0, x1_b, by0 + 1) + _rect(x0_b, by1 - 1, x1_b, by1) +
+                  _rect(x0_b, by0, x0_b + 1, by1) + _rect(x1_b - 1, by0, x1_b, by1), btn_border)
+
+        badge_w = int(24 * ui)
+        badge_h = int(24 * ui)
+        badge_pad_y = int((bh - badge_h) / 2)
+        badge_y0 = by0 + badge_pad_y
+        badge_y1 = badge_y0 + badge_h
+
+        buttons_info = [
+            (b1_x0, b1_x1, "Y", "Save"),
+            (b2_x0, b2_x1, "N", "Don't Save"),
+            (b3_x0, b3_x1, "C", "Cancel"),
+        ]
+
+        for x0_b, x1_b, key_char, btn_text in buttons_info:
+            bx0 = x0_b + int(8 * ui)
+            bx1 = bx0 + badge_w
+            _fill(_rect(bx0, badge_y0, bx1, badge_y1), HINT_BG)
+            _font_size(int(13 * ui))
+            kw, kh = blf.dimensions(0, key_char)
+            _text(bx0 + int((badge_w - kw) / 2), badge_y0 + int((badge_h - kh) / 2), key_char, HINT_TEXT)
+
+            _font_size(int(13 * ui))
+            tw_b, th_b = blf.dimensions(0, btn_text)
+            tx = bx1 + int(8 * ui)
+            _text(tx, by0 + int((bh - th_b) / 2), btn_text, (0.95, 0.95, 0.95, 1.0))
 
     gpu.state.blend_set('NONE')
 
@@ -2965,6 +3047,122 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             if area:
                 area.tag_redraw()
 
+        if S.save_prompt:
+            if v == 'PRESS':
+                if t in {'Y', 'RET', 'NUMPAD_ENTER'}:
+                    S.save_prompt = False
+                    try:
+                        if bpy.data.filepath:
+                            bpy.ops.wm.save_mainfile()
+                        else:
+                            bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT')
+                    except Exception as e:
+                        print(f"[Vimender] save error: {e}")
+                    act = S.save_action
+                    if act == 'QUIT':
+                        sys.exit(0)
+                    elif act == 'OPEN':
+                        bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
+                    elif act == 'NEW':
+                        bpy.ops.wm.read_homefile('INVOKE_DEFAULT')
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if t == 'N':
+                    S.save_prompt = False
+                    act = S.save_action
+                    if act == 'QUIT':
+                        sys.exit(0)
+                    elif act == 'OPEN':
+                        bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
+                    elif act == 'NEW':
+                        bpy.ops.wm.read_homefile(use_empty=False)
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if t in {'C', 'ESC'}:
+                    S.save_prompt = False
+                    self.report({'INFO'}, "Vimender: Cancelled")
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if t == 'LEFTMOUSE':
+                    btns = getattr(S, 'save_buttons', {})
+                    if btns and area:
+                        r = window_region(area)
+                        rx = mx - (r.x if r else 0)
+                        ry = my - (r.y if r else 0)
+                        b1 = btns.get('SAVE')
+                        b2 = btns.get('DONT_SAVE')
+                        b3 = btns.get('CANCEL')
+                        if b1 and b1[0] <= rx <= b1[2] and b1[1] <= ry <= b1[3]:
+                            S.save_prompt = False
+                            try:
+                                if bpy.data.filepath:
+                                    bpy.ops.wm.save_mainfile()
+                                else:
+                                    bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT')
+                            except Exception:
+                                pass
+                            act = S.save_action
+                            if act == 'QUIT':
+                                sys.exit(0)
+                            elif act == 'OPEN':
+                                bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
+                            elif act == 'NEW':
+                                bpy.ops.wm.read_homefile('INVOKE_DEFAULT')
+                            tag_all()
+                            return {'RUNNING_MODAL'}
+                        elif b2 and b2[0] <= rx <= b2[2] and b2[1] <= ry <= b2[3]:
+                            S.save_prompt = False
+                            act = S.save_action
+                            if act == 'QUIT':
+                                sys.exit(0)
+                            elif act == 'OPEN':
+                                bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
+                            elif act == 'NEW':
+                                bpy.ops.wm.read_homefile(use_empty=False)
+                            tag_all()
+                            return {'RUNNING_MODAL'}
+                        elif b3 and b3[0] <= rx <= b3[2] and b3[1] <= ry <= b3[3]:
+                            S.save_prompt = False
+                            tag_all()
+                            return {'RUNNING_MODAL'}
+                        else:
+                            S.save_prompt = False
+                            tag_all()
+                            return {'RUNNING_MODAL'}
+
+            return {'RUNNING_MODAL'}
+
+        if v == 'PRESS' and event.ctrl and not (event.alt or event.shift or event.oskey):
+            if t == 'Q':
+                if bpy.data.is_dirty:
+                    S.save_prompt = True
+                    S.save_action = 'QUIT'
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+                else:
+                    sys.exit(0)
+            elif t == 'O':
+                if bpy.data.is_dirty:
+                    S.save_prompt = True
+                    S.save_action = 'OPEN'
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+                else:
+                    bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
+                    return {'RUNNING_MODAL'}
+            elif t == 'N':
+                if bpy.data.is_dirty:
+                    S.save_prompt = True
+                    S.save_action = 'NEW'
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+                else:
+                    bpy.ops.wm.read_homefile('INVOKE_DEFAULT')
+                    return {'RUNNING_MODAL'}
+
         if S.mode:
             return self._modal_hint(context, event, win, mx, my, area)
 
@@ -3778,7 +3976,7 @@ class WM_OT_vim_search_object(bpy.types.Operator):
 
 class WM_OT_vim_search_mode(bpy.types.Operator):
     bl_idname = "wm.vim_search_mode"
-    bl_label = "Search Mode / Editor"
+    bl_label = "Mode Search"
     bl_description = "Search and switch Vimender modes, Blender interaction modes, or Editor types"
     bl_property = "target"
     bl_options = {'REGISTER', 'UNDO'}
@@ -3963,7 +4161,7 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
 
 class WM_OT_vim_fuzzy_search(bpy.types.Operator):
     bl_idname = "wm.vim_fuzzy_search"
-    bl_label = "Fuzzy Scene Search (Objects, Shaders, Textures)"
+    bl_label = "Data Search"
     bl_description = "Fuzzy search all objects, shaders, and textures in the scene"
     bl_property = "target"
     bl_options = {'REGISTER', 'UNDO'}
@@ -4328,6 +4526,105 @@ class WM_OT_vim_fuzzy_search(bpy.types.Operator):
         return {'FINISHED'}
 
 
+_orig_topbar_file_draw = None
+
+
+def _vim_topbar_file_draw(self, context):
+    try:
+        from bl_ui.space_topbar import TOPBAR_MT_file_new
+        layout = self.layout
+        layout.operator_context = 'INVOKE_AREA'
+        layout.menu("TOPBAR_MT_file_new", text="New", icon='FILE_NEW')
+        layout.operator("wm.vim_save_prompt", text="Open...", icon='FILE_FOLDER').action = 'OPEN'
+        layout.menu("TOPBAR_MT_file_open_recent")
+        layout.operator("wm.revert_mainfile")
+        layout.menu("TOPBAR_MT_file_recover")
+        layout.separator()
+        layout.operator_context = 'EXEC_AREA' if context.blend_data.is_saved else 'INVOKE_AREA'
+        layout.operator("wm.save_mainfile", text="Save", icon='FILE_TICK')
+        layout.operator_context = 'INVOKE_AREA'
+        layout.operator("wm.save_as_mainfile", text="Save As...")
+        layout.operator("wm.save_as_mainfile", text="Save Copy...").copy = True
+        sub = layout.row()
+        sub.enabled = context.blend_data.is_saved
+        sub.operator_context = 'EXEC_AREA'
+        sub.operator("wm.save_mainfile", text="Save Incremental").incremental = True
+        layout.separator()
+        layout.operator_context = 'INVOKE_AREA'
+        layout.operator("wm.link", text="Link...", icon='LINK_BLEND')
+        layout.operator("wm.append", text="Append...", icon='APPEND_BLEND')
+        layout.menu("TOPBAR_MT_file_previews")
+        layout.separator()
+        layout.menu("TOPBAR_MT_file_import", icon='IMPORT')
+        layout.menu("TOPBAR_MT_file_export", icon='EXPORT')
+        row = layout.row()
+        row.operator("wm.collection_export_all")
+        row.enabled = getattr(context.view_layer, 'has_export_collections', False)
+        layout.separator()
+        layout.menu("TOPBAR_MT_file_external_data")
+        layout.menu("TOPBAR_MT_file_cleanup")
+        layout.separator()
+        layout.menu("TOPBAR_MT_file_defaults")
+        layout.separator()
+        layout.operator("wm.vim_save_prompt", text="Quit", icon='QUIT').action = 'QUIT'
+    except Exception:
+        if _orig_topbar_file_draw:
+            _orig_topbar_file_draw(self, context)
+
+
+class WM_OT_vim_general_search(bpy.types.Operator):
+    bl_idname = "wm.vim_general_search"
+    bl_label = "General Search"
+    bl_description = "General Menu and Operator Search"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        try:
+            self.report({'INFO'}, "Vimender: GENERAL SEARCH")
+            bpy.ops.wm.search_menu('INVOKE_DEFAULT')
+        except Exception as e:
+            print(f"[Vimender] general_search error: {e}")
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        return self.execute(context)
+
+
+class WM_OT_vim_save_prompt(bpy.types.Operator):
+    bl_idname = "wm.vim_save_prompt"
+    bl_label = "Save Changes Prompt"
+    bl_description = "Prompt to save changes before closing, opening, or creating a new file"
+    bl_options = {'REGISTER'}
+
+    action: bpy.props.EnumProperty(
+        name="Action",
+        items=[
+            ('QUIT', "Quit", "Quit Blender"),
+            ('OPEN', "Open", "Open file"),
+            ('NEW', "New", "New file"),
+        ],
+        default='QUIT'
+    )
+
+    def execute(self, context):
+        if not bpy.data.is_dirty:
+            if self.action == 'QUIT':
+                sys.exit(0)
+            elif self.action == 'OPEN':
+                bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
+            elif self.action == 'NEW':
+                bpy.ops.wm.read_homefile('INVOKE_DEFAULT')
+            return {'FINISHED'}
+
+        S.save_prompt = True
+        S.save_action = self.action
+        tag_all()
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        return self.execute(context)
+
+
 def register_search_key():
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.addon
@@ -4338,7 +4635,13 @@ def register_search_key():
     kmi2 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'F3', 'PRESS', ctrl=True)
     kmi3 = km.keymap_items.new(WM_OT_vim_search_mode.bl_idname, 'SPACE', 'PRESS', alt=True)
     kmi4 = km.keymap_items.new(WM_OT_vim_fuzzy_search.bl_idname, 'SPACE', 'PRESS', alt=True, ctrl=True)
-    _addon_keymaps.extend([(km, kmi1), (km, kmi2), (km, kmi3), (km, kmi4)])
+    kmi_q = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'Q', 'PRESS', ctrl=True)
+    kmi_q.properties.action = 'QUIT'
+    kmi_o = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'O', 'PRESS', ctrl=True)
+    kmi_o.properties.action = 'OPEN'
+    kmi_n = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'N', 'PRESS', ctrl=True)
+    kmi_n.properties.action = 'NEW'
+    _addon_keymaps.extend([(km, kmi1), (km, kmi2), (km, kmi3), (km, kmi4), (km, kmi_q), (km, kmi_o), (km, kmi_n)])
 
 
 def unregister_search_key():
@@ -4469,15 +4772,15 @@ def is_edit_mode(context):
 _keymaps_initialized = False
 
 KEY_PREFIXES = (
-    ("search_mode", "Mode Search Menu (Alt+Space)", "SPACE", False, False, True),
+    ("search_mode", "Mode Search (Alt+Space)", "SPACE", False, False, True),
     ("preview", "Preview Mode Toggle (Ctrl+Y)", "Y", True, False, False),
     ("nav", "Navigation Mode Toggle (Ctrl+B)", "B", True, False, False),
     ("cursor", "Cursor Mode Toggle (Ctrl+Num5)", "NUMPAD_5", True, False, False),
     ("orbit_pan", "Orbit / Pan Mode Toggle (U)", "U", False, False, False),
     ("editor_pie", "Editor Pie Menu (Ctrl+W)", "W", True, False, False),
-    ("search_menu", "Search Menu (Space)", "SPACE", False, False, False),
+    ("search_menu", "General Search (Space)", "SPACE", False, False, False),
     ("search_object", "Search Objects / Cursor (Ctrl+Space)", "SPACE", True, False, False),
-    ("fuzzy_search", "Scene Fuzzy Search (AltGr+Space)", "SPACE", True, False, True),
+    ("fuzzy_search", "Data Search (AltGr+Space)", "SPACE", True, False, True),
     ("hint_select", "Hint Click Select (F)", "F", False, False, False),
     ("box_select", "Box Hint Select (C)", "C", False, False, False),
     ("persp_ortho", "Persp / Ortho View (Y / Asterisk)", "Y", False, False, False),
@@ -4695,7 +4998,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
 
         box = layout.box()
         box.label(text="Mode Switching Shortcuts", icon='ARROW_LEFTRIGHT')
-        self._draw_shortcut(box, "Mode Search Menu (Alt+Space)", "search_mode")
+        self._draw_shortcut(box, "Mode Search (Alt+Space)", "search_mode")
         self._draw_shortcut(box, "Preview Mode Toggle (Ctrl+Y)", "preview")
         self._draw_shortcut(box, "Navigation Mode Toggle (Ctrl+B)", "nav")
         self._draw_shortcut(box, "Cursor Mode Toggle (Ctrl+Num5)", "cursor")
@@ -4704,9 +5007,9 @@ class VimenderPreferences(bpy.types.AddonPreferences):
 
         box2 = layout.box()
         box2.label(text="Tool & General Shortcuts", icon='EVENT_F')
-        self._draw_shortcut(box2, "Search Menu (Space)", "search_menu")
+        self._draw_shortcut(box2, "General Search (Space)", "search_menu")
         self._draw_shortcut(box2, "Search Objects / Cursor (Ctrl+Space)", "search_object")
-        self._draw_shortcut(box2, "Scene Fuzzy Search (AltGr+Space)", "fuzzy_search")
+        self._draw_shortcut(box2, "Data Search (AltGr+Space)", "fuzzy_search")
         self._draw_shortcut(box2, "Hint Click Select (F)", "hint_select")
         self._draw_shortcut(box2, "Box Hint Select (C)", "box_select")
         self._draw_shortcut(box2, "Persp / Ortho View (Y / Asterisk)", "persp_ortho")
@@ -4875,6 +5178,8 @@ classes = (
     WM_OT_vim_search_object,
     WM_OT_vim_search_mode,
     WM_OT_vim_fuzzy_search,
+    WM_OT_vim_general_search,
+    WM_OT_vim_save_prompt,
     WM_OT_vim_export_keymap,
     WM_OT_vim_import_keymap,
     WM_OT_vim_reset_keymap,
@@ -4886,6 +5191,14 @@ classes = (
 def register():
     for c in classes:
         bpy.utils.register_class(c)
+    global _orig_topbar_file_draw
+    try:
+        from bl_ui.space_topbar import TOPBAR_MT_file
+        if _orig_topbar_file_draw is None:
+            _orig_topbar_file_draw = TOPBAR_MT_file.draw
+            TOPBAR_MT_file.draw = _vim_topbar_file_draw
+    except Exception:
+        pass
     bpy.types.TOPBAR_MT_window.append(_menu_func)
     clean_modal_keymaps()
     register_search_key()
@@ -4899,6 +5212,14 @@ def unregister():
     shutdown()
     clean_modal_keymaps()
     unregister_search_key()
+    global _orig_topbar_file_draw
+    try:
+        from bl_ui.space_topbar import TOPBAR_MT_file
+        if _orig_topbar_file_draw is not None:
+            TOPBAR_MT_file.draw = _orig_topbar_file_draw
+            _orig_topbar_file_draw = None
+    except Exception:
+        pass
     if _on_load_post in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(_on_load_post)
     bpy.types.TOPBAR_MT_window.remove(_menu_func)
