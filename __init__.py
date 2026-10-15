@@ -107,10 +107,6 @@ ALL_DIRS = {
     'H': (-1, 0), 'L': (1, 0),
     'k': (0, 1), 'j': (0, -1),
     'h': (-1, 0), 'l': (1, 0),
-    'EIGHT': (0, 1), 'TWO': (0, -1),
-    'FOUR': (-1, 0), 'SIX': (1, 0),
-    '8': (0, 1), '2': (0, -1),
-    '4': (-1, 0), '6': (1, 0),
 }
 PREFIX_DIRS = {
     'LEFT_ARROW': 'LEFT', 'RIGHT_ARROW': 'RIGHT', 'UP_ARROW': 'UP', 'DOWN_ARROW': 'DOWN',
@@ -2727,8 +2723,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     print(f"[Vimender] search_menu error: {e}")
                 return {'RUNNING_MODAL'}
 
-        if (check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) or
-            (use_arrow_layout and t == 'FIVE' and event.ctrl and not (event.alt or event.shift or event.oskey))) and v == 'PRESS':
+        if check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) and v == 'PRESS':
             if not S.cursor_mode:
                 self._enter_cursor_mode(context)
             else:
@@ -2736,7 +2731,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             return {'RUNNING_MODAL'}
 
         if S.cursor_mode:
-            if (t == 'NUMPAD_5' or (use_arrow_layout and t in {'FIVE', 'TAB'})) and not event.ctrl:
+            if (t == 'NUMPAD_5' or (use_arrow_layout and t == 'TAB')) and not event.ctrl:
                 if v == 'PRESS':
                     S.cursor_plane = 'ZY' if S.cursor_plane == 'XY' else 'XY'
                     S.smooth_cursor.reset()
@@ -2895,40 +2890,40 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
             allow_view_switch = (not S.preview_mode) or (use_arrow_layout and not is_edit_mode(context))
 
-            is_key_1 = t in {'NUMPAD_1', 'ONE'} or (event.unicode == '1' and 'NUMPAD' not in t)
+            is_key_1 = (t == 'NUMPAD_1')
             if is_key_1 and allow_view_switch and not (event.alt or event.oskey):
                 if v == 'PRESS':
                     axis = 'BACK' if event.ctrl else 'FRONT'
                     _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
                 return {'RUNNING_MODAL'}
 
-            is_key_3 = t in {'NUMPAD_3', 'THREE'} or (event.unicode == '3' and 'NUMPAD' not in t)
+            is_key_3 = (t == 'NUMPAD_3')
             if is_key_3 and allow_view_switch and not (event.alt or event.oskey):
                 if v == 'PRESS':
                     axis = 'LEFT' if event.ctrl else 'RIGHT'
                     _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
                 return {'RUNNING_MODAL'}
 
-            is_key_7 = t in {'NUMPAD_7', 'SEVEN'} or (event.unicode == '7' and 'NUMPAD' not in t)
+            is_key_7 = (t == 'NUMPAD_7')
             if is_key_7 and allow_view_switch and not (event.alt or event.oskey):
                 if v == 'PRESS':
                     axis = 'BOTTOM' if event.ctrl else 'TOP'
                     _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
                 return {'RUNNING_MODAL'}
 
-            is_key_9 = t in {'NUMPAD_9', 'NINE'} or (event.unicode == '9' and 'NUMPAD' not in t)
+            is_key_9 = (t == 'NUMPAD_9')
             if is_key_9 and (allow_view_switch or use_arrow_layout) and not (event.ctrl or event.alt or event.oskey or event.shift):
                 if v == 'PRESS':
                     _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_orbit, angle=math.pi, type='ORBITRIGHT')
                 return {'RUNNING_MODAL'}
 
-            is_key_0 = t in {'NUMPAD_0', 'ZERO'} or (event.unicode == '0' and 'NUMPAD' not in t)
+            is_key_0 = (t == 'NUMPAD_0')
             if is_key_0 and (allow_view_switch or use_arrow_layout) and not (event.ctrl or event.alt or event.oskey or event.shift):
                 if v == 'PRESS':
                     _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_camera)
                 return {'RUNNING_MODAL'}
 
-            is_key_slash = t in {'NUMPAD_SLASH', 'SLASH'} or (event.unicode == '/' and 'NUMPAD' not in t)
+            is_key_slash = (t == 'NUMPAD_SLASH')
             if is_key_slash and (allow_view_switch or use_arrow_layout) and not (event.ctrl or event.alt or event.oskey or event.shift):
                 if v == 'PRESS':
                     _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.localview)
@@ -3001,8 +2996,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
 
         if (check_shortcut(prefs, 'orbit_pan', event, 'U', fallback_ctrl=False) or
-            (t in {'U', 'NUMPAD_5'} and not (event.ctrl or event.alt or event.oskey or event.shift)) or
-            (use_arrow_layout and t in {'FIVE', 'U'} and not (event.ctrl or event.alt or event.oskey or event.shift))) and not (area and area.type in PASS_KEYS_IN):
+            (t in {'U', 'NUMPAD_5'} and not (event.ctrl or event.alt or event.oskey or event.shift))) and not (area and area.type in PASS_KEYS_IN):
             if v == 'PRESS':
                 S.nav_mode = 'PAN' if S.nav_mode == 'ORBIT' else 'ORBIT'
                 self.report({'INFO'}, f"Vimender: {S.nav_mode} MODE")
@@ -3044,14 +3038,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 nav_key = t
             elif v == 'RELEASE' and t in S.nav.held:
                 nav_key = t
-        elif t in {'EIGHT', 'TWO', 'FOUR', 'SIX'} or (event.unicode in {'8', '2', '4', '6'} and 'NUMPAD' not in t):
-            num_map = {'EIGHT': 'EIGHT', 'TWO': 'TWO', 'FOUR': 'FOUR', 'SIX': 'SIX',
-                       '8': 'EIGHT', '2': 'TWO', '4': 'FOUR', '6': 'SIX'}
-            k = num_map.get(t) or num_map.get(event.unicode)
-            if not (event.ctrl or event.alt or event.oskey or event.shift):
-                nav_key = k
-            elif v == 'RELEASE' and k in S.nav.held:
-                nav_key = k
 
         if nav_key and not (area and area.type in PASS_KEYS_IN) and not transform_active(win):
             S.nav.on_key(nav_key, v, shift=event.shift)
@@ -3087,8 +3073,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         prefs = get_preferences(context)
 
         use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
-        if (check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) or
-            (use_arrow_layout and t == 'FIVE' and event.ctrl and not (event.alt or event.shift or event.oskey))) and v == 'PRESS':
+        if check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) and v == 'PRESS':
             self._cancel_hint(context, win)
             self._enter_cursor_mode(context)
             return {'RUNNING_MODAL'}
