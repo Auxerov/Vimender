@@ -3561,34 +3561,62 @@ class WM_OT_vim_search_object(bpy.types.Operator):
 
 class WM_OT_vim_search_mode(bpy.types.Operator):
     bl_idname = "wm.vim_search_mode"
-    bl_label = "Search Modes"
-    bl_description = "Search and switch between Vimender and Blender modes"
+    bl_label = "Search Mode / Editor"
+    bl_description = "Search and switch Vimender modes, Blender interaction modes, or Editor types"
     bl_property = "target"
     bl_options = {'REGISTER', 'UNDO'}
 
     def get_items(self, context):
         items = [
-            ("VIM_PREVIEW", "Preview Mode", "Vimender: Preview hover and select mode", 'RESTRICT_VIEW_OFF', 0),
+            ("VIM_NAV", "Navigation Mode", "Vimender: Workspace & Area window navigation (Ctrl+B)", 'SCREEN_BACK', 0),
             ("VIM_ORBIT", "Orbit Mode", "Vimender: Turntable/Trackball orbit camera navigation", 'VIEW_ORBIT', 1),
             ("VIM_PAN", "Pan Mode", "Vimender: Camera Pan navigation", 'VIEW_PAN', 2),
             ("VIM_CURSOR", "3D Cursor Mode", "Vimender: Smooth 3D Cursor control (HJKL)", 'PIVOT_CURSOR', 3),
-            ("VIM_NAV", "Navigation Mode", "Vimender: Workspace & Area window navigation (Ctrl+B)", 'SCREEN_BACK', 4),
-            ("VIM_HINT", "Hint Select (F)", "Vimender: Jump & select elements visually", 'RESTRICT_SELECT_OFF', 5),
-            ("VIM_BOX", "Box Select (C)", "Vimender: 2D region visual box selection", 'BORDERMOVE', 6),
-            ("BL_OBJECT", "Object Mode", "Blender: Switch to Object Mode", 'OBJECT_DATAMODE', 10),
-            ("BL_EDIT", "Edit Mode", "Blender: Switch to Edit Mode", 'EDITMODE_HLT', 11),
-            ("BL_SCULPT", "Sculpt Mode", "Blender: Switch to Sculpt Mode", 'SCULPTMODE_HLT', 12),
-            ("BL_VERTEX_PAINT", "Vertex Paint Mode", "Blender: Switch to Vertex Paint Mode", 'VPAINT_HLT', 13),
-            ("BL_WEIGHT_PAINT", "Weight Paint Mode", "Blender: Switch to Weight Paint Mode", 'WPAINT_HLT', 14),
-            ("BL_TEXTURE_PAINT", "Texture Paint Mode", "Blender: Switch to Texture Paint Mode", 'TPAINT_HLT', 15),
-            ("BL_POSE", "Pose Mode", "Blender: Switch to Pose Mode (Armature)", 'POSE_HLT', 16),
-            ("BL_PARTICLE_EDIT", "Particle Edit Mode", "Blender: Switch to Particle Edit Mode", 'PARTICLEMODE', 17),
+            ("VIM_PREVIEW", "Preview Mode", "Vimender: Preview hover and select mode", 'RESTRICT_VIEW_OFF', 4),
+
+            ("BL_OBJECT", "Blender: Object Mode", "Switch active object to Object Mode", 'OBJECT_DATAMODE', 10),
+            ("BL_EDIT", "Blender: Edit Mode", "Switch active object to Edit Mode", 'EDITMODE_HLT', 11),
+            ("BL_SCULPT", "Blender: Sculpt Mode", "Switch active object to Sculpt Mode", 'SCULPTMODE_HLT', 12),
+            ("BL_VERTEX_PAINT", "Blender: Vertex Paint", "Switch to Vertex Paint Mode", 'VPAINT_HLT', 13),
+            ("BL_WEIGHT_PAINT", "Blender: Weight Paint", "Switch to Weight Paint Mode", 'WPAINT_HLT', 14),
+            ("BL_TEXTURE_PAINT", "Blender: Texture Paint", "Switch to Texture Paint Mode", 'TPAINT_HLT', 15),
+            ("BL_POSE", "Blender: Pose Mode", "Switch active armature to Pose Mode", 'POSE_HLT', 16),
+            ("BL_PARTICLE_EDIT", "Blender: Particle Edit", "Switch to Particle Edit Mode", 'PARTICLEMODE', 17),
+            ("BL_PAINT_GPENCIL", "Blender: GP Draw", "Grease pencil draw mode", 'GREASEPENCIL', 18),
+            ("BL_EDIT_GPENCIL", "Blender: GP Edit", "Grease pencil edit mode", 'EDITMODE_HLT', 19),
+            ("BL_SCULPT_GPENCIL", "Blender: GP Sculpt", "Grease pencil sculpt mode", 'SCULPTMODE_HLT', 20),
+            ("BL_WEIGHT_GPENCIL", "Blender: GP Weight", "Grease pencil weight paint mode", 'WPAINT_HLT', 21),
+            ("BL_VERTEX_GPENCIL", "Blender: GP Vertex", "Grease pencil vertex paint mode", 'VPAINT_HLT', 22),
+            ("BL_SCULPT_CURVES", "Blender: Curves Sculpt", "Curves sculpt mode", 'SCULPTMODE_HLT', 23),
+
+            ("ED_VIEW_3D", "Editor: 3D Viewport", "Switch area to 3D Viewport", 'VIEW3D', 30),
+            ("ED_UV", "Editor: UV Editor", "Switch area to UV Editor", 'UV', 31),
+            ("ED_IMAGE_EDITOR", "Editor: Image Editor", "Switch area to Image Editor", 'IMAGE_DATA', 32),
+            ("ED_ShaderNodeTree", "Editor: Shader Editor", "Switch area to Shader Editor", 'NODE_MATERIAL', 33),
+            ("ED_CompositorNodeTree", "Editor: Compositor", "Switch area to Compositor", 'NODE_COMPOSITING', 34),
+            ("ED_GeometryNodeTree", "Editor: Geometry Nodes", "Switch area to Geometry Nodes", 'GEOMETRY_NODES', 35),
+            ("ED_DOPESHEET", "Editor: Dope Sheet", "Switch area to Dope Sheet", 'ACTION', 36),
+            ("ED_TIMELINE", "Editor: Timeline", "Switch area to Timeline", 'TIME', 37),
+            ("ED_FCURVES", "Editor: Graph Editor", "Switch area to Graph Editor", 'GRAPH', 38),
+            ("ED_DRIVERS", "Editor: Drivers Editor", "Switch area to Drivers Editor", 'DRIVER', 39),
+            ("ED_NLA_EDITOR", "Editor: Non-Linear Animation", "Switch area to NLA Editor", 'NLA', 40),
+            ("ED_SEQUENCE_EDITOR", "Editor: Video Sequencer", "Switch area to Video Sequencer", 'SEQUENCE', 41),
+            ("ED_CLIP_EDITOR", "Editor: Movie Clip Editor", "Switch area to Movie Clip Editor", 'TRACKER', 42),
+            ("ED_TEXT_EDITOR", "Editor: Text Editor", "Switch area to Text Editor", 'TEXT', 43),
+            ("ED_CONSOLE", "Editor: Python Console", "Switch area to Python Console", 'CONSOLE', 44),
+            ("ED_INFO", "Editor: Info Editor", "Switch area to Info Editor", 'INFO', 45),
+            ("ED_OUTLINER", "Editor: Outliner", "Switch area to Outliner", 'OUTLINER', 46),
+            ("ED_PROPERTIES", "Editor: Properties", "Switch area to Properties", 'PROPERTIES', 47),
+            ("ED_FILES", "Editor: File Browser", "Switch area to File Browser", 'FILEBROWSER', 48),
+            ("ED_ASSETS", "Editor: Asset Browser", "Switch area to Asset Browser", 'ASSET_MANAGER', 49),
+            ("ED_SPREADSHEET", "Editor: Spreadsheet", "Switch area to Spreadsheet", 'SPREADSHEET', 50),
+            ("ED_PREFERENCES", "Editor: Preferences", "Switch area to Preferences", 'PREFERENCES', 51),
         ]
         return items
 
     target: bpy.props.EnumProperty(
-        name="Mode",
-        description="Select mode to activate",
+        name="Target",
+        description="Select mode or editor to activate",
         items=get_items,
     )
 
@@ -3596,23 +3624,26 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
         tgt = self.target
         win = context.window
 
-        if not S.active:
+        if tgt.startswith("VIM_") and not S.active:
             try:
                 bpy.ops.wm.vim_mode_toggle('INVOKE_DEFAULT')
             except Exception:
                 pass
 
-        if tgt == "VIM_PREVIEW":
+        if tgt == "VIM_NAV":
             S.cursor_mode = False
-            S.navigation_mode = False
-            S.workspace_nav = False
-            S.preview_mode = True
+            S.preview_mode = False
+            S.navigation_mode = True
+            S.workspace_nav = True
             S.clear_hint()
             S.nav.reset()
             S.smooth_cursor.reset()
-            self.report({'INFO'}, "Vimender: PREVIEW MODE")
+            area = context.area or (win.screen.areas[0] if win and win.screen and win.screen.areas else None)
+            if area:
+                S.hover_ptr = area.as_pointer()
+            self.report({'INFO'}, "Vimender: NAVIGATION MODE")
             try:
-                context.workspace.status_text_set("Vimender: PREVIEW MODE")
+                context.workspace.status_text_set("Vimender: NAVIGATION MODE")
             except Exception:
                 pass
             tag_all()
@@ -3656,51 +3687,20 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
             enter_cursor_mode(context, self.report)
             return {'FINISHED'}
 
-        if tgt == "VIM_NAV":
+        if tgt == "VIM_PREVIEW":
             S.cursor_mode = False
-            S.preview_mode = False
-            S.navigation_mode = True
-            S.workspace_nav = True
+            S.navigation_mode = False
+            S.workspace_nav = False
+            S.preview_mode = True
             S.clear_hint()
             S.nav.reset()
             S.smooth_cursor.reset()
-            area = context.area or (win.screen.areas[0] if win and win.screen and win.screen.areas else None)
-            if area:
-                S.hover_ptr = area.as_pointer()
-            self.report({'INFO'}, "Vimender: NAVIGATION MODE")
+            self.report({'INFO'}, "Vimender: PREVIEW MODE")
             try:
-                context.workspace.status_text_set("Vimender: NAVIGATION MODE")
+                context.workspace.status_text_set("Vimender: PREVIEW MODE")
             except Exception:
                 pass
             tag_all()
-            return {'FINISHED'}
-
-        if tgt == "VIM_HINT":
-            S.cursor_mode = False
-            S.navigation_mode = False
-            S.workspace_nav = False
-            S.preview_mode = True
-            area = context.area
-            if not area or area.type != 'VIEW_3D':
-                area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), context.area)
-            if area:
-                mx = area.x + int(area.width * 0.5)
-                my = area.y + int(area.height * 0.5)
-                start_hint_global(context, win, area, False, 'NORMAL', mx, my, self.report)
-            return {'FINISHED'}
-
-        if tgt == "VIM_BOX":
-            S.cursor_mode = False
-            S.navigation_mode = False
-            S.workspace_nav = False
-            S.preview_mode = True
-            area = context.area
-            if not area or area.type != 'VIEW_3D':
-                area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), context.area)
-            if area:
-                mx = area.x + int(area.width * 0.5)
-                my = area.y + int(area.height * 0.5)
-                start_hint_global(context, win, area, True, 'NORMAL', mx, my, self.report)
             return {'FINISHED'}
 
         if tgt.startswith("BL_"):
@@ -3713,6 +3713,21 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
             except Exception as e:
                 self.report({'WARNING'}, f"Cannot switch mode: {e}")
                 return {'CANCELLED'}
+
+        if tgt.startswith("ED_"):
+            ui_type = tgt[3:]
+            area = area_by_ptr(win, S.hover_ptr) or context.area
+            if not area and win and win.screen and win.screen.areas:
+                area = win.screen.areas[0]
+            if area:
+                try:
+                    area.ui_type = ui_type
+                    area.tag_redraw()
+                    self.report({'INFO'}, f"Editor: {ui_type}")
+                    return {'FINISHED'}
+                except Exception as e:
+                    self.report({'WARNING'}, f"Cannot switch editor to {ui_type}: {e}")
+                    return {'CANCELLED'}
 
         return {'CANCELLED'}
 
