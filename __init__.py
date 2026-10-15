@@ -21,6 +21,7 @@ import bmesh
 import bpy
 import gpu
 from bpy_extras.view3d_utils import location_3d_to_region_2d
+from bpy_extras.io_utils import ExportHelper, ImportHelper
 from gpu_extras.batch import batch_for_shader
 from mathutils import Vector, Quaternion
 
@@ -2004,6 +2005,8 @@ class WM_OT_vim_nudge(bpy.types.Operator):
     _timer = None
 
     def invoke(self, context, event):
+        if S.preview_mode or S.navigation_mode or S.cursor_mode:
+            return {'CANCELLED'}
         S.nudge_on = True
         S.nav.reset()
         S.mover.reset()
@@ -2104,21 +2107,6 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         if hasattr(self, '_prev_continuous'):
             try:
                 bpy.context.preferences.inputs.use_mouse_continuous = self._prev_continuous
-            except Exception:
-                pass
-        win = context.window if context else None
-        if win:
-            if hasattr(self, 'pivot_2d') and self.pivot_2d is not None:
-                reset_x = int(round(max(min(self.pivot_2d.x + 80.0, self.max_x - 30.0), self.min_x + 30.0)))
-                reset_y = int(round(max(min(self.pivot_2d.y + 80.0, self.max_y - 30.0), self.min_y + 30.0)))
-            elif self.area and self.area in list(context.screen.areas):
-                reset_x = int(round(self.area.x + self.area.width * 0.5))
-                reset_y = int(round(self.area.y + self.area.height * 0.5))
-            else:
-                reset_x = int(round(win.width * 0.5))
-                reset_y = int(round(win.height * 0.5))
-            try:
-                win.cursor_warp(reset_x, reset_y)
             except Exception:
                 pass
         try:
@@ -2333,7 +2321,7 @@ class WM_OT_vim_nudge(bpy.types.Operator):
 
     def modal(self, context, event):
         win = context.window
-        if not S.active or not transform_active(win):
+        if not S.active or not transform_active(win) or S.preview_mode or S.navigation_mode or S.cursor_mode:
             self._cleanup(context)
             return {'FINISHED'}
 
@@ -2794,8 +2782,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             elif not S.mode and not S.preview_mode and not S.nudge_on and not transform_active(win):
                 S.nav.tick(context, win)
 
-            if not S.nudge_on and transform_active(win):
-                self._start_nudge(context, win)
+            if not S.preview_mode and not S.navigation_mode and not S.cursor_mode:
+                if not S.nudge_on and transform_active(win):
+                    self._start_nudge(context, win)
             return {'PASS_THROUGH'}
 
         mx, my = event.mouse_x, event.mouse_y
@@ -2814,8 +2803,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             return self._modal_hint(context, event, win, mx, my, area)
 
         if transform_active(win):
-            if not S.nudge_on:
-                self._start_nudge(context, win)
+            if not S.preview_mode and not S.navigation_mode and not S.cursor_mode:
+                if not S.nudge_on:
+                    self._start_nudge(context, win)
             return {'PASS_THROUGH'}
 
         if t in {'G', 'R', 'S'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
@@ -3119,6 +3109,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
             return {'RUNNING_MODAL'}
 
+        if S.preview_mode:
+            return {'PASS_THROUGH'}
+
         target_v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
         if not target_v3d or target_v3d.type != 'VIEW_3D':
             target_v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None)
@@ -3127,7 +3120,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 not (area and area.type in PASS_KEYS_IN) and
                 not transform_active(win)):
 
-            allow_view_switch = (not S.preview_mode) or (use_arrow_layout and not is_edit_mode(context))
+            allow_view_switch = not S.preview_mode or (use_arrow_layout and not is_edit_mode(context))
 
             is_key_1 = (t == 'NUMPAD_1')
             if is_key_1 and allow_view_switch and not (event.alt or event.oskey):
@@ -3200,9 +3193,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if v == 'PRESS':
                     _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_persportho)
                 return {'RUNNING_MODAL'}
-
-        if S.preview_mode:
-            return {'PASS_THROUGH'}
 
         if check_shortcut(prefs, 'editor_pie', event, 'W', fallback_ctrl=True) and v == 'PRESS':
             if S.prefix:
@@ -3573,6 +3563,7 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
             ("VIM_PAN", "Pan Mode", "Vimender: Camera Pan navigation", 'VIEW_PAN', 2),
             ("VIM_CURSOR", "3D Cursor Mode", "Vimender: Smooth 3D Cursor control (HJKL)", 'PIVOT_CURSOR', 3),
             ("VIM_PREVIEW", "Preview Mode", "Vimender: Preview hover and select mode", 'RESTRICT_VIEW_OFF', 4),
+            ("VIM_PREFERENCES", "Vimender: Preferences / Kısayollar", "Open Vimender preferences and customize keymaps", 'PREFERENCES', 5),
 
             ("BL_OBJECT", "Blender: Object Mode", "Switch active object to Object Mode", 'OBJECT_DATAMODE', 10),
             ("BL_EDIT", "Blender: Edit Mode", "Switch active object to Edit Mode", 'EDITMODE_HLT', 11),
@@ -3714,6 +3705,13 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
                 self.report({'WARNING'}, f"Cannot switch mode: {e}")
                 return {'CANCELLED'}
 
+        if tgt in {"VIM_PREFERENCES", "ED_PREFERENCES"}:
+            try:
+                bpy.ops.wm.vim_open_preferences('INVOKE_DEFAULT')
+            except Exception as e:
+                print(f"[Vimender] open preferences error: {e}")
+            return {'FINISHED'}
+
         if tgt.startswith("ED_"):
             ui_type = tgt[3:]
             area = area_by_ptr(win, S.hover_ptr) or context.area
@@ -3830,6 +3828,7 @@ def _menu_func(self, context):
     self.layout.separator()
     self.layout.operator(WM_OT_vim_mode_toggle.bl_idname, text="Vimender Mode",
                          icon='CHECKBOX_HLT' if S.active else 'CHECKBOX_DEHLT')
+    self.layout.operator("wm.vim_open_preferences", text="Vimender Preferences...", icon='PREFERENCES')
 
 
 
@@ -3872,14 +3871,78 @@ def is_edit_mode(context):
     return False
 
 
+_keymaps_initialized = False
+
+KEY_PREFIXES = (
+    ("search_mode", "Mode Search Menu (Alt+Space)", "SPACE", False, False, True),
+    ("preview", "Preview Mode Toggle (Ctrl+Y)", "Y", True, False, False),
+    ("nav", "Navigation Mode Toggle (Ctrl+B)", "B", True, False, False),
+    ("cursor", "Cursor Mode Toggle (Ctrl+Num5)", "NUMPAD_5", True, False, False),
+    ("orbit_pan", "Orbit / Pan Mode Toggle (U)", "U", False, False, False),
+    ("editor_pie", "Editor Pie Menu (Ctrl+W)", "W", True, False, False),
+    ("search_menu", "Search Menu (Space)", "SPACE", False, False, False),
+    ("search_object", "Search Objects / Cursor (Ctrl+Space)", "SPACE", True, False, False),
+    ("hint_select", "Hint Click Select (F)", "F", False, False, False),
+    ("box_select", "Box Hint Select (C)", "C", False, False, False),
+    ("persp_ortho", "Persp / Ortho View (Y / Asterisk)", "Y", False, False, False),
+    ("view_selected", "Focus Selected View (Numpad . / I)", "NUMPAD_PERIOD", False, False, False),
+)
+
+
+def save_keymaps_to_config(prefs):
+    if not prefs:
+        return
+    km = {}
+    for prefix, label, def_k, def_c, def_s, def_a in KEY_PREFIXES:
+        km[prefix] = {
+            "key": getattr(prefs, f"key_{prefix}", def_k),
+            "ctrl": getattr(prefs, f"ctrl_{prefix}", def_c),
+            "shift": getattr(prefs, f"shift_{prefix}", def_s),
+            "alt": getattr(prefs, f"alt_{prefix}", def_a),
+        }
+    save_vimender_config({'keymaps': km})
+
+
+def load_keymaps_from_config(prefs):
+    if not prefs:
+        return
+    cfg = load_vimender_config()
+    km = cfg.get('keymaps', {})
+    if not km:
+        return
+    for prefix, label, def_k, def_c, def_s, def_a in KEY_PREFIXES:
+        entry = km.get(prefix)
+        if entry and isinstance(entry, dict):
+            if "key" in entry:
+                setattr(prefs, f"key_{prefix}", entry["key"])
+            if "ctrl" in entry:
+                setattr(prefs, f"ctrl_{prefix}", bool(entry["ctrl"]))
+            if "shift" in entry:
+                setattr(prefs, f"shift_{prefix}", bool(entry["shift"]))
+            if "alt" in entry:
+                setattr(prefs, f"alt_{prefix}", bool(entry["alt"]))
+
+
+def _on_keymap_change(self, context):
+    try:
+        save_keymaps_to_config(self)
+    except Exception as e:
+        print(f"[Vimender] Keymap save error: {e}")
+
+
 def get_preferences(context=None):
+    global _keymaps_initialized
     if context is None:
         context = bpy.context
     try:
         addon_name = __package__ or __name__.partition('.')[0] or "Vimender"
         addon = context.preferences.addons.get(addon_name)
         if addon:
-            return addon.preferences
+            prefs = addon.preferences
+            if not _keymaps_initialized and prefs:
+                _keymaps_initialized = True
+                load_keymaps_from_config(prefs)
+            return prefs
     except Exception:
         pass
     return None
@@ -3917,67 +3980,67 @@ def check_shortcut(prefs, prefix, event, fallback_key, fallback_ctrl=False, fall
 
 
 class VimenderPreferences(bpy.types.AddonPreferences):
-    bl_idname = __name__
+    bl_idname = __package__ or __name__.partition('.')[0] or "Vimender"
 
-    key_preview: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='Y')
-    ctrl_preview: bpy.props.BoolProperty(name="Ctrl", default=True)
-    shift_preview: bpy.props.BoolProperty(name="Shift", default=False)
-    alt_preview: bpy.props.BoolProperty(name="Alt", default=False)
+    key_preview: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='Y', update=_on_keymap_change)
+    ctrl_preview: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
+    shift_preview: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_preview: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
-    key_nav: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='B')
-    ctrl_nav: bpy.props.BoolProperty(name="Ctrl", default=True)
-    shift_nav: bpy.props.BoolProperty(name="Shift", default=False)
-    alt_nav: bpy.props.BoolProperty(name="Alt", default=False)
+    key_nav: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='B', update=_on_keymap_change)
+    ctrl_nav: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
+    shift_nav: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_nav: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
-    key_cursor: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='NUMPAD_5')
-    ctrl_cursor: bpy.props.BoolProperty(name="Ctrl", default=True)
-    shift_cursor: bpy.props.BoolProperty(name="Shift", default=False)
-    alt_cursor: bpy.props.BoolProperty(name="Alt", default=False)
+    key_cursor: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='NUMPAD_5', update=_on_keymap_change)
+    ctrl_cursor: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
+    shift_cursor: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_cursor: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
-    key_orbit_pan: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='U')
-    ctrl_orbit_pan: bpy.props.BoolProperty(name="Ctrl", default=False)
-    shift_orbit_pan: bpy.props.BoolProperty(name="Shift", default=False)
-    alt_orbit_pan: bpy.props.BoolProperty(name="Alt", default=False)
+    key_orbit_pan: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='U', update=_on_keymap_change)
+    ctrl_orbit_pan: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
+    shift_orbit_pan: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_orbit_pan: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
-    key_editor_pie: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='W')
-    ctrl_editor_pie: bpy.props.BoolProperty(name="Ctrl", default=True)
-    shift_editor_pie: bpy.props.BoolProperty(name="Shift", default=False)
-    alt_editor_pie: bpy.props.BoolProperty(name="Alt", default=False)
+    key_editor_pie: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='W', update=_on_keymap_change)
+    ctrl_editor_pie: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
+    shift_editor_pie: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_editor_pie: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
-    key_search_mode: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE')
-    ctrl_search_mode: bpy.props.BoolProperty(name="Ctrl", default=False)
-    shift_search_mode: bpy.props.BoolProperty(name="Shift", default=False)
-    alt_search_mode: bpy.props.BoolProperty(name="Alt", default=True)
+    key_search_mode: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE', update=_on_keymap_change)
+    ctrl_search_mode: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
+    shift_search_mode: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_search_mode: bpy.props.BoolProperty(name="Alt", default=True, update=_on_keymap_change)
 
-    key_search_menu: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE')
-    ctrl_search_menu: bpy.props.BoolProperty(name="Ctrl", default=False)
-    shift_search_menu: bpy.props.BoolProperty(name="Shift", default=False)
-    alt_search_menu: bpy.props.BoolProperty(name="Alt", default=False)
+    key_search_menu: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE', update=_on_keymap_change)
+    ctrl_search_menu: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
+    shift_search_menu: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_search_menu: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
-    key_search_object: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE')
-    ctrl_search_object: bpy.props.BoolProperty(name="Ctrl", default=True)
-    shift_search_object: bpy.props.BoolProperty(name="Shift", default=False)
-    alt_search_object: bpy.props.BoolProperty(name="Alt", default=False)
+    key_search_object: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE', update=_on_keymap_change)
+    ctrl_search_object: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
+    shift_search_object: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_search_object: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
-    key_hint_select: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='F')
-    ctrl_hint_select: bpy.props.BoolProperty(name="Ctrl", default=False)
-    shift_hint_select: bpy.props.BoolProperty(name="Shift", default=False)
-    alt_hint_select: bpy.props.BoolProperty(name="Alt", default=False)
+    key_hint_select: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='F', update=_on_keymap_change)
+    ctrl_hint_select: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
+    shift_hint_select: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_hint_select: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
-    key_box_select: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='C')
-    ctrl_box_select: bpy.props.BoolProperty(name="Ctrl", default=False)
-    shift_box_select: bpy.props.BoolProperty(name="Shift", default=False)
-    alt_box_select: bpy.props.BoolProperty(name="Alt", default=False)
+    key_box_select: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='C', update=_on_keymap_change)
+    ctrl_box_select: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
+    shift_box_select: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_box_select: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
-    key_persp_ortho: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='Y')
-    ctrl_persp_ortho: bpy.props.BoolProperty(name="Ctrl", default=False)
-    shift_persp_ortho: bpy.props.BoolProperty(name="Shift", default=False)
-    alt_persp_ortho: bpy.props.BoolProperty(name="Alt", default=False)
+    key_persp_ortho: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='Y', update=_on_keymap_change)
+    ctrl_persp_ortho: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
+    shift_persp_ortho: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_persp_ortho: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
-    key_view_selected: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='NUMPAD_PERIOD')
-    ctrl_view_selected: bpy.props.BoolProperty(name="Ctrl", default=False)
-    shift_view_selected: bpy.props.BoolProperty(name="Shift", default=False)
-    alt_view_selected: bpy.props.BoolProperty(name="Alt", default=False)
+    key_view_selected: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='NUMPAD_PERIOD', update=_on_keymap_change)
+    ctrl_view_selected: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
+    shift_view_selected: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_view_selected: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
     def _get_auto_start(self):
         return load_vimender_state()
@@ -4019,31 +4082,187 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     def draw(self, context):
         layout = self.layout
 
+        top_box = layout.box()
+        top_row = top_box.row(align=True)
+        top_row.operator("wm.vim_export_keymap", text="Export Keymap", icon='EXPORT')
+        top_row.operator("wm.vim_import_keymap", text="Import Keymap", icon='IMPORT')
+        top_row.operator("wm.vim_reset_keymap", text="Reset Defaults", icon='LOOP_BACK')
+
         box0 = layout.box()
         box0.label(text="Keyboard Layout", icon='KEYBOARD')
         box0.prop(self, "arrow_keys_layout", text="Arrow Keys Layout (Laptop / No Numpad)")
 
         box = layout.box()
         box.label(text="Mode Switching Shortcuts", icon='ARROW_LEFTRIGHT')
-        self._draw_shortcut(box, "Mode Search Menu", "search_mode")
-        self._draw_shortcut(box, "Preview Mode Toggle", "preview")
-        self._draw_shortcut(box, "Navigation Mode Toggle", "nav")
-        self._draw_shortcut(box, "Cursor Mode Toggle", "cursor")
-        self._draw_shortcut(box, "Orbit / Pan Mode Toggle", "orbit_pan")
-        self._draw_shortcut(box, "Editor Pie Menu", "editor_pie")
+        self._draw_shortcut(box, "Mode Search Menu (Alt+Space)", "search_mode")
+        self._draw_shortcut(box, "Preview Mode Toggle (Ctrl+Y)", "preview")
+        self._draw_shortcut(box, "Navigation Mode Toggle (Ctrl+B)", "nav")
+        self._draw_shortcut(box, "Cursor Mode Toggle (Ctrl+Num5)", "cursor")
+        self._draw_shortcut(box, "Orbit / Pan Mode Toggle (U)", "orbit_pan")
+        self._draw_shortcut(box, "Editor Pie Menu (Ctrl+W)", "editor_pie")
 
         box2 = layout.box()
         box2.label(text="Tool & General Shortcuts", icon='EVENT_F')
-        self._draw_shortcut(box2, "Search Menu", "search_menu")
-        self._draw_shortcut(box2, "Search Objects / Cursor", "search_object")
-        self._draw_shortcut(box2, "Hint Select", "hint_select")
-        self._draw_shortcut(box2, "Box Hint Select", "box_select")
-        self._draw_shortcut(box2, "Persp / Ortho View", "persp_ortho")
-        self._draw_shortcut(box2, "Focus Selected View", "view_selected")
+        self._draw_shortcut(box2, "Search Menu (Space)", "search_menu")
+        self._draw_shortcut(box2, "Search Objects / Cursor (Ctrl+Space)", "search_object")
+        self._draw_shortcut(box2, "Hint Click Select (F)", "hint_select")
+        self._draw_shortcut(box2, "Box Hint Select (C)", "box_select")
+        self._draw_shortcut(box2, "Persp / Ortho View (Y / Asterisk)", "persp_ortho")
+        self._draw_shortcut(box2, "Focus Selected View (Numpad . / I)", "view_selected")
 
         box3 = layout.box()
         box3.label(text="General Settings", icon='PREFERENCES')
         box3.prop(self, "auto_start", text="Auto-Start Vimender on Launch")
+
+
+class WM_OT_vim_export_keymap(bpy.types.Operator, ExportHelper):
+    bl_idname = "wm.vim_export_keymap"
+    bl_label = "Export Vimender Keymap"
+    bl_description = "Export Vimender shortcuts to a JSON file"
+
+    filename_ext = ".json"
+    filter_glob: bpy.props.StringProperty(
+        default="*.json",
+        options={'HIDDEN'},
+        maxlen=255,
+    )
+
+    filepath: bpy.props.StringProperty(
+        name="File Path",
+        description="File path for exporting keymaps",
+        maxlen=1024,
+        default="vimender_keymap.json",
+        subtype='FILE_PATH',
+    )
+
+    def execute(self, context):
+        prefs = get_preferences(context)
+        if not prefs:
+            self.report({'ERROR'}, "Vimender preferences could not be found")
+            return {'CANCELLED'}
+        data = {
+            "addon": "Vimender",
+            "version": bl_info.get("version", (1, 0, 0)),
+            "keymaps": {},
+            "arrow_keys_layout": bool(getattr(prefs, 'arrow_keys_layout', False)),
+            "auto_start": bool(getattr(prefs, 'auto_start', False)),
+        }
+        for prefix, label, def_k, def_c, def_s, def_a in KEY_PREFIXES:
+            data["keymaps"][prefix] = {
+                "key": getattr(prefs, f"key_{prefix}", def_k),
+                "ctrl": getattr(prefs, f"ctrl_{prefix}", def_c),
+                "shift": getattr(prefs, f"shift_{prefix}", def_s),
+                "alt": getattr(prefs, f"alt_{prefix}", def_a),
+            }
+        try:
+            with open(self.filepath, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+            self.report({'INFO'}, f"Vimender: Keymaps exported to {os.path.basename(self.filepath)}")
+            return {'FINISHED'}
+        except Exception as e:
+            self.report({'ERROR'}, f"Export failed: {e}")
+            return {'CANCELLED'}
+
+
+class WM_OT_vim_import_keymap(bpy.types.Operator, ImportHelper):
+    bl_idname = "wm.vim_import_keymap"
+    bl_label = "Import Vimender Keymap"
+    bl_description = "Import Vimender shortcuts from a JSON file"
+
+    filename_ext = ".json"
+    filter_glob: bpy.props.StringProperty(
+        default="*.json",
+        options={'HIDDEN'},
+        maxlen=255,
+    )
+
+    filepath: bpy.props.StringProperty(
+        name="File Path",
+        description="File path for importing keymaps",
+        maxlen=1024,
+        default="",
+        subtype='FILE_PATH',
+    )
+
+    def execute(self, context):
+        if not os.path.exists(self.filepath):
+            self.report({'ERROR'}, "Specified keymap file does not exist")
+            return {'CANCELLED'}
+        prefs = get_preferences(context)
+        if not prefs:
+            self.report({'ERROR'}, "Vimender preferences could not be found")
+            return {'CANCELLED'}
+        try:
+            with open(self.filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            km = data.get("keymaps", data)
+            for prefix, label, def_k, def_c, def_s, def_a in KEY_PREFIXES:
+                if prefix in km and isinstance(km[prefix], dict):
+                    entry = km[prefix]
+                    if "key" in entry:
+                        setattr(prefs, f"key_{prefix}", entry["key"])
+                    if "ctrl" in entry:
+                        setattr(prefs, f"ctrl_{prefix}", bool(entry["ctrl"]))
+                    if "shift" in entry:
+                        setattr(prefs, f"shift_{prefix}", bool(entry["shift"]))
+                    if "alt" in entry:
+                        setattr(prefs, f"alt_{prefix}", bool(entry["alt"]))
+            if "arrow_keys_layout" in data:
+                prefs.arrow_keys_layout = bool(data["arrow_keys_layout"])
+            if "auto_start" in data:
+                prefs.auto_start = bool(data["auto_start"])
+            save_keymaps_to_config(prefs)
+            tag_all()
+            self.report({'INFO'}, f"Vimender: Keymaps imported from {os.path.basename(self.filepath)}")
+            return {'FINISHED'}
+        except Exception as e:
+            self.report({'ERROR'}, f"Import failed: {e}")
+            return {'CANCELLED'}
+
+
+class WM_OT_vim_reset_keymap(bpy.types.Operator):
+    bl_idname = "wm.vim_reset_keymap"
+    bl_label = "Reset Keymaps to Defaults"
+    bl_description = "Reset all Vimender shortcuts to factory defaults"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        prefs = get_preferences(context)
+        if not prefs:
+            self.report({'ERROR'}, "Vimender preferences could not be found")
+            return {'CANCELLED'}
+        for prefix, label, def_k, def_c, def_s, def_a in KEY_PREFIXES:
+            setattr(prefs, f"key_{prefix}", def_k)
+            setattr(prefs, f"ctrl_{prefix}", def_c)
+            setattr(prefs, f"shift_{prefix}", def_s)
+            setattr(prefs, f"alt_{prefix}", def_a)
+        save_keymaps_to_config(prefs)
+        tag_all()
+        self.report({'INFO'}, "Vimender: Keymaps reset to defaults")
+        return {'FINISHED'}
+
+
+class WM_OT_vim_open_preferences(bpy.types.Operator):
+    bl_idname = "wm.vim_open_preferences"
+    bl_label = "Vimender Preferences & Shortcuts"
+    bl_description = "Open Vimender preferences dialog to customize and import/export keymaps"
+    bl_options = {'REGISTER'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=560)
+
+    def draw(self, context):
+        prefs = get_preferences(context)
+        if prefs:
+            prefs.draw(context)
+        else:
+            self.layout.label(text="Vimender Preferences could not be loaded.", icon='ERROR')
+
+    def execute(self, context):
+        prefs = get_preferences(context)
+        if prefs:
+            save_keymaps_to_config(prefs)
+        return {'FINISHED'}
 
 
 classes = (
@@ -4053,6 +4272,10 @@ classes = (
     WM_OT_vim_set_editor,
     WM_OT_vim_search_object,
     WM_OT_vim_search_mode,
+    WM_OT_vim_export_keymap,
+    WM_OT_vim_import_keymap,
+    WM_OT_vim_reset_keymap,
+    WM_OT_vim_open_preferences,
     VIM_MT_editor_more,
 )
 
