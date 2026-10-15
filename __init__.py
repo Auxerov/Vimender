@@ -574,6 +574,12 @@ class _State:
         self.cursor_mode = False
         self.cursor_plane = 'XY'
         self.right_alt_down = False
+        self.tab_down = False
+        self.space_down = False
+        self.active_search_title = None
+        self.search_open_time = 0.0
+        self.save_dialog_open = False
+        self.save_dialog_action = 'QUIT'
         self.prev_mode_state = {}
         self.smooth_cursor = _Smooth3DCursor()
         self.preview_mode = True
@@ -582,6 +588,8 @@ class _State:
     def clear_hint(self):
         self.mode = None
         self.kind = None
+        self.active_search_title = None
+        self.save_dialog_open = False
         self.action = 'NORMAL'
         self.box_extend = False
         self.vertex_mode = False
@@ -835,6 +843,32 @@ def send_modal_plus_minus(is_up):
                 pass
 
 
+def send_fake_escape():
+    x11, xtst = _get_x11()
+    if not x11 or not xtst:
+        return
+    disp = None
+    try:
+        disp = x11.XOpenDisplay(None)
+        if not disp:
+            return
+        d_ptr = ctypes.c_void_p(disp)
+        sym = 0xff1b
+        kc = x11.XKeysymToKeycode(d_ptr, ctypes.c_ulong(sym))
+        if kc:
+            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), True, 0)
+            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), False, 0)
+            x11.XFlush(d_ptr)
+    except Exception:
+        pass
+    finally:
+        if disp and x11:
+            try:
+                x11.XCloseDisplay(ctypes.c_void_p(disp))
+            except Exception:
+                pass
+
+
 _ALTGR_KEYCODES = None
 
 
@@ -901,19 +935,6 @@ def active_modal_tool(win):
 
 def is_blender_modal_active(win):
     return active_modal_tool(win) is not None
-
-
-def active_save_dialog_op(win):
-    try:
-        ops = win.modal_operators
-    except (AttributeError, Exception):
-        return None
-    for op in ops:
-        ident = (getattr(op, "bl_idname", "") or getattr(op, "name", "") or getattr(getattr(op, "bl_rna", None), "identifier", "")).lower()
-        if any(k in ident for k in ("quit", "read_homefile", "open_mainfile", "save_prompt")):
-            return op
-    return None
-
 
 
 def adjust_active_modal_or_modifier(context, is_up):
@@ -2031,8 +2052,28 @@ def draw_cb():
     _fill(_rect(x0, y0, x1, y0 + th + 2 * pad), (0.0, 0.0, 0.0, 0.65))
     _text(x0 + pad, y0 + pad, label, border_col)
 
-    dlg_op = active_save_dialog_op(ctx.window)
-    if dlg_op:
+    if S.active_search_title:
+        title = S.active_search_title.upper()
+        _font_size(int(15 * ui))
+        tw_s, th_s = blf.dimensions(0, title)
+        hint_s = "[Tab + Space] Kapat"
+        _font_size(int(11 * ui))
+        hw_s, hh_s = blf.dimensions(0, hint_s)
+        bw_s = max(tw_s, hw_s) + int(36 * ui)
+        bh_s = th_s + hh_s + int(18 * ui)
+        bx0 = int((w - bw_s) / 2)
+        by0 = h - bh_s - int(20 * ui)
+        bx1 = bx0 + bw_s
+        by1 = by0 + bh_s
+        _fill(_rect(bx0, by0, bx1, by1), (0.10, 0.11, 0.14, 0.95))
+        _fill(_rect(bx0, by0, bx1, by0 + 2) + _rect(bx0, by1 - 2, bx1, by1) +
+              _rect(bx0, by0, bx0 + 2, by1) + _rect(bx1 - 2, by0, bx1, by1), (0.2, 0.85, 0.5, 0.95))
+        _font_size(int(15 * ui))
+        _text(bx0 + int((bw_s - tw_s) / 2), by0 + hh_s + int(10 * ui), title, (1.0, 1.0, 1.0, 1.0))
+        _font_size(int(11 * ui))
+        _text(bx0 + int((bw_s - hw_s) / 2), by0 + int(6 * ui), hint_s, (0.7, 0.7, 0.7, 1.0))
+
+    if S.save_dialog_open:
         badge_w = int(24 * ui)
         badge_h = int(24 * ui)
         bw = int(120 * ui)
@@ -3013,38 +3054,50 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             if area:
                 area.tag_redraw()
 
-        dlg_op = active_save_dialog_op(win)
-        if dlg_op:
-            op_name = (getattr(dlg_op, "bl_idname", "") or getattr(dlg_op, "name", "") or getattr(getattr(dlg_op, "bl_rna", None), "identifier", "")).lower()
+        if S.save_dialog_open:
             if v == 'PRESS':
                 if (t in {'Y', 'y'} or event.unicode in {'y', 'Y'}) and not (event.ctrl or event.alt or event.oskey):
-                    try:
-                        if bpy.data.filepath:
-                            bpy.ops.wm.save_mainfile()
-                        else:
-                            bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT')
-                    except Exception as e:
-                        print(f"[Vimender] save error: {e}")
-                    if "quit" in op_name:
-                        sys.exit(0)
-                    elif "read_homefile" in op_name:
-                        bpy.ops.wm.read_homefile('INVOKE_DEFAULT')
-                    elif "open_mainfile" in op_name:
-                        bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
-                    tag_all()
+                    execute_save_action(S.save_dialog_action, 'SAVE')
                     return {'RUNNING_MODAL'}
                 if (t in {'N', 'n'} or event.unicode in {'n', 'N'}) and not (event.ctrl or event.alt or event.oskey):
-                    if "quit" in op_name:
-                        sys.exit(0)
-                    elif "read_homefile" in op_name:
-                        bpy.ops.wm.read_homefile(use_empty=False)
-                    elif "open_mainfile" in op_name:
-                        bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
-                    tag_all()
+                    execute_save_action(S.save_dialog_action, 'DONT_SAVE')
                     return {'RUNNING_MODAL'}
                 if (t in {'C', 'c', 'ESC'} or event.unicode in {'c', 'C'}) and not (event.ctrl or event.alt or event.oskey):
+                    execute_save_action(S.save_dialog_action, 'CANCEL')
+                    return {'RUNNING_MODAL'}
+
+        if t == 'TAB':
+            if v == 'PRESS':
+                S.tab_down = True
+                if S.space_down or getattr(event, 'key_modifier', None) == 'SPACE':
+                    S.active_search_title = None
+                    S.save_dialog_open = False
+                    send_fake_escape()
                     tag_all()
-                    return {'PASS_THROUGH'}
+                    return {'RUNNING_MODAL'}
+            elif v == 'RELEASE':
+                S.tab_down = False
+
+        if t == 'SPACE':
+            if v == 'PRESS':
+                S.space_down = True
+                if S.tab_down or getattr(event, 'key_modifier', None) == 'TAB':
+                    S.active_search_title = None
+                    S.save_dialog_open = False
+                    send_fake_escape()
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+            elif v == 'RELEASE':
+                S.space_down = False
+
+        if S.active_search_title:
+            if t == 'ESC' and v == 'PRESS':
+                S.active_search_title = None
+                tag_all()
+            elif t in MOUSE_CANCEL and v == 'PRESS':
+                if time.time() - S.search_open_time > 0.4:
+                    S.active_search_title = None
+                    tag_all()
 
         if S.mode:
             return self._modal_hint(context, event, win, mx, my, area)
@@ -3110,22 +3163,11 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
         if check_shortcut(prefs, 'search_menu', event, 'SPACE', fallback_ctrl=False) and v == 'PRESS':
             if not S.mode and not (area and (area.type in PASS_KEYS_IN or area.type in anim_editors)) and not transform_active(win):
-                target_area = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
-                if not target_area or target_area.type != 'VIEW_3D':
-                    target_area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), target_area or context.area)
-                target_region = window_region(target_area) if target_area else None
                 try:
-                    if target_area and target_region:
-                        if not (target_region.x <= mx <= target_region.x + target_region.width and
-                                target_region.y <= my <= target_region.y + target_region.height):
-                            win.cursor_warp(int(target_region.x + target_region.width / 2),
-                                            int(target_region.y + target_region.height / 2))
-                        with context.temp_override(window=win, area=target_area, region=target_region):
-                            bpy.ops.wm.search_menu('INVOKE_DEFAULT')
-                    else:
-                        bpy.ops.wm.search_menu('INVOKE_DEFAULT')
+                    with context.temp_override(window=win):
+                        bpy.ops.wm.vim_general_search('INVOKE_DEFAULT')
                 except Exception as e:
-                    print(f"[Vimender] search_menu error: {e}")
+                    print(f"[Vimender] general_search error: {e}")
                 return {'RUNNING_MODAL'}
 
         if check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) and v == 'PRESS':
@@ -3914,12 +3956,13 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
         return items
 
     target: bpy.props.EnumProperty(
-        name="Target",
+        name="Mode Search",
         description="Select mode or editor to activate",
         items=get_items,
     )
 
     def execute(self, context):
+        S.active_search_title = None
         tgt = self.target
         win = context.window
 
@@ -4038,6 +4081,9 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
         return {'CANCELLED'}
 
     def invoke(self, context, event):
+        S.active_search_title = "Mode Search"
+        S.search_open_time = time.time()
+        tag_all()
         context.window_manager.invoke_search_popup(self)
         return {'FINISHED'}
 
@@ -4125,12 +4171,13 @@ class WM_OT_vim_fuzzy_search(bpy.types.Operator):
         return items
 
     target: bpy.props.EnumProperty(
-        name="Target",
+        name="Data Search",
         description="Select scene item to focus or open in editor",
         items=get_items,
     )
 
     def execute(self, context):
+        S.active_search_title = None
         tgt = self.target
         if not tgt or tgt == "NONE":
             return {'CANCELLED'}
@@ -4405,6 +4452,9 @@ class WM_OT_vim_fuzzy_search(bpy.types.Operator):
         return {'CANCELLED'}
 
     def invoke(self, context, event):
+        S.active_search_title = "Data Search"
+        S.search_open_time = time.time()
+        tag_all()
         context.window_manager.invoke_search_popup(self)
         return {'FINISHED'}
 
@@ -4416,15 +4466,123 @@ class WM_OT_vim_general_search(bpy.types.Operator):
     bl_options = {'REGISTER'}
 
     def execute(self, context):
+        S.active_search_title = None
+        tag_all()
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        S.active_search_title = "General Search"
+        S.search_open_time = time.time()
+        tag_all()
+        win = context.window
+        area = context.area or (win.screen.areas[0] if win and win.screen and win.screen.areas else None)
+        target_area = area or (next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None) if win and win.screen else None)
+        target_region = window_region(target_area) if target_area else None
         try:
-            self.report({'INFO'}, "Vimender: GENERAL SEARCH")
-            bpy.ops.wm.search_menu('INVOKE_DEFAULT')
+            if target_area and target_region:
+                with context.temp_override(window=win, area=target_area, region=target_region):
+                    bpy.ops.wm.search_menu('INVOKE_DEFAULT')
+            else:
+                bpy.ops.wm.search_menu('INVOKE_DEFAULT')
         except Exception as e:
             print(f"[Vimender] general_search error: {e}")
         return {'FINISHED'}
 
+
+def execute_save_action(action, choice):
+    S.save_dialog_open = False
+    send_fake_escape()
+    if choice == 'CANCEL':
+        tag_all()
+        return {'CANCELLED'}
+    if choice == 'SAVE':
+        try:
+            if bpy.data.filepath:
+                bpy.ops.wm.save_mainfile()
+            else:
+                bpy.ops.wm.save_as_mainfile('INVOKE_DEFAULT')
+                return {'FINISHED'}
+        except Exception as e:
+            print(f"[Vimender] save error: {e}")
+    if action == 'QUIT':
+        try:
+            bpy.ops.wm.quit_blender('EXEC_DEFAULT')
+        except Exception:
+            bpy.ops.wm.quit_blender()
+    elif action == 'NEW':
+        try:
+            bpy.ops.wm.read_homefile('EXEC_DEFAULT')
+        except Exception:
+            bpy.ops.wm.read_homefile('INVOKE_DEFAULT')
+    elif action == 'OPEN':
+        bpy.ops.wm.open_mainfile('INVOKE_DEFAULT')
+    tag_all()
+    return {'FINISHED'}
+
+
+class WM_OT_vim_save_prompt(bpy.types.Operator):
+    bl_idname = "wm.vim_save_prompt"
+    bl_label = "Save Changes?"
+    bl_description = "Save changes before closing, new file, or open file"
+    bl_options = {'REGISTER', 'INTERNAL'}
+    action: bpy.props.StringProperty(default='QUIT')
+
+    def draw(self, context):
+        layout = self.layout
+        if self.action == 'QUIT':
+            layout.label(text="Save changes before closing?", icon='QUESTION')
+        elif self.action == 'NEW':
+            layout.label(text="Save changes before new file?", icon='QUESTION')
+        else:
+            layout.label(text="Save changes before opening file?", icon='QUESTION')
+        layout.separator()
+        row = layout.row(align=True)
+        row.scale_y = 1.4
+        op_y = row.operator(WM_OT_vim_save_action.bl_idname, text="[Y] Save", icon='CHECKMARK')
+        op_y.choice = 'SAVE'
+        op_y.action = self.action
+        op_n = row.operator(WM_OT_vim_save_action.bl_idname, text="[N] Don't Save", icon='TRASH')
+        op_n.choice = 'DONT_SAVE'
+        op_n.action = self.action
+        op_c = row.operator(WM_OT_vim_save_action.bl_idname, text="[C] Cancel", icon='CANCEL')
+        op_c.choice = 'CANCEL'
+        op_c.action = self.action
+
+    def execute(self, context):
+        return {'FINISHED'}
+
     def invoke(self, context, event):
-        return self.execute(context)
+        if not bpy.data.is_dirty:
+            return execute_save_action(self.action, 'DONT_SAVE')
+        S.save_dialog_open = True
+        S.save_dialog_action = self.action
+        tag_all()
+        return context.window_manager.invoke_popup(self, width=320)
+
+
+class WM_OT_vim_save_action(bpy.types.Operator):
+    bl_idname = "wm.vim_save_action"
+    bl_label = "Save Action"
+    bl_options = {'REGISTER', 'INTERNAL'}
+    choice: bpy.props.StringProperty(default='CANCEL')
+    action: bpy.props.StringProperty(default='QUIT')
+
+    def execute(self, context):
+        return execute_save_action(self.action, self.choice)
+
+
+class WM_OT_vim_close_search(bpy.types.Operator):
+    bl_idname = "wm.vim_close_search"
+    bl_label = "Close Search"
+    bl_description = "Close active search bar or popup"
+    bl_options = {'REGISTER', 'INTERNAL'}
+
+    def execute(self, context):
+        S.active_search_title = None
+        S.save_dialog_open = False
+        send_fake_escape()
+        tag_all()
+        return {'FINISHED'}
 
 
 def register_search_key():
@@ -4437,7 +4595,17 @@ def register_search_key():
     kmi2 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'F3', 'PRESS', ctrl=True)
     kmi3 = km.keymap_items.new(WM_OT_vim_search_mode.bl_idname, 'SPACE', 'PRESS', alt=True)
     kmi4 = km.keymap_items.new(WM_OT_vim_fuzzy_search.bl_idname, 'SPACE', 'PRESS', alt=True, ctrl=True)
-    _addon_keymaps.extend([(km, kmi1), (km, kmi2), (km, kmi3), (km, kmi4)])
+    kmi_close1 = km.keymap_items.new(WM_OT_vim_close_search.bl_idname, 'SPACE', 'PRESS', key_modifier='TAB')
+    kmi_close2 = km.keymap_items.new(WM_OT_vim_close_search.bl_idname, 'TAB', 'PRESS', key_modifier='SPACE')
+    kmi_quit = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'Q', 'PRESS', ctrl=True)
+    kmi_quit.properties.action = 'QUIT'
+    kmi_new = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'N', 'PRESS', ctrl=True)
+    kmi_new.properties.action = 'NEW'
+    kmi_open = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'O', 'PRESS', ctrl=True)
+    kmi_open.properties.action = 'OPEN'
+    _addon_keymaps.extend([(km, kmi1), (km, kmi2), (km, kmi3), (km, kmi4),
+                           (km, kmi_close1), (km, kmi_close2),
+                           (km, kmi_quit), (km, kmi_new), (km, kmi_open)])
 
 
 
@@ -4964,6 +5132,9 @@ classes = (
     WM_OT_vim_search_mode,
     WM_OT_vim_fuzzy_search,
     WM_OT_vim_general_search,
+    WM_OT_vim_save_prompt,
+    WM_OT_vim_save_action,
+    WM_OT_vim_close_search,
     WM_OT_vim_export_keymap,
     WM_OT_vim_import_keymap,
     WM_OT_vim_reset_keymap,
@@ -4971,11 +5142,18 @@ classes = (
 )
 
 
+def _window_menu_draw(self, context):
+    self.layout.separator()
+    self.layout.operator(WM_OT_vim_mode_toggle.bl_idname, text="Vimender Mode",
+                         icon='CHECKBOX_HLT' if S.active else 'CHECKBOX_DEHLT')
+
+
 def register():
     for c in classes:
         bpy.utils.register_class(c)
     clean_modal_keymaps()
     register_search_key()
+    bpy.types.TOPBAR_MT_window.append(_window_menu_draw)
     if _on_load_pre not in bpy.app.handlers.load_pre:
         bpy.app.handlers.load_pre.append(_on_load_pre)
     if _on_load_post not in bpy.app.handlers.load_post:
@@ -4988,6 +5166,10 @@ def unregister():
     shutdown()
     clean_modal_keymaps()
     unregister_search_key()
+    try:
+        bpy.types.TOPBAR_MT_window.remove(_window_menu_draw)
+    except Exception:
+        pass
     if _on_load_pre in bpy.app.handlers.load_pre:
         bpy.app.handlers.load_pre.remove(_on_load_pre)
     if _on_load_post in bpy.app.handlers.load_post:
