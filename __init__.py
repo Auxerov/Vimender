@@ -3390,63 +3390,37 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         )
         if is_bevel_key:
             if not (area and area.type in PASS_KEYS_IN) and not S.mode and not S.search_active and not S.save_dialog_open and not S.view_pie_active and not transform_active(win) and not is_blender_modal_active(win):
-                if v == 'PRESS':
-                    if S.cursor_mode:
-                        self._exit_cursor_mode(context)
-                    if S.navigation_mode or S.workspace_nav:
-                        S.navigation_mode = False
-                        S.workspace_nav = False
-                        self._set_status(context)
-                    v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
-                    if not v3d or v3d.type != 'VIEW_3D':
-                        v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), v3d or context.area)
-                    region = window_region(v3d) if v3d else None
-                    if v3d and region:
-                        if not (region.x <= mx <= region.x + region.width and
-                                region.y <= my <= region.y + region.height):
-                            win.cursor_warp(int(region.x + region.width / 2),
-                                            int(region.y + region.height / 2))
-                        try:
-                            with context.temp_override(window=win, area=v3d, region=region):
-                                if context.mode == 'EDIT_MESH':
-                                    try:
-                                        bpy.ops.wm.tool_set_by_id(name='builtin.bevel')
-                                    except Exception:
-                                        pass
-                                    ts = context.tool_settings
-                                    is_vert = bool(ts.mesh_select_mode[0] and not (ts.mesh_select_mode[1] or ts.mesh_select_mode[2]))
-                                    affect_type = 'VERTICES' if (event.shift or is_vert) else 'EDGES'
-                                    try:
-                                        bpy.ops.mesh.bevel('INVOKE_DEFAULT', affect=affect_type)
-                                    except Exception:
-                                        try:
-                                            bpy.ops.mesh.bevel('INVOKE_DEFAULT')
-                                        except Exception:
-                                            pass
-                                    self.report({'INFO'}, "Vimender: Bevel Tool")
-                                elif context.mode == 'OBJECT':
-                                    if context.active_object and context.active_object.type == 'MESH':
-                                        bev = next((m for m in context.active_object.modifiers if m.type == 'BEVEL'), None)
-                                        if not bev:
-                                            bpy.ops.object.modifier_add(type='BEVEL')
-                                        else:
-                                            context.active_object.modifiers.active = bev
-                                        self.report({'INFO'}, "Vimender: Bevel Modifier")
+                v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
+                if not v3d or v3d.type != 'VIEW_3D':
+                    v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), v3d or context.area)
+                region = window_region(v3d) if v3d else None
+                if v3d and region:
+                    can_bevel = False
+                    try:
+                        with context.temp_override(window=win, area=v3d, region=region):
+                            can_bevel = bpy.ops.mesh.bevel.poll()
+                    except Exception:
+                        can_bevel = False
+                    if can_bevel:
+                        if v == 'PRESS':
+                            if S.cursor_mode:
+                                self._exit_cursor_mode(context)
+                            if S.navigation_mode or S.workspace_nav:
+                                S.navigation_mode = False
+                                S.workspace_nav = False
+                                self._set_status(context)
+                            try:
+                                with context.temp_override(window=win, area=v3d, region=region):
+                                    if event.shift:
+                                        bpy.ops.mesh.bevel('INVOKE_DEFAULT', affect='VERTICES')
                                     else:
-                                        self.report({'WARNING'}, "Vimender: Select a mesh object to bevel")
-                                else:
-                                    try:
-                                        bpy.ops.wm.tool_set_by_id(name='builtin.bevel')
-                                    except Exception:
-                                        pass
-                                    bpy.ops.mesh.bevel('INVOKE_DEFAULT')
-                                    self.report({'INFO'}, "Vimender: Bevel Tool")
-                        except Exception as e:
-                            print(f"[Vimender] Bevel error: {e}")
-                    tag_all()
-                    return {'RUNNING_MODAL'}
-                elif v == 'RELEASE':
-                    return {'RUNNING_MODAL'}
+                                        bpy.ops.mesh.bevel('INVOKE_DEFAULT', affect='EDGES')
+                            except Exception as e:
+                                print(f"[Vimender] Bevel error: {e}")
+                            tag_all()
+                            return {'RUNNING_MODAL'}
+                        elif v == 'RELEASE':
+                            return {'RUNNING_MODAL'}
 
         if check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) and v == 'PRESS':
             if not S.cursor_mode:
@@ -4944,9 +4918,15 @@ def register_search_key():
     kmi_new.properties.action = 'NEW'
     kmi_open = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'O', 'PRESS', ctrl=True)
     kmi_open.properties.action = 'OPEN'
+    km_mesh = kc.keymaps.new('Mesh', space_type='EMPTY', region_type='WINDOW')
+    kmi_bev1 = km_mesh.keymap_items.new('mesh.bevel', 'B', 'PRESS')
+    kmi_bev1.properties.affect = 'EDGES'
+    kmi_bev2 = km_mesh.keymap_items.new('mesh.bevel', 'B', 'PRESS', shift=True)
+    kmi_bev2.properties.affect = 'VERTICES'
     _addon_keymaps.extend([(km, kmi1), (km, kmi2), (km, kmi3), (km, kmi4),
                            (km, kmi_close),
-                           (km, kmi_quit), (km, kmi_new), (km, kmi_open)])
+                           (km, kmi_quit), (km, kmi_new), (km, kmi_open),
+                           (km_mesh, kmi_bev1), (km_mesh, kmi_bev2)])
 
 
 
