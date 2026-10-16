@@ -38,6 +38,7 @@ CYAN = (0.20, 0.85, 1.00, 1.0)
 RED = (0.95, 0.20, 0.20, 1.0)
 PURPLE = (0.78, 0.22, 0.98, 1.0)
 YELLOW = (0.95, 0.85, 0.15, 1.0)
+ORANGE = (1.00, 0.55, 0.05, 1.0)
 HINT_BG = (1.0, 0.86, 0.25, 0.95)
 HINT_TEXT = (0.05, 0.05, 0.05, 1.0)
 HINT_TYPED = (0.85, 0.10, 0.10, 1.0)
@@ -69,6 +70,8 @@ VIEW2D_PAN_SPEED = 850.0
 NAV_ACCEL_RATE = 15.0
 NAV_FRICTION = 18.0
 CURSOR_3D_SPEED = 3.5
+WALK_MOVE_SPEED = 2.5
+WALK_LOOK_SPEED = 2.4
 
 PASS_KEYS_IN = {'TEXT_EDITOR', 'CONSOLE'}
 
@@ -574,7 +577,162 @@ class _SmoothNavigator:
                 area.tag_redraw()
             return moved
 
-        return False
+class _SmoothWalker:
+    def __init__(self):
+        self.held_move = set()
+        self.held_look = set()
+        self.shift = False
+        self.vx = 0.0
+        self.vy = 0.0
+        self.vz = 0.0
+        self.yaw_v = 0.0
+        self.pitch_v = 0.0
+        self.last_t = 0.0
+
+    def reset(self):
+        self.held_move.clear()
+        self.held_look.clear()
+        self.shift = False
+        self.vx = 0.0
+        self.vy = 0.0
+        self.vz = 0.0
+        self.yaw_v = 0.0
+        self.pitch_v = 0.0
+        self.last_t = 0.0
+
+    def on_key(self, key, val, shift=False):
+        self.shift = shift
+        move_keys = {'W', 'S', 'A', 'D', 'Q', 'E'}
+        look_keys = {'H', 'J', 'K', 'L'}
+        if key in move_keys:
+            if val == 'PRESS':
+                if not self.held_move and math.hypot(self.vx, self.vy, self.vz) < 1e-3:
+                    self.last_t = time.perf_counter()
+                self.held_move.add(key)
+            elif val == 'RELEASE':
+                self.held_move.discard(key)
+        elif key in look_keys:
+            if val == 'PRESS':
+                if not self.held_look and math.hypot(self.yaw_v, self.pitch_v) < 1e-3:
+                    self.last_t = time.perf_counter()
+                self.held_look.add(key)
+            elif val == 'RELEASE':
+                self.held_look.discard(key)
+
+    def tick(self, context, win):
+        if not S.walk_mode:
+            return False
+        now = time.perf_counter()
+        if self.last_t == 0.0:
+            self.last_t = now
+        dt = min(max(now - self.last_t, 0.001), 0.05)
+        self.last_t = now
+
+        target_yaw = (+1.0 if 'H' in self.held_look else 0.0) + (-1.0 if 'L' in self.held_look else 0.0)
+        target_pitch = (+1.0 if 'K' in self.held_look else 0.0) + (-1.0 if 'J' in self.held_look else 0.0)
+
+        if target_yaw != 0.0:
+            alpha = 1.0 - math.exp(-NAV_ACCEL_RATE * dt)
+            self.yaw_v += (target_yaw - self.yaw_v) * alpha
+        else:
+            self.yaw_v *= math.exp(-NAV_FRICTION * dt)
+            if abs(self.yaw_v) < 0.015:
+                self.yaw_v = 0.0
+
+        if target_pitch != 0.0:
+            alpha = 1.0 - math.exp(-NAV_ACCEL_RATE * dt)
+            self.pitch_v += (target_pitch - self.pitch_v) * alpha
+        else:
+            self.pitch_v *= math.exp(-NAV_FRICTION * dt)
+            if abs(self.pitch_v) < 0.015:
+                self.pitch_v = 0.0
+
+        target_fwd = (+1.0 if 'W' in self.held_move else 0.0) + (-1.0 if 'S' in self.held_move else 0.0)
+        target_strafe = (+1.0 if 'D' in self.held_move else 0.0) + (-1.0 if 'A' in self.held_move else 0.0)
+        target_up = (+1.0 if 'E' in self.held_move else 0.0) + (-1.0 if 'Q' in self.held_move else 0.0)
+
+        if target_fwd != 0.0 or target_strafe != 0.0:
+            mag = math.hypot(target_fwd, target_strafe)
+            tf, ts = target_fwd / mag, target_strafe / mag
+            alpha = 1.0 - math.exp(-NAV_ACCEL_RATE * dt)
+            self.vy += (tf - self.vy) * alpha
+            self.vx += (ts - self.vx) * alpha
+        else:
+            decay = math.exp(-NAV_FRICTION * dt)
+            self.vx *= decay
+            self.vy *= decay
+            if math.hypot(self.vx, self.vy) < 0.015:
+                self.vx = 0.0
+                self.vy = 0.0
+
+        if target_up != 0.0:
+            alpha = 1.0 - math.exp(-NAV_ACCEL_RATE * dt)
+            self.vz += (target_up - self.vz) * alpha
+        else:
+            self.vz *= math.exp(-NAV_FRICTION * dt)
+            if abs(self.vz) < 0.015:
+                self.vz = 0.0
+
+        active_moving = (abs(self.vx) > 0.005 or abs(self.vy) > 0.005 or abs(self.vz) > 0.005)
+        active_looking = (abs(self.yaw_v) > 0.005 or abs(self.pitch_v) > 0.005)
+        if not active_moving and not active_looking:
+            return False
+
+        area = area_by_ptr(win, S.walk_ptr or S.hover_ptr) or context.area
+        if not area or area.type != 'VIEW_3D':
+            area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None)
+        if not area or area.type != 'VIEW_3D':
+            return False
+
+        rv3d = area.spaces.active.region_3d if area.spaces else None
+        if not rv3d:
+            return False
+
+        if rv3d.view_perspective == 'CAMERA' and not getattr(area.spaces.active, 'lock_camera', False):
+            rv3d.view_perspective = 'PERSP'
+
+        sens = SENS_LEVELS[S.sens_idx]
+        moved = False
+
+        if active_looking:
+            look_spd = WALK_LOOK_SPEED * sens
+            yaw_angle = self.yaw_v * look_spd * dt
+            pitch_angle = self.pitch_v * look_spd * dt
+
+            eye = rv3d.view_location + (rv3d.view_rotation @ Vector((0.0, 0.0, rv3d.view_distance)))
+
+            q_yaw = Quaternion(Vector((0.0, 0.0, 1.0)), yaw_angle)
+            right_axis = rv3d.view_rotation @ Vector((1.0, 0.0, 0.0))
+            q_pitch = Quaternion(right_axis, pitch_angle)
+
+            test_pitch_rot = (q_pitch @ rv3d.view_rotation).normalized()
+            up_z = (test_pitch_rot @ Vector((0.0, 1.0, 0.0))).z
+            if up_z > 0.05:
+                new_rot = (q_yaw @ test_pitch_rot).normalized()
+            else:
+                new_rot = (q_yaw @ rv3d.view_rotation).normalized()
+
+            rv3d.view_rotation = new_rot
+            rv3d.view_location = eye - (new_rot @ Vector((0.0, 0.0, rv3d.view_distance)))
+            moved = True
+
+        if active_moving:
+            dist = max(rv3d.view_distance, 0.2)
+            move_spd = WALK_MOVE_SPEED * sens * dist
+            if self.shift:
+                move_spd *= 2.5
+
+            fwd = (rv3d.view_rotation @ Vector((0.0, 0.0, -1.0)))
+            right = (rv3d.view_rotation @ Vector((1.0, 0.0, 0.0)))
+            up = Vector((0.0, 0.0, 1.0))
+
+            delta = (fwd * self.vy + right * self.vx + up * self.vz) * (move_spd * dt)
+            rv3d.view_location = rv3d.view_location + delta
+            moved = True
+
+        if moved:
+            area.tag_redraw()
+        return moved
 
 
 class _State:
@@ -612,6 +770,10 @@ class _State:
         self.pie_just_selected_time = 0.0
         self.prev_mode_state = {}
         self.smooth_cursor = _Smooth3DCursor()
+        self.smooth_walker = _SmoothWalker()
+        self.walk_mode = False
+        self.walk_ptr = 0
+        self.walk_prev_state = {}
         self.preview_mode = True
         self.clear_hint()
 
@@ -2015,7 +2177,7 @@ def draw_cb():
     if not S.active or area is None or region is None:
         return
     ptr = area.as_pointer()
-    active_ptr = S.hint_ptr if S.mode else S.hover_ptr
+    active_ptr = S.hint_ptr if S.mode else (S.walk_ptr if S.walk_mode else S.hover_ptr)
     if not active_ptr:
         active_ptr = ptr
     if ptr != active_ptr:
@@ -2025,7 +2187,9 @@ def draw_cb():
     w, h = region.width, region.height
     gpu.state.blend_set('ALPHA')
 
-    if S.cursor_mode:
+    if S.walk_mode:
+        border_col = ORANGE
+    elif S.cursor_mode:
         border_col = PURPLE
     elif S.preview_mode:
         border_col = YELLOW
@@ -2035,7 +2199,7 @@ def draw_cb():
         border_col = CYAN
     else:
         border_col = GREEN
-    t = BORDER_PX if not (S.cursor_mode or S.preview_mode or S.navigation_mode or S.workspace_nav) else (BORDER_PX + 1)
+    t = BORDER_PX if not (S.cursor_mode or S.preview_mode or S.navigation_mode or S.workspace_nav or S.walk_mode) else (BORDER_PX + 1)
     _fill(_rect(0, 0, w, t) + _rect(0, h - t, w, h) +
           _rect(0, 0, t, h) + _rect(w - t, 0, w, h), border_col)
 
@@ -2097,7 +2261,9 @@ def draw_cb():
         _fill(_rect(ax - 5 * ui, ay - 5 * ui, ax + 5 * ui, ay + 5 * ui), GREEN)
         _fill(_rect(mx - 4 * ui, my - 4 * ui, mx + 4 * ui, my + 4 * ui), HINT_BG)
 
-    if S.cursor_mode:
+    if S.walk_mode:
+        label = "WALK MODE"
+    elif S.cursor_mode:
         label = f"CURSOR MODE - {S.cursor_plane}"
     elif S.preview_mode:
         label = "PREVIEW MODE"
@@ -2761,6 +2927,8 @@ class WM_OT_vim_nudge(bpy.types.Operator):
 
 
 def enter_cursor_mode(context, report_fn=None):
+    if S.walk_mode:
+        exit_walk_mode(context, report_fn)
     S.prev_mode_state = {
         'preview_mode': S.preview_mode,
         'navigation_mode': S.navigation_mode,
@@ -2785,6 +2953,54 @@ def exit_cursor_mode(context, report_fn=None):
     S.cursor_mode = False
     S.smooth_cursor.reset()
     prev = getattr(S, 'prev_mode_state', {})
+    S.preview_mode = prev.get('preview_mode', True)
+    S.navigation_mode = prev.get('navigation_mode', False)
+    S.workspace_nav = prev.get('workspace_nav', False)
+    S.nav_mode = prev.get('nav_mode', 'ORBIT')
+    mode_name = "PREVIEW" if S.preview_mode else ("NAVIGATION" if S.navigation_mode else S.nav_mode)
+    if report_fn:
+        report_fn({'INFO'}, f"Vimender: {mode_name} MODE")
+    try:
+        context.workspace.status_text_set(f"Vimender: {mode_name} MODE")
+    except Exception:
+        pass
+    tag_all()
+
+
+def enter_walk_mode(context, area, report_fn=None):
+    S.walk_prev_state = {
+        'preview_mode': S.preview_mode,
+        'navigation_mode': S.navigation_mode,
+        'workspace_nav': S.workspace_nav,
+        'nav_mode': S.nav_mode,
+    }
+    if S.cursor_mode:
+        exit_cursor_mode(context, report_fn)
+    if S.navigation_mode or S.workspace_nav:
+        S.navigation_mode = False
+        S.workspace_nav = False
+    if S.mode:
+        S.clear_hint()
+    S.preview_mode = False
+    S.navigation_mode = False
+    S.workspace_nav = False
+    S.walk_mode = True
+    S.walk_ptr = area.as_pointer() if area else 0
+    S.smooth_walker.reset()
+    if report_fn:
+        report_fn({'INFO'}, "Vimender: WALK MODE")
+    try:
+        context.workspace.status_text_set("Vimender: WALK MODE | WASD: Move | HJKL: Look | Q/E: Down/Up | Alt+Q/Esc: Exit")
+    except Exception:
+        pass
+    tag_all()
+
+
+def exit_walk_mode(context, report_fn=None):
+    S.walk_mode = False
+    S.walk_ptr = 0
+    S.smooth_walker.reset()
+    prev = getattr(S, 'walk_prev_state', {})
     S.preview_mode = prev.get('preview_mode', True)
     S.navigation_mode = prev.get('navigation_mode', False)
     S.workspace_nav = prev.get('workspace_nav', False)
@@ -2910,7 +3126,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
     def _set_status(self, context):
         try:
-            if S.cursor_mode:
+            if S.walk_mode:
+                txt = "Vimender: WALK MODE | WASD: Move | HJKL: Look | Q/E: Down/Up | Alt+Q/Esc: Exit"
+            elif S.cursor_mode:
                 txt = f"Vimender: CURSOR MODE [{S.cursor_plane}] | HJKL: Move | TAB: Plane | 0: Origin | S: Snap | Esc: Exit"
             elif S.preview_mode:
                 txt = "Vimender: PREVIEW MODE"
@@ -3003,6 +3221,14 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
     def _exit_cursor_mode(self, context):
         exit_cursor_mode(context, self.report)
+
+    def _enter_walk_mode(self, context, area):
+        if S.mode:
+            self._cancel_hint(context, context.window)
+        enter_walk_mode(context, area, self.report)
+
+    def _exit_walk_mode(self, context):
+        exit_walk_mode(context, self.report)
 
     def _open_pie(self, context, event, win, area):
         region = window_region(area)
@@ -3124,10 +3350,12 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     a.tag_redraw()
             elif S.cursor_mode:
                 S.smooth_cursor.tick(context, win)
+            elif S.walk_mode:
+                S.smooth_walker.tick(context, win)
             elif not S.mode and not S.preview_mode and not S.nudge_on and not transform_active(win) and not is_blender_modal_active(win):
                 S.nav.tick(context, win)
 
-            if not S.preview_mode and not S.navigation_mode and not S.cursor_mode:
+            if not S.preview_mode and not S.navigation_mode and not S.cursor_mode and not S.walk_mode:
                 if not S.nudge_on and transform_active(win):
                     self._start_nudge(context, win)
             return {'PASS_THROUGH'}
@@ -3286,7 +3514,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             elif v == 'RELEASE' and t in CONSUME_KEYS:
                 return {'RUNNING_MODAL'}
 
-        if is_view_pie_trigger(event) and not (area and area.type in PASS_KEYS_IN) and not S.mode and not S.search_active and not S.save_dialog_open:
+        if is_view_pie_trigger(event) and not (area and area.type in PASS_KEYS_IN) and not S.mode and not S.search_active and not S.save_dialog_open and not S.walk_mode:
             if v == 'PRESS':
                 if S.view_pie_active:
                     S.view_pie_active = False
@@ -3303,7 +3531,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             return self._modal_hint(context, event, win, mx, my, area)
 
         if transform_active(win) or is_blender_modal_active(win):
-            if not S.preview_mode and not S.navigation_mode and not S.cursor_mode:
+            if not S.preview_mode and not S.navigation_mode and not S.cursor_mode and not S.walk_mode:
                 if (t in {'N', 'M'} or event.unicode in {'n', 'N', 'm', 'M'}) and not (event.ctrl or event.alt or event.oskey):
                     if v == 'PRESS':
                         is_up = (t == 'N' or event.unicode in {'n', 'N'})
@@ -3316,14 +3544,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     self._start_nudge(context, win)
             return {'PASS_THROUGH'}
 
-        if t in {'G', 'R', 'S'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
-            if t == 'R':
-                S.last_transform_type = 'ROTATE'
-            elif t == 'S':
-                S.last_transform_type = 'RESIZE'
-            else:
-                S.last_transform_type = 'TRANSLATE'
-
         prefs = get_preferences(context)
         use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
         plain = not (event.alt or event.oskey)
@@ -3333,6 +3553,75 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 S.right_alt_down = True
             elif v == 'RELEASE':
                 S.right_alt_down = False
+
+        is_walk_toggle = (
+            check_shortcut(prefs, 'walk', event, 'Q', fallback_alt=True) or
+            ((t == 'Q' or event.unicode in {'q', 'Q'}) and event.alt and not (event.ctrl or event.oskey or event.shift))
+        )
+        if is_walk_toggle:
+            if v == 'PRESS':
+                if S.walk_mode:
+                    self._exit_walk_mode(context)
+                else:
+                    target_v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
+                    if target_v3d and target_v3d.type == 'VIEW_3D':
+                        self._enter_walk_mode(context, target_v3d)
+                    else:
+                        self.report({'INFO'}, "Vimender: Walk Mode only available in 3D Viewport")
+                return {'RUNNING_MODAL'}
+            elif v == 'RELEASE':
+                return {'RUNNING_MODAL'}
+
+        if S.walk_mode:
+            if t in {'ESC', 'RET', 'NUMPAD_ENTER'}:
+                if v == 'PRESS':
+                    self._exit_walk_mode(context)
+                return {'RUNNING_MODAL'}
+
+            if t in MOUSE_CANCEL and v == 'PRESS':
+                self._exit_walk_mode(context)
+                return {'RUNNING_MODAL'}
+
+            WALK_MOVE_KEYS = {'W', 'S', 'A', 'D', 'Q', 'E'}
+            WALK_LOOK_KEYS = {'H', 'J', 'K', 'L'}
+            UNICODE_WALK_MAP = {
+                'w': 'W', 'W': 'W', 's': 'S', 'S': 'S',
+                'a': 'A', 'A': 'A', 'd': 'D', 'D': 'D',
+                'q': 'Q', 'Q': 'Q', 'e': 'E', 'E': 'E',
+                'h': 'H', 'H': 'H', 'j': 'J', 'J': 'J',
+                'k': 'K', 'K': 'K', 'l': 'L', 'L': 'L',
+            }
+            key_matched = t if (t in WALK_MOVE_KEYS or t in WALK_LOOK_KEYS) else UNICODE_WALK_MAP.get(event.unicode)
+            if key_matched:
+                if not (event.ctrl or event.alt or event.oskey):
+                    S.smooth_walker.on_key(key_matched, v, shift=event.shift)
+                    return {'RUNNING_MODAL'}
+                elif v == 'RELEASE':
+                    S.smooth_walker.on_key(key_matched, v, shift=event.shift)
+                    return {'RUNNING_MODAL'}
+
+            if t in {'LEFT_SHIFT', 'RIGHT_SHIFT'}:
+                S.smooth_walker.shift = (v == 'PRESS')
+                return {'RUNNING_MODAL'}
+
+            if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL', 'PAGE_UP', 'PAGE_DOWN'} or
+                (event.unicode in {'+', '-'} and not (event.alt or event.oskey))) and v == 'PRESS':
+                is_up = t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL', 'PAGE_UP'} or event.unicode == '+'
+                change_sens(1 if is_up else -1)
+                return {'RUNNING_MODAL'}
+
+            if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
+                return {'PASS_THROUGH'}
+
+            return {'RUNNING_MODAL'}
+
+        if t in {'G', 'R', 'S'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
+            if t == 'R':
+                S.last_transform_type = 'ROTATE'
+            elif t == 'S':
+                S.last_transform_type = 'RESIZE'
+            else:
+                S.last_transform_type = 'TRANSLATE'
 
         if ((t == 'SPACE' and is_altgr_pressed(event)) or
             check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
@@ -3389,7 +3678,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             ((t == 'B' or event.unicode in {'b', 'B'}) and not (event.ctrl or event.alt or event.oskey))
         )
         if is_bevel_key:
-            if not (area and area.type in PASS_KEYS_IN) and not S.mode and not S.search_active and not S.save_dialog_open and not S.view_pie_active and not transform_active(win) and not is_blender_modal_active(win):
+            if not (area and area.type in PASS_KEYS_IN) and not S.mode and not S.search_active and not S.save_dialog_open and not S.view_pie_active and not transform_active(win) and not is_blender_modal_active(win) and not S.walk_mode:
                 v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
                 if not v3d or v3d.type != 'VIEW_3D':
                     v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), v3d or context.area)
@@ -3423,6 +3712,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                             return {'RUNNING_MODAL'}
 
         if check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) and v == 'PRESS':
+            if S.walk_mode:
+                self._exit_walk_mode(context)
             if not S.cursor_mode:
                 self._enter_cursor_mode(context)
             else:
@@ -3535,6 +3826,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             if v == 'RELEASE':
                 return {'RUNNING_MODAL'}
             if v == 'PRESS':
+                if S.walk_mode:
+                    self._exit_walk_mode(context)
                 if S.cursor_mode:
                     self._exit_cursor_mode(context)
                 if S.mode:
@@ -3560,6 +3853,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             if v == 'RELEASE':
                 return {'RUNNING_MODAL'}
             if v == 'PRESS':
+                if S.walk_mode:
+                    self._exit_walk_mode(context)
                 if S.cursor_mode:
                     self._exit_cursor_mode(context)
                 if S.mode:
@@ -5066,6 +5361,7 @@ KEY_PREFIXES = (
     ("preview", "Preview Mode Toggle (Ctrl+Y)", "Y", True, False, False),
     ("nav", "Navigation Mode Toggle (Ctrl+B)", "B", True, False, False),
     ("cursor", "Cursor Mode Toggle (Ctrl+Num5)", "NUMPAD_5", True, False, False),
+    ("walk", "Walk Mode Toggle (Alt+Q)", "Q", False, False, True),
     ("orbit_pan", "Orbit / Pan Mode Toggle (U)", "U", False, False, False),
     ("editor_pie", "Editor Pie Menu (Ctrl+W)", "W", True, False, False),
     ("search_menu", "General Search (Space)", "SPACE", False, False, False),
@@ -5187,6 +5483,11 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     shift_cursor: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
     alt_cursor: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
+    key_walk: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='Q', update=_on_keymap_change)
+    ctrl_walk: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
+    shift_walk: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_walk: bpy.props.BoolProperty(name="Alt", default=True, update=_on_keymap_change)
+
     key_orbit_pan: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='U', update=_on_keymap_change)
     ctrl_orbit_pan: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
     shift_orbit_pan: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
@@ -5301,6 +5602,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             self._draw_shortcut(box, "Preview Mode Toggle (Ctrl+Y)", "preview")
             self._draw_shortcut(box, "Navigation Mode Toggle (Ctrl+B)", "nav")
             self._draw_shortcut(box, "Cursor Mode Toggle (Ctrl+Num5)", "cursor")
+            self._draw_shortcut(box, "Walk Mode Toggle (Alt+Q)", "walk")
             self._draw_shortcut(box, "Orbit / Pan Mode Toggle (U)", "orbit_pan")
             self._draw_shortcut(box, "Editor Pie Menu (Ctrl+W)", "editor_pie")
 
