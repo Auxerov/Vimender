@@ -9,7 +9,7 @@ from .state import (
     is_view_pie_trigger, change_sens, _exec_view3d_op, save_vimender_state,
     MOUSE_CANCEL, MODIFIER_KEYS, CONSUME_KEYS, PASS_KEYS_IN,
     PREFIX_DIRS, PREFIX_REPEAT_TIMEOUT, PREFIX_TIMEOUT, ALL_DIRS, NUDGE_DIRS,
-    ARROW_DIRS, _addon_keymaps, NUMPAD_PIE_KEYS, is_edit_mode
+    ARROW_DIRS, _addon_keymaps, NUMPAD_PIE_KEYS, is_edit_mode, set_active_mode
 )
 from .mode_walk import enter_walk_mode, exit_walk_mode, handle_walk_event
 from .mode_tablet import enter_tablet_mode, exit_tablet_mode, handle_tablet_event
@@ -989,61 +989,76 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             elif v == 'RELEASE':
                 S.right_alt_down = False
 
-        if (check_shortcut(prefs, 'walk', event, 'Q', fallback_alt=True) or
-            ((t == 'Q' or event.unicode in {'q', 'Q'}) and event.alt and not (event.ctrl or event.oskey or event.shift))):
+        is_walk_shortcut = (
+            check_shortcut(prefs, 'walk', event, 'Q', fallback_alt=True) or
+            ((t == 'Q' or event.unicode in {'q', 'Q'}) and event.alt and not (event.ctrl or event.oskey or event.shift))
+        )
+        if is_walk_shortcut:
             if v == 'PRESS':
                 if S.walk_mode:
-                    self._exit_walk_mode(context)
+                    set_active_mode('PREVIEW', context, self.report)
                 else:
                     target_v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
                     if target_v3d and target_v3d.type == 'VIEW_3D':
-                        self._enter_walk_mode(context, target_v3d)
+                        set_active_mode('WALK', context, self.report, target_area=target_v3d)
                     else:
                         self.report({'INFO'}, "Vimender: Walk Mode only available in 3D Viewport")
                 return {'RUNNING_MODAL'}
             elif v == 'RELEASE':
                 return {'RUNNING_MODAL'}
 
-        if (check_shortcut(prefs, 'tablet', event, 'W', fallback_ctrl=True) or
-            ((t == 'W' or event.unicode in {'w', 'W'}) and event.ctrl and not (event.alt or event.oskey or event.shift))):
+        is_tablet_shortcut = (
+            check_shortcut(prefs, 'tablet', event, 'W', fallback_ctrl=True) or
+            ((t == 'W' or event.unicode in {'w', 'W'}) and event.ctrl and not (event.alt or event.oskey or event.shift))
+        )
+        if is_tablet_shortcut:
             if v == 'PRESS':
                 if S.tablet_mode:
-                    self._exit_tablet_mode(context)
+                    set_active_mode('PREVIEW', context, self.report)
                 else:
-                    self._enter_tablet_mode(context, area)
+                    set_active_mode('TABLET', context, self.report, target_area=area)
                 return {'RUNNING_MODAL'}
             elif v == 'RELEASE':
                 return {'RUNNING_MODAL'}
 
-        if check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) and v == 'PRESS':
+        is_cursor_shortcut = (
+            check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) or
+            (t == 'NUMPAD_5' and event.ctrl and not (event.alt or event.oskey or event.shift))
+        )
+        if is_cursor_shortcut and v == 'PRESS':
             if S.cursor_mode:
-                self._exit_cursor_mode(context)
+                set_active_mode('PREVIEW', context, self.report)
             else:
-                self._enter_cursor_mode(context)
+                set_active_mode('CURSOR', context, self.report)
             return {'RUNNING_MODAL'}
 
-        if check_shortcut(prefs, 'nav', event, 'B', fallback_ctrl=True):
+        is_nav_shortcut = (
+            check_shortcut(prefs, 'nav', event, 'B', fallback_ctrl=True) or
+            ((t == 'B' or event.unicode in {'b', 'B'}) and event.ctrl and not (event.alt or event.oskey or event.shift))
+        )
+        if is_nav_shortcut:
             if v == 'RELEASE':
                 return {'RUNNING_MODAL'}
             if v == 'PRESS':
                 if S.navigation_mode or S.workspace_nav:
-                    exit_nav_mode(context, self.report)
+                    set_active_mode('PREVIEW', context, self.report)
                 else:
-                    enter_nav_mode(context, area, self.report)
-                self._set_status(context)
-                tag_all()
+                    target_a = area or area_by_ptr(win, S.hover_ptr) or area_at(win, mx, my) or (win.screen.areas[0] if win and win.screen and win.screen.areas else None)
+                    set_active_mode('NAV', context, self.report, target_area=target_a)
                 return {'RUNNING_MODAL'}
 
-        if check_shortcut(prefs, 'preview', event, 'Y', fallback_ctrl=True):
+        is_preview_shortcut = (
+            check_shortcut(prefs, 'preview', event, 'Y', fallback_ctrl=True) or
+            ((t == 'Y' or event.unicode in {'y', 'Y'}) and event.ctrl and not (event.alt or event.oskey or event.shift))
+        )
+        if is_preview_shortcut:
             if v == 'RELEASE':
                 return {'RUNNING_MODAL'}
             if v == 'PRESS':
                 if S.preview_mode:
-                    exit_preview_mode(context, self.report)
+                    set_active_mode('ORBIT_PAN', context, self.report)
                 else:
-                    enter_preview_mode(context, self.report)
-                self._set_status(context)
-                tag_all()
+                    set_active_mode('PREVIEW', context, self.report)
                 return {'RUNNING_MODAL'}
 
         if ((t == 'SPACE' and is_altgr_pressed(event)) or

@@ -110,6 +110,14 @@ def register():
     patch_view_pie()
     clean_modal_keymaps()
     register_search_key()
+    try:
+        from .state import get_preferences
+        prefs = get_preferences()
+        if prefs:
+            from .preferences import repair_corrupted_keymaps
+            repair_corrupted_keymaps(prefs)
+    except Exception:
+        pass
     bpy.types.TOPBAR_MT_window.append(_window_menu_draw)
     if _on_load_pre not in bpy.app.handlers.load_pre:
         bpy.app.handlers.load_pre.append(_on_load_pre)
@@ -133,7 +141,10 @@ def unregister():
     if _on_load_post in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(_on_load_post)
     for c in reversed(classes):
-        bpy.utils.unregister_class(c)
+        try:
+            bpy.utils.unregister_class(c)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

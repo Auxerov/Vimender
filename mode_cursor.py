@@ -5,7 +5,7 @@ from mathutils import Vector
 from .state import (
     S, PURPLE, CURSOR_MAX_SPEED, CURSOR_ACCEL_RATE, CURSOR_FRICTION,
     CURSOR_WRAP_MARGIN, CURSOR_3D_SPEED, SENS_LEVELS, tag_all, window_region,
-    change_sens, is_altgr_pressed, check_shortcut, get_preferences
+    change_sens, is_altgr_pressed, check_shortcut, get_preferences, set_active_mode
 )
 
 class _SmoothCursor:
@@ -199,46 +199,11 @@ S.mover = _SmoothCursor()
 S.smooth_cursor = _Smooth3DCursor()
 
 def enter_cursor_mode(context, report_fn=None):
-    S.exit_all_modes(context, report_fn)
-    S.cursor_prev_state = {
-        'preview_mode': S.preview_mode,
-        'navigation_mode': S.navigation_mode,
-        'workspace_nav': S.workspace_nav,
-        'nav_mode': S.nav_mode,
-    }
-    S.preview_mode = False
-    S.navigation_mode = False
-    S.workspace_nav = False
-    S.cursor_mode = True
-    S.cursor_plane = 'XY'
-    if S.smooth_cursor:
-        S.smooth_cursor.reset()
-    if report_fn:
-        report_fn({'INFO'}, "Vimender: CURSOR MODE - XY")
-    try:
-        context.workspace.status_text_set("Vimender: CURSOR MODE [XY] | HJKL: Move | TAB: Plane | 0: Origin | S: Snap | Esc: Exit")
-    except Exception:
-        pass
-    tag_all()
+    set_active_mode('CURSOR', context, report_fn)
 
 
 def exit_cursor_mode(context, report_fn=None):
-    S.cursor_mode = False
-    if S.smooth_cursor:
-        S.smooth_cursor.reset()
-    prev = getattr(S, 'cursor_prev_state', {})
-    S.preview_mode = prev.get('preview_mode', True)
-    S.navigation_mode = prev.get('navigation_mode', False)
-    S.workspace_nav = prev.get('workspace_nav', False)
-    S.nav_mode = prev.get('nav_mode', 'ORBIT')
-    mode_name = "PREVIEW" if S.preview_mode else ("NAVIGATION" if S.navigation_mode else S.nav_mode)
-    if report_fn:
-        report_fn({'INFO'}, f"Vimender: {mode_name} MODE")
-    try:
-        context.workspace.status_text_set(f"Vimender: {mode_name} MODE")
-    except Exception:
-        pass
-    tag_all()
+    set_active_mode('PREVIEW', context, report_fn)
 
 
 S.exit_cursor_fn = exit_cursor_mode

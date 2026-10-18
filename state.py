@@ -221,18 +221,8 @@ class _State:
     def toggle_nav_mode(self):
         self.nav_mode = 'PAN' if self.nav_mode == 'ORBIT' else 'ORBIT'
 
-    def exit_all_modes(self, context, report_fn=None):
-        if self.walk_mode and self.exit_walk_fn:
-            self.exit_walk_fn(context, report_fn)
-        if self.tablet_mode and self.exit_tablet_fn:
-            self.exit_tablet_fn(context, report_fn)
-        if self.cursor_mode and self.exit_cursor_fn:
-            self.exit_cursor_fn(context, report_fn)
-        if self.navigation_mode or self.workspace_nav:
-            self.navigation_mode = False
-            self.workspace_nav = False
-        if self.mode:
-            self.clear_hint()
+    def exit_all_modes(self, context=None, report_fn=None):
+        set_active_mode('PREVIEW', context, report_fn)
 
 
 S = _State()
@@ -808,6 +798,8 @@ KEY_ITEMS = [
     ('ACCENT_GRAVE', 'Grave (`)', '')
 ] + [
     (str(i), str(i), '') for i in range(10)
+] + [
+    ('NONE', 'None', '')
 ]
 
 
@@ -839,6 +831,11 @@ def get_preferences(context=None):
             if not _keymaps_initialized and prefs:
                 _keymaps_initialized = True
                 load_keymaps_from_config(prefs)
+                try:
+                    from .preferences import repair_corrupted_keymaps
+                    repair_corrupted_keymaps(prefs)
+                except Exception:
+                    pass
             return prefs
     except Exception:
         pass
@@ -846,21 +843,28 @@ def get_preferences(context=None):
 
 
 def check_shortcut(prefs, prefix, event, fallback_key, fallback_ctrl=False, fallback_shift=False, fallback_alt=False, allow_shift_alt_extend=False):
-    if prefs is not None:
-        target_key = getattr(prefs, f"key_{prefix}", fallback_key)
-        target_ctrl = getattr(prefs, f"ctrl_{prefix}", fallback_ctrl)
-        target_shift = getattr(prefs, f"shift_{prefix}", fallback_shift)
-        target_alt = getattr(prefs, f"alt_{prefix}", fallback_alt)
-    else:
-        target_key = fallback_key
-        target_ctrl = fallback_ctrl
-        target_shift = fallback_shift
-        target_alt = fallback_alt
+    target_key = fallback_key
+    target_ctrl = fallback_ctrl
+    target_shift = fallback_shift
+    target_alt = fallback_alt
 
-    if event.type != target_key:
+    if prefs is not None:
+        pk = getattr(prefs, f"key_{prefix}", fallback_key)
+        if pk and pk != 'NONE':
+            target_key = pk
+            target_ctrl = getattr(prefs, f"ctrl_{prefix}", fallback_ctrl)
+            target_shift = getattr(prefs, f"shift_{prefix}", fallback_shift)
+            target_alt = getattr(prefs, f"alt_{prefix}", fallback_alt)
+        elif pk == 'NONE':
+            return False
+
+    if getattr(event, 'oskey', False):
         return False
-    if bool(event.ctrl) != bool(target_ctrl):
+
+    matches_ctrl = (bool(event.ctrl) == bool(target_ctrl))
+    if not matches_ctrl:
         return False
+
     if not allow_shift_alt_extend:
         if bool(event.shift) != bool(target_shift):
             return False
@@ -871,6 +875,133 @@ def check_shortcut(prefs, prefix, event, fallback_key, fallback_ctrl=False, fall
             return False
         if target_alt and not event.alt:
             return False
-    if getattr(event, 'oskey', False):
-        return False
-    return True
+
+    if event.type == target_key:
+        return True
+
+    if len(target_key) == 1 and target_key.isalpha():
+        if (event.unicode or "").upper() == target_key:
+            return True
+
+    if target_key == fallback_key:
+        if event.type == fallback_key:
+            return True
+        if len(fallback_key) == 1 and fallback_key.isalpha():
+            if (event.unicode or "").upper() == fallback_key:
+                return True
+
+    return False
+
+
+def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
+    if context is None:
+        context = bpy.context
+
+    if S.walk_mode:
+        S.walk_mode = False
+        S.walk_ptr = 0
+        if S.smooth_walker:
+            S.smooth_walker.reset()
+
+    if S.tablet_mode:
+        S.tablet_mode = False
+        S.tablet_ptr = 0
+        try:
+            inputs = context.preferences.inputs
+            if S.tablet_prev_emulate_3_button is not None:
+                inputs.use_mouse_emulate_3_button = S.tablet_prev_emulate_3_button
+                S.tablet_prev_emulate_3_button = None
+        except Exception as e:
+            print(f"[Vimender] Restore emulate 3 button error: {e}")
+
+    if S.cursor_mode:
+        S.cursor_mode = False
+        if S.smooth_cursor:
+            S.smooth_cursor.reset()
+
+    if S.navigation_mode or S.workspace_nav:
+        S.navigation_mode = False
+        S.workspace_nav = False
+
+    if S.mode:
+        S.clear_hint()
+
+    S.preview_mode = False
+
+    if mode_name == 'WALK':
+        S.walk_mode = True
+        if target_area:
+            S.walk_ptr = target_area.as_pointer()
+        if S.smooth_walker:
+            S.smooth_walker.reset()
+        if report_fn:
+            report_fn({'INFO'}, "Vimender: WALK MODE")
+        try:
+            context.workspace.status_text_set("Vimender: WALK MODE | WASD: Move | HJKL: Look | Q/E: Down/Up | Alt+Q/Esc: Exit")
+        except Exception:
+            pass
+
+    elif mode_name == 'TABLET':
+        S.tablet_mode = True
+        if target_area:
+            S.tablet_ptr = target_area.as_pointer()
+        prefs = get_preferences(context)
+        try:
+            inputs = context.preferences.inputs
+            S.tablet_prev_emulate_3_button = inputs.use_mouse_emulate_3_button
+            cfg = load_vimender_config()
+            use_stylus = bool(getattr(prefs, 'stylus_pen', False)) or bool(cfg.get('stylus_pen', False))
+            if use_stylus:
+                inputs.use_mouse_emulate_3_button = True
+        except Exception as e:
+            print(f"[Vimender] Tablet mode emulate 3 button error: {e}")
+        if report_fn:
+            report_fn({'INFO'}, "Vimender: TABLET MODE")
+        try:
+            context.workspace.status_text_set("Vimender: TABLET MODE | Stylus / Pen | Ctrl+W/Esc: Exit")
+        except Exception:
+            pass
+
+    elif mode_name == 'CURSOR':
+        S.cursor_mode = True
+        if S.smooth_cursor:
+            S.smooth_cursor.reset()
+        if report_fn:
+            report_fn({'INFO'}, f"Vimender: CURSOR MODE - {S.cursor_plane}")
+        try:
+            context.workspace.status_text_set(f"Vimender: CURSOR MODE [{S.cursor_plane}] | HJKL: Move | TAB: Plane | 0: Origin | S: Snap | Esc: Exit")
+        except Exception:
+            pass
+
+    elif mode_name == 'NAV':
+        S.navigation_mode = True
+        S.workspace_nav = True
+        if target_area:
+            S.hover_ptr = target_area.as_pointer()
+        if report_fn:
+            report_fn({'INFO'}, "Vimender: NAVIGATION MODE")
+        try:
+            context.workspace.status_text_set("Vimender: NAVIGATION MODE | HJKL: Move focus | Alt+HJKL: Workspace | Tab: Maximize | Esc: Exit")
+        except Exception:
+            pass
+
+    elif mode_name == 'ORBIT_PAN':
+        S.preview_mode = False
+        if report_fn:
+            report_fn({'INFO'}, f"Vimender: {S.nav_mode} MODE")
+        try:
+            context.workspace.status_text_set(f"Vimender: {S.nav_mode} MODE | U/Num5: Toggle | F: Hint | C: Box | Ctrl+Y: Preview")
+        except Exception:
+            pass
+
+    else:
+        S.preview_mode = True
+        if report_fn:
+            report_fn({'INFO'}, "Vimender: PREVIEW MODE")
+        try:
+            context.workspace.status_text_set("Vimender: PREVIEW MODE")
+        except Exception:
+            pass
+
+    tag_all()
+

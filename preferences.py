@@ -9,7 +9,7 @@ from .state import (
     get_preferences, _keymaps_initialized
 )
 
-KEY_ITEMS = [('NONE', 'None', '')] + [
+KEY_ITEMS = [
     (chr(c), chr(c), "") for c in range(ord('A'), ord('Z') + 1)
 ] + [
     ('NUMPAD_0', 'Numpad 0', ''), ('NUMPAD_1', 'Numpad 1', ''), ('NUMPAD_2', 'Numpad 2', ''),
@@ -35,6 +35,8 @@ KEY_ITEMS = [('NONE', 'None', '')] + [
     ('ACCENT_GRAVE', 'Grave (`)', '')
 ] + [
     (str(i), str(i), '') for i in range(10)
+] + [
+    ('NONE', 'None', '')
 ]
 
 
@@ -72,12 +74,30 @@ def save_keymaps_to_config(prefs):
     save_vimender_config({'keymaps': km})
 
 
+def repair_corrupted_keymaps(prefs):
+    if not prefs:
+        return False
+    if getattr(prefs, 'key_nav', '') == 'A' and getattr(prefs, 'key_preview', '') == 'X':
+        for prefix, label, def_k, def_c, def_s, def_a in KEY_PREFIXES:
+            try:
+                setattr(prefs, f"key_{prefix}", def_k)
+                setattr(prefs, f"ctrl_{prefix}", def_c)
+                setattr(prefs, f"shift_{prefix}", def_s)
+                setattr(prefs, f"alt_{prefix}", def_a)
+            except Exception:
+                pass
+        save_keymaps_to_config(prefs)
+        return True
+    return False
+
+
 def load_keymaps_from_config(prefs):
     if not prefs:
         return
     cfg = load_vimender_config()
     km = cfg.get('keymaps', {})
     if not km:
+        repair_corrupted_keymaps(prefs)
         return
     for prefix, label, def_k, def_c, def_s, def_a in KEY_PREFIXES:
         entry = km.get(prefix)
@@ -90,6 +110,7 @@ def load_keymaps_from_config(prefs):
                 setattr(prefs, f"shift_{prefix}", bool(entry["shift"]))
             if "alt" in entry:
                 setattr(prefs, f"alt_{prefix}", bool(entry["alt"]))
+    repair_corrupted_keymaps(prefs)
 
 
 def _on_keymap_change(self, context):

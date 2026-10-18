@@ -10,7 +10,7 @@ from .state import (
     PREFIX_DIRS, PREFIX_REPEAT_TIMEOUT, PREFIX_TIMEOUT, ALL_DIRS,
     ARROW_DIRS, NUDGE_DIRS, is_edit_mode, is_altgr_pressed, NUM_TO_PAD, UNICODE_TO_PAD,
     send_fake_numpad, adjust_active_modal_or_modifier, send_modal_plus_minus,
-    transform_active, is_blender_modal_active, PASS_KEYS_IN
+    transform_active, is_blender_modal_active, PASS_KEYS_IN, set_active_mode
 )
 
 class _SmoothNavigator:
@@ -396,32 +396,11 @@ def navigate_in_editor(context, win, area, direction='DOWN'):
 
 
 def enter_nav_mode(context, area=None, report_fn=None):
-    S.exit_all_modes(context, report_fn)
-    S.preview_mode = False
-    S.navigation_mode = True
-    S.workspace_nav = True
-    if area:
-        S.hover_ptr = area.as_pointer()
-    if report_fn:
-        report_fn({'INFO'}, "Vimender: NAVIGATION MODE")
-    try:
-        context.workspace.status_text_set("Vimender: NAVIGATION MODE")
-    except Exception:
-        pass
-    tag_all()
+    set_active_mode('NAV', context, report_fn, target_area=area)
 
 
 def exit_nav_mode(context, report_fn=None):
-    S.navigation_mode = False
-    S.workspace_nav = False
-    S.preview_mode = True
-    if report_fn:
-        report_fn({'INFO'}, "Vimender: PREVIEW MODE")
-    try:
-        context.workspace.status_text_set("Vimender: PREVIEW MODE")
-    except Exception:
-        pass
-    tag_all()
+    set_active_mode('PREVIEW', context, report_fn)
 
 
 def handle_nav_event(op, context, event, win, area):
@@ -457,7 +436,9 @@ def handle_nav_event(op, context, event, win, area):
 
     if ((t in {'ESC', 'RET', 'NUMPAD_ENTER'}) or
         check_shortcut(prefs, 'nav', event, 'B', fallback_ctrl=True) or
-        check_shortcut(prefs, 'preview', event, 'Y', fallback_ctrl=True)) and v == 'PRESS':
+        check_shortcut(prefs, 'preview', event, 'Y', fallback_ctrl=True) or
+        ((t == 'B' or event.unicode in {'b', 'B'}) and event.ctrl and not (event.alt or event.oskey or event.shift)) or
+        ((t == 'Y' or event.unicode in {'y', 'Y'}) and event.ctrl and not (event.alt or event.oskey or event.shift))) and v == 'PRESS':
         exit_nav_mode(context, op.report)
         return {'RUNNING_MODAL'}
 

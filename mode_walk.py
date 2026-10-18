@@ -4,7 +4,7 @@ import bpy
 from mathutils import Vector, Quaternion
 from .state import (
     S, ORANGE, WALK_MOVE_SPEED, WALK_LOOK_SPEED, NAV_ACCEL_RATE, NAV_FRICTION,
-    SENS_LEVELS, tag_all, MOUSE_CANCEL, change_sens, area_by_ptr
+    SENS_LEVELS, tag_all, MOUSE_CANCEL, change_sens, area_by_ptr, set_active_mode
 )
 
 class _SmoothWalker:
@@ -168,47 +168,11 @@ class _SmoothWalker:
 S.smooth_walker = _SmoothWalker()
 
 def enter_walk_mode(context, area, report_fn=None):
-    S.exit_all_modes(context, report_fn)
-    S.walk_prev_state = {
-        'preview_mode': S.preview_mode,
-        'navigation_mode': S.navigation_mode,
-        'workspace_nav': S.workspace_nav,
-        'nav_mode': S.nav_mode,
-    }
-    S.preview_mode = False
-    S.navigation_mode = False
-    S.workspace_nav = False
-    S.walk_mode = True
-    S.walk_ptr = area.as_pointer() if area else 0
-    if S.smooth_walker:
-        S.smooth_walker.reset()
-    if report_fn:
-        report_fn({'INFO'}, "Vimender: WALK MODE")
-    try:
-        context.workspace.status_text_set("Vimender: WALK MODE | WASD: Move | HJKL: Look | Q/E: Down/Up | Alt+Q/Esc: Exit")
-    except Exception:
-        pass
-    tag_all()
+    set_active_mode('WALK', context, report_fn, target_area=area)
 
 
 def exit_walk_mode(context, report_fn=None):
-    S.walk_mode = False
-    S.walk_ptr = 0
-    if S.smooth_walker:
-        S.smooth_walker.reset()
-    prev = getattr(S, 'walk_prev_state', {})
-    S.preview_mode = prev.get('preview_mode', True)
-    S.navigation_mode = prev.get('navigation_mode', False)
-    S.workspace_nav = prev.get('workspace_nav', False)
-    S.nav_mode = prev.get('nav_mode', 'ORBIT')
-    mode_name = "PREVIEW" if S.preview_mode else ("NAVIGATION" if S.navigation_mode else S.nav_mode)
-    if report_fn:
-        report_fn({'INFO'}, f"Vimender: {mode_name} MODE")
-    try:
-        context.workspace.status_text_set(f"Vimender: {mode_name} MODE")
-    except Exception:
-        pass
-    tag_all()
+    set_active_mode('PREVIEW', context, report_fn)
 
 
 S.exit_walk_fn = exit_walk_mode
