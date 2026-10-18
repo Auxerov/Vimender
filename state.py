@@ -187,11 +187,21 @@ class _State:
         self.tablet_mode = False
         self.tablet_ptr = 0
         self.tablet_prev_state = {}
-        self.tablet_prev_emulate_3_button = None
+        self.tablet_active_transform = 'G'
+        self.tablet_in_transform = None
+        self.tablet_transform_backup = None
+        self.tablet_active_axis = None
+        self.tablet_touch_start = None
+        self.tablet_touch_dragged = False
+        self.tablet_select_modifier = None
+        self.tablet_select_tool = 'TWEAK'
+        self.tablet_prev_show_toolbar = {}
+        self.tablet_prev_gizmos = {}
         self.preview_mode = True
         self.exit_walk_fn = None
         self.exit_tablet_fn = None
         self.exit_cursor_fn = None
+        self.touch_nav = None
         self.clear_hint()
 
     def clear_hint(self):
@@ -528,6 +538,54 @@ def send_fake_numpad(num):
                 x11.XCloseDisplay(ctypes.c_void_p(disp))
             except Exception:
                 pass
+
+
+def send_fake_key(key_str):
+    """
+    Sends a genuine hardware key press and release event to Blender via X11 XTest.
+    Supports characters like 'g', 'r', 's', 'x', 'y', 'z', and special keys like 'Return', 'Escape', 'Tab'.
+    """
+    x11, xtst = _get_x11()
+    if not x11 or not xtst:
+        return False
+    disp = None
+    try:
+        disp = x11.XOpenDisplay(None)
+        if not disp:
+            return False
+        d_ptr = ctypes.c_void_p(disp)
+        special = {
+            'RETURN': 0xff0d, 'ENTER': 0xff0d,
+            'ESCAPE': 0xff1b, 'ESC': 0xff1b,
+            'TAB': 0xff09, 'SPACE': 0x0020,
+            'BACKSPACE': 0xff08, 'DELETE': 0xffff,
+        }
+        upper_k = key_str.upper()
+        if upper_k in special:
+            sym = special[upper_k]
+        else:
+            if hasattr(x11, 'XStringToKeysym'):
+                x11.XStringToKeysym.restype = ctypes.c_ulong
+                sym = x11.XStringToKeysym(key_str.lower().encode('latin1'))
+            else:
+                sym = 0
+            if not sym:
+                sym = ord(key_str.lower()[0])
+        kc = x11.XKeysymToKeycode(d_ptr, ctypes.c_ulong(sym))
+        if kc:
+            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), True, 0)
+            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), False, 0)
+            x11.XFlush(d_ptr)
+            return True
+    except Exception:
+        pass
+    finally:
+        if disp and x11:
+            try:
+                x11.XCloseDisplay(ctypes.c_void_p(disp))
+            except Exception:
+                pass
+    return False
 
 
 _ALTGR_KEYCODES = None
@@ -885,13 +943,21 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
     if S.tablet_mode:
         S.tablet_mode = False
         S.tablet_ptr = 0
+        S.tablet_in_transform = None
+        S.tablet_transform_backup = None
+        S.tablet_active_axis = None
+        S.tablet_touch_start = None
+        S.tablet_touch_dragged = False
+        S.tablet_select_modifier = None
+        if getattr(S, 'touch_nav', None):
+            S.touch_nav.reset()
         try:
-            inputs = context.preferences.inputs
-            if S.tablet_prev_emulate_3_button is not None:
-                inputs.use_mouse_emulate_3_button = S.tablet_prev_emulate_3_button
-                S.tablet_prev_emulate_3_button = None
-        except Exception as e:
-            print(f"[Vimender] Restore emulate 3 button error: {e}")
+            from .mode_tablet import disable_touchview_integration, _tracker, restore_tablet_view_settings
+            disable_touchview_integration(context)
+            restore_tablet_view_settings(context)
+            _tracker.stop()
+        except Exception:
+            pass
 
     if S.cursor_mode:
         S.cursor_mode = False
@@ -913,33 +979,46 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
             S.walk_ptr = target_area.as_pointer()
         if S.smooth_walker:
             S.smooth_walker.reset()
+        sens_val = SENS_LEVELS[S.sens_idx]
         if report_fn:
-            report_fn({'INFO'}, "Vimender: WALK MODE")
+            report_fn({'INFO'}, f"Vimender: WALK MODE [{sens_val:.2f}x]")
         try:
-            context.workspace.status_text_set("Vimender: WALK MODE | WASD: Move | HJKL: Look | Q/E: Down/Up | Alt+Q/Esc: Exit")
+            context.workspace.status_text_set(
+                f"Vimender: WALK MODE [{sens_val:.2f}x] | WASD: Move | HJKL: Look | N/M: Sens (+/-) | Q/E: Down/Up | Alt+Q/Esc: Exit"
+            )
         except Exception:
             pass
 
     elif mode_name == 'TABLET':
         S.tablet_mode = True
+        S.tablet_active_transform = 'G'
+        S.tablet_in_transform = None
+        S.tablet_transform_backup = None
+        S.tablet_active_axis = None
+        S.tablet_touch_start = None
+        S.tablet_touch_dragged = False
+        S.tablet_select_modifier = None
+        S.tablet_select_tool = 'TWEAK'
         if target_area:
             S.tablet_ptr = target_area.as_pointer()
-        prefs = get_preferences(context)
+        if getattr(S, 'touch_nav', None):
+            S.touch_nav.reset()
         try:
-            inputs = context.preferences.inputs
-            S.tablet_prev_emulate_3_button = inputs.use_mouse_emulate_3_button
-            cfg = load_vimender_config()
-            use_stylus = bool(getattr(prefs, 'stylus_pen', False)) or bool(cfg.get('stylus_pen', False))
-            if use_stylus:
-                inputs.use_mouse_emulate_3_button = True
-        except Exception as e:
-            print(f"[Vimender] Tablet mode emulate 3 button error: {e}")
+            from .mode_tablet import enable_touchview_integration, _tracker, apply_tablet_view_settings
+            enable_touchview_integration(context)
+            apply_tablet_view_settings(context, target_area)
+            _tracker.start()
+        except Exception:
+            pass
         if report_fn:
             report_fn({'INFO'}, "Vimender: TABLET MODE")
         try:
-            context.workspace.status_text_set("Vimender: TABLET MODE | Stylus / Pen | Ctrl+W/Esc: Exit")
+            context.workspace.status_text_set(
+                "Vimender: TABLET MODE | Tap: Select | Left GUI: G/R/S & X/Y/Z | 1-Finger: Orbit/Move | 2-Fingers: Zoom/Pan | Ctrl+W/Esc: Exit"
+            )
         except Exception:
             pass
+
 
     elif mode_name == 'CURSOR':
         S.cursor_mode = True

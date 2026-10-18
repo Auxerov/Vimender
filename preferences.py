@@ -231,20 +231,6 @@ class VimenderPreferences(bpy.types.AddonPreferences):
         set=_set_arrow_keys_layout
     )
 
-    def _get_stylus_pen(self):
-        cfg = load_vimender_config()
-        return bool(cfg.get('stylus_pen', False))
-
-    def _set_stylus_pen(self, val):
-        save_vimender_config({'stylus_pen': bool(val)})
-
-    stylus_pen: bpy.props.BoolProperty(
-        name="Stylus Pen",
-        description="Enable Emulate 3 Button Mouse automatically in Tablet Mode",
-        default=False,
-        get=_get_stylus_pen,
-        set=_set_stylus_pen
-    )
 
     def _draw_shortcut(self, layout, label, prefix):
         row = layout.row(align=True)
@@ -270,7 +256,6 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             box0 = layout.box()
             box0.label(text="Input Devices & Layout", icon='KEYBOARD')
             box0.prop(self, "arrow_keys_layout", text="Arrow Keys Layout (Laptop / No Numpad)")
-            box0.prop(self, "stylus_pen", text="Stylus Pen (Emulate 3-Button Mouse in Tablet Mode)")
 
             box = layout.box()
             box.label(text="Mode Switching Shortcuts", icon='ARROW_LEFTRIGHT')

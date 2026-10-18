@@ -45,6 +45,7 @@ from .preferences import (
 )
 from .operators import (
     WM_OT_vim_mode_toggle, WM_OT_vim_nudge, WM_OT_vim_set_editor,
+    WM_OT_vim_tablet_select_modifier,
     WM_OT_vim_search_object, WM_OT_vim_search_mode, WM_OT_vim_fuzzy_search,
     WM_OT_vim_general_search, WM_OT_vim_save_prompt, WM_OT_vim_save_action,
     WM_OT_vim_close_search, register_search_key, unregister_search_key
@@ -55,6 +56,7 @@ classes = (
     WM_OT_vim_mode_toggle,
     WM_OT_vim_nudge,
     WM_OT_vim_set_editor,
+    WM_OT_vim_tablet_select_modifier,
     WM_OT_vim_search_object,
     WM_OT_vim_search_mode,
     WM_OT_vim_fuzzy_search,

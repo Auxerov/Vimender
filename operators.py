@@ -45,6 +45,31 @@ class WM_OT_vim_set_editor(bpy.types.Operator):
         return {'CANCELLED'}
 
 
+class WM_OT_vim_tablet_select_modifier(bpy.types.Operator):
+    bl_idname = "wm.vim_tablet_select_modifier"
+    bl_label = "Tablet Select Modifier"
+    bl_description = "Switch Tablet Mode selection modifier (Direct, Shift, Ctrl, Alt)"
+    bl_options = {'INTERNAL'}
+
+    modifier: bpy.props.EnumProperty(
+        items=[
+            ('NORMAL', "Normal", "Direct single select"),
+            ('SHIFT', "Shift", "Multi-select toggle"),
+            ('CTRL', "Ctrl", "Deselect"),
+            ('ALT', "Alt", "Depth / Loop select"),
+        ],
+        default='NORMAL'
+    )
+
+    def execute(self, context):
+        if self.modifier == 'NORMAL':
+            S.tablet_select_modifier = None
+        else:
+            S.tablet_select_modifier = self.modifier
+        tag_all()
+        return {'FINISHED'}
+
+
 
 class WM_OT_vim_nudge(bpy.types.Operator):
     bl_idname = "wm.vim_nudge"
@@ -535,6 +560,14 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         S.navigation_mode = False
         S.workspace_nav = False
         S.cursor_mode = False
+        S.tablet_mode = False
+        if getattr(S, 'touch_nav', None):
+            S.touch_nav.reset()
+        try:
+            from .mode_tablet import disable_touchview_integration
+            disable_touchview_integration(context)
+        except Exception:
+            pass
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.008, window=context.window)
         wm.modal_handler_add(self)
@@ -550,6 +583,12 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         return self.invoke(context, None)
 
     def _finish(self, context):
+        if getattr(S, 'tablet_mode', False):
+            try:
+                from .mode_tablet import disable_touchview_integration
+                disable_touchview_integration(context)
+            except Exception:
+                pass
         if self._timer is not None:
             try:
                 context.window_manager.event_timer_remove(self._timer)
@@ -566,7 +605,10 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
     def _set_status(self, context):
         try:
             if S.walk_mode:
-                txt = "Vimender: WALK MODE | WASD: Move | HJKL: Look | Q/E: Down/Up | Alt+Q/Esc: Exit"
+                sens_val = SENS_LEVELS[S.sens_idx]
+                txt = f"Vimender: WALK MODE [{sens_val:.2f}x] | WASD: Move | HJKL: Look | N/M: Sens (+/-) | Q/E: Down/Up | Alt+Q/Esc: Exit"
+            elif S.tablet_mode:
+                txt = "Vimender: TABLET MODE | Drag: Orbit | Right-edge/Ctrl: Zoom | Bottom-edge/Shift: Pan | Double-tap: Fit | 2-Finger tap: Undo | Ctrl+W/Esc: Exit"
             elif S.cursor_mode:
                 txt = f"Vimender: CURSOR MODE [{S.cursor_plane}] | HJKL: Move | TAB: Plane | 0: Origin | S: Snap | Esc: Exit"
             elif S.preview_mode:
@@ -800,6 +842,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 S.smooth_cursor.tick(context, win)
             elif S.walk_mode:
                 S.smooth_walker.tick(context, win)
+            elif S.tablet_mode:
+                if getattr(S, 'touch_nav', None) and S.touch_nav.tick(context, win):
+                    tag_all()
             elif not S.mode and not S.preview_mode and not S.nudge_on and not S.tablet_mode and not transform_active(win) and not is_blender_modal_active(win):
                 S.nav.tick(context, win)
 
@@ -992,6 +1037,16 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if S.mode:
             return self._modal_hint(context, event, win, mx, my, area)
 
+        if S.walk_mode:
+            res = handle_walk_event(self, context, event, win, area)
+            if res != {'PASS_THROUGH'}:
+                return res
+
+        if S.tablet_mode:
+            res = handle_tablet_event(self, context, event, win, area)
+            if res != {'PASS_THROUGH'}:
+                return res
+
         if transform_active(win) or is_blender_modal_active(win):
             if not S.preview_mode and not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode:
                 if (t in {'N', 'M'} or event.unicode in {'n', 'N', 'm', 'M'}) and not (event.ctrl or event.alt or event.oskey):
@@ -1173,11 +1228,12 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                         elif v == 'RELEASE':
                             return {'RUNNING_MODAL'}
 
+
         if S.walk_mode:
-            return handle_walk_event(self, context, event, win, area)
+            return {'RUNNING_MODAL'}
 
         if S.tablet_mode:
-            return handle_tablet_event(self, context, event, win, area)
+            return {'PASS_THROUGH'}
 
         if S.cursor_mode:
             return handle_cursor_event(self, context, event, win, area)

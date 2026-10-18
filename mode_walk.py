@@ -188,6 +188,10 @@ def handle_walk_event(op, context, event, win, area):
         exit_walk_mode(context, op.report)
         return {'RUNNING_MODAL'}
 
+    # Allow global mode transition shortcuts (Alt+Q, Ctrl+B, Ctrl+Y, Ctrl+W, Ctrl+Num5, etc.) to pass through
+    if event.ctrl or event.alt or getattr(event, 'oskey', False):
+        return {'PASS_THROUGH'}
+
     WALK_MOVE_KEYS = {'W', 'S', 'A', 'D', 'Q', 'E'}
     WALK_LOOK_KEYS = {'H', 'J', 'K', 'L'}
     UNICODE_WALK_MAP = {
@@ -210,13 +214,32 @@ def handle_walk_event(op, context, event, win, area):
         S.smooth_walker.shift = (v == 'PRESS')
         return {'RUNNING_MODAL'}
 
-    if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL', 'PAGE_UP', 'PAGE_DOWN'} or
-        (event.unicode in {'+', '-'} and not (event.alt or event.oskey))) and v == 'PRESS':
-        is_up = t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL', 'PAGE_UP'} or event.unicode == '+'
-        change_sens(1 if is_up else -1)
+    is_sens_key = (
+        t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL', 'PAGE_UP', 'PAGE_DOWN'} or
+        (t in {'N', 'M'} or (event.unicode or '').upper() in {'N', 'M'}) or
+        (event.unicode in {'+', '-'} and not (event.alt or event.oskey))
+    ) and not (event.ctrl or event.alt or event.oskey)
+
+    if is_sens_key and v == 'PRESS':
+        is_up = (
+            t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL', 'PAGE_UP', 'N'} or
+            (event.unicode or '').upper() in {'+', 'N'}
+        )
+        delta = 1 if is_up else -1
+        change_sens(delta)
+        sens_val = SENS_LEVELS[S.sens_idx]
+        op.report({'INFO'}, f"Vimender: Walk Sensitivity {sens_val:.2f}x")
+        try:
+            context.workspace.status_text_set(
+                f"Vimender: WALK MODE [{sens_val:.2f}x] | WASD: Move | HJKL: Look | N/M: Sens (+/-) | Q/E: Down/Up | Alt+Q/Esc: Exit"
+            )
+        except Exception:
+            pass
+        tag_all()
         return {'RUNNING_MODAL'}
 
     if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
         return {'PASS_THROUGH'}
 
     return {'RUNNING_MODAL'}
+

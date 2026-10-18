@@ -7,7 +7,7 @@ from gpu_extras.batch import batch_for_shader
 from .state import (
     S, GREEN, CYAN, RED, PURPLE, YELLOW, ORANGE, GREY, BORDER_PX, HINT_BG,
     HINT_TEXT, HINT_TYPED, LEADER, SPACE_NAMES, window_region, area_by_ptr, ui_scale,
-    tag_all, _handlers, _shader, _ORIGINAL_VIEW_PIE_DRAW, get_preferences
+    tag_all, _handlers, _shader, _ORIGINAL_VIEW_PIE_DRAW, get_preferences, SENS_LEVELS
 )
 
 def _get_shader():
@@ -43,6 +43,15 @@ def _circle(cx, cy, r, seg=14):
         v += [(cx, cy), (cx + r * math.cos(a0), cy + r * math.sin(a0)),
               (cx + r * math.cos(a1), cy + r * math.sin(a1))]
     return v
+
+
+def _rect_border(x0, y0, x1, y1, b):
+    return (
+        _rect(x0, y0, x1, y0 + b) +
+        _rect(x0, y1 - b, x1, y1) +
+        _rect(x0, y0, x0 + b, y1) +
+        _rect(x1 - b, y0, x1, y1)
+    )
 
 
 def _fill(verts, color):
@@ -117,8 +126,234 @@ def glyph_tris(t, cx, cy, r):
     if t in {'VOLUME', 'POINTCLOUD'}:
         return (_circle(cx - r * 0.5, cy - r * 0.3, r * 0.3) + _circle(cx + r * 0.4, cy - r * 0.5, r * 0.3) +
                 _circle(cx, cy + r * 0.5, r * 0.3) + _circle(cx + r * 0.6, cy + r * 0.3, r * 0.25))
-    return _rect(cx - r * 0.7, cy - r * 0.7, cx + r * 0.7, cy + r * 0.7)
+def draw_tablet_gui(area, region, ui):
+    """
+    Renders custom touch-friendly left toolbar for Tablet Mode:
+    - G, R, S buttons (Move, Rotate, Scale)
+    - X, Y, Z buttons with custom directional axis arrows & colors
+    - ALL button (Free Orbit)
+    - FIT button (Zoom Selected)
+    - UNDO button
+    - Top Axis Lock HUD Banner
+    """
+    try:
+        from .mode_tablet import get_tablet_gui_buttons
+        items = get_tablet_gui_buttons(region, ui)
+    except Exception:
+        return
+    if not items:
+        return
 
+    buttons = [b for b in items if not b.get('is_sep')]
+    dividers = [s for s in items if s.get('is_sep')]
+    if not buttons:
+        return
+
+    # 1. Left Dock Background Container
+    pad_x = 4 * ui
+    pad_y = 6 * ui
+    dock_x0 = min(b['x0'] for b in buttons) - pad_x
+    dock_x1 = max(b['x1'] for b in buttons) + pad_x
+    dock_y0 = min(b['y0'] for b in buttons) - pad_y
+    dock_y1 = max(b['y1'] for b in buttons) + pad_y
+
+    _fill(_rect(dock_x0, dock_y0, dock_x1, dock_y1), (0.09, 0.09, 0.11, 0.88))
+    _fill(_rect_border(dock_x0, dock_y0, dock_x1, dock_y1, 1.5 * ui), (0.28, 0.28, 0.32, 0.90))
+
+    # 2. Dividers
+    for d in dividers:
+        _fill(_line(d['x0'], d['y'], d['x1'], d['y'], 1.2 * ui), (0.35, 0.35, 0.38, 0.65))
+
+    # 3. Buttons
+    for b in buttons:
+        btn_id = b['id']
+        is_act = b['is_active']
+        col = b['active_color'] if is_act else b['base_color']
+        _fill(_rect(b['x0'], b['y0'], b['x1'], b['y1']), col)
+
+        border_col = (1.0, 1.0, 1.0, 0.90) if is_act else (0.30, 0.30, 0.34, 0.60)
+        bw_px = (2.0 * ui) if is_act else (1.0 * ui)
+        _fill(_rect_border(b['x0'], b['y0'], b['x1'], b['y1'], bw_px), border_col)
+
+        cx = (b['x0'] + b['x1']) * 0.5
+        cy = (b['y0'] + b['y1']) * 0.5
+
+        if btn_id == 'FIT':
+            _font_size(int(12 * ui))
+            tw, th = blf.dimensions(0, 'FIT')
+            _text(cx - tw * 0.5, b['y0'] + 19 * ui, 'FIT', (1.0, 1.0, 1.0, 1.0))
+
+            _font_size(int(9 * ui))
+            stw, sth = blf.dimensions(0, 'VIEW')
+            _text(cx - stw * 0.5, b['y0'] + 7 * ui, 'VIEW', (0.75, 0.75, 0.75, 0.85))
+
+        elif btn_id in {'G', 'R', 'S'}:
+            _font_size(int(14 * ui))
+            tw, th = blf.dimensions(0, b['label'])
+            text_col = (0.05, 0.05, 0.05, 1.0) if is_act else (1.0, 1.0, 1.0, 1.0)
+            _text(cx - tw * 0.5, b['y0'] + 20 * ui, b['label'], text_col)
+
+            _font_size(int(9 * ui))
+            stw, sth = blf.dimensions(0, b['subtext'])
+            sub_col = (0.15, 0.15, 0.15, 0.95) if is_act else (0.75, 0.75, 0.75, 0.85)
+            _text(cx - stw * 0.5, b['y0'] + 7 * ui, b['subtext'], sub_col)
+
+        elif btn_id in {'UNDO', 'REDO'}:
+            _font_size(int(11 * ui))
+            tw, th = blf.dimensions(0, b['label'])
+            _text(cx - tw * 0.5, cy - th * 0.5, b['label'], (1.0, 1.0, 1.0, 1.0))
+
+    # 4. Top Transform HUD Banner
+    if getattr(S, 'tablet_in_transform', None):
+        tr_id = S.tablet_in_transform
+        tr_name = 'MOVE' if tr_id == 'G' else ('ROTATE' if tr_id == 'R' else 'SCALE')
+        ax_name = S.tablet_active_axis or 'FREE (VIEW PLANE)'
+        banner_text = f"TRANSFORM: {tr_name} [{ax_name}]  |  TOUCH DRAG TO TWEAK  |  TAP OK / ESC"
+        _font_size(int(13 * ui))
+        btw, bth = blf.dimensions(0, banner_text)
+        bcx = region.width * 0.5
+        bcy = region.height - 30 * ui
+        bpad = 8 * ui
+        bx0 = bcx - btw * 0.5 - bpad
+        bx1 = bcx + btw * 0.5 + bpad
+        by0 = bcy - bth * 0.5 - bpad * 0.5
+        by1 = bcy + bth * 0.5 + bpad * 0.5
+        axis_col = (0.95, 0.60, 0.12, 1.0) if not S.tablet_active_axis else (
+            (0.95, 0.25, 0.25, 1.0) if S.tablet_active_axis == 'X' else (
+                (0.25, 0.88, 0.35, 1.0) if S.tablet_active_axis == 'Y' else (0.25, 0.55, 0.95, 1.0)
+            )
+        )
+        _fill(_rect(bx0, by0, bx1, by1), (0.08, 0.08, 0.10, 0.92))
+        _fill(_rect_border(bx0, by0, bx1, by1, 1.8 * ui), axis_col)
+        _text(bcx - btw * 0.5, bcy - bth * 0.5, banner_text, axis_col)
+
+    # 5. Bottom-Left Selection Modifier GUI (Dikeylemesine: SEL, +SHIFT, +CTRL, +ALT)
+    try:
+        from .mode_tablet import get_tablet_selection_buttons
+        sel_buttons = get_tablet_selection_buttons(region, ui)
+    except Exception:
+        sel_buttons = []
+
+    if sel_buttons:
+        s_dock_x0 = min(b['x0'] for b in sel_buttons) - 4 * ui
+        s_dock_x1 = max(b['x1'] for b in sel_buttons) + 4 * ui
+        s_dock_y0 = min(b['y0'] for b in sel_buttons) - 5 * ui
+        s_dock_y1 = max(b['y1'] for b in sel_buttons) + 5 * ui
+
+        _fill(_rect(s_dock_x0, s_dock_y0, s_dock_x1, s_dock_y1), (0.09, 0.09, 0.11, 0.88))
+        _fill(_rect_border(s_dock_x0, s_dock_y0, s_dock_x1, s_dock_y1, 1.5 * ui), (0.28, 0.28, 0.32, 0.90))
+
+        for b in sel_buttons:
+            is_act = b['is_active']
+            col = b['active_color'] if is_act else b['base_color']
+            _fill(_rect(b['x0'], b['y0'], b['x1'], b['y1']), col)
+
+            border_col = (1.0, 1.0, 1.0, 0.92) if is_act else (0.30, 0.30, 0.34, 0.60)
+            bw_px = (2.0 * ui) if is_act else (1.0 * ui)
+            _fill(_rect_border(b['x0'], b['y0'], b['x1'], b['y1'], bw_px), border_col)
+
+            cx = (b['x0'] + b['x1']) * 0.5
+            cy = (b['y0'] + b['y1']) * 0.5
+
+            _font_size(int(11 * ui))
+            tw, th = blf.dimensions(0, b['label'])
+            text_col = (0.05, 0.05, 0.05, 1.0) if is_act else (1.0, 1.0, 1.0, 1.0)
+            _text(cx - tw * 0.5, b['y0'] + 18 * ui, b['label'], text_col)
+
+            _font_size(int(8 * ui))
+            stw, sth = blf.dimensions(0, b['subtext'])
+            sub_col = (0.15, 0.15, 0.15, 0.95) if is_act else (0.75, 0.75, 0.75, 0.85)
+            _text(cx - stw * 0.5, b['y0'] + 6 * ui, b['subtext'], sub_col)
+
+    # 6. Bottom-Right Axis Selection GUI (Dikeylemesine: X, Y, Z - Mode yazısının üstünde)
+    try:
+        from .mode_tablet import get_tablet_axis_buttons
+        axis_buttons = get_tablet_axis_buttons(region, ui)
+    except Exception:
+        axis_buttons = []
+
+    if axis_buttons:
+        ax_btns = [b for b in axis_buttons if not b.get('is_sep')]
+        if ax_btns:
+            ax_dock_x0 = min(b['x0'] for b in ax_btns) - 4 * ui
+            ax_dock_x1 = max(b['x1'] for b in ax_btns) + 4 * ui
+            ax_dock_y0 = min(b['y0'] for b in ax_btns) - 5 * ui
+            ax_dock_y1 = max(b['y1'] for b in ax_btns) + 5 * ui
+
+            _fill(_rect(ax_dock_x0, ax_dock_y0, ax_dock_x1, ax_dock_y1), (0.09, 0.09, 0.11, 0.88))
+            _fill(_rect_border(ax_dock_x0, ax_dock_y0, ax_dock_x1, ax_dock_y1, 1.5 * ui), (0.28, 0.28, 0.32, 0.90))
+
+        for b in axis_buttons:
+            if b.get('is_sep'):
+                _fill(_line(b['x0'], b['y'], b['x1'], b['y'], 1.2 * ui), (0.35, 0.35, 0.40, 0.70))
+                continue
+
+            btn_id = b['id']
+            is_act = b['is_active']
+            col = b['active_color'] if is_act else b['base_color']
+            _fill(_rect(b['x0'], b['y0'], b['x1'], b['y1']), col)
+
+            border_col = (1.0, 1.0, 1.0, 0.92) if is_act else (0.30, 0.30, 0.34, 0.60)
+            bw_px = (2.0 * ui) if is_act else (1.0 * ui)
+            _fill(_rect_border(b['x0'], b['y0'], b['x1'], b['y1'], bw_px), border_col)
+
+            cx = (b['x0'] + b['x1']) * 0.5
+            cy = (b['y0'] + b['y1']) * 0.5
+
+            if btn_id in {'OK', 'ESC'}:
+                _font_size(int(11 * ui))
+                tw, th = blf.dimensions(0, b['label'])
+                _text(cx - tw * 0.5, b['y0'] + 17 * ui, b['label'], (1.0, 1.0, 1.0, 1.0))
+
+                _font_size(int(7.5 * ui))
+                stw, sth = blf.dimensions(0, b['subtext'])
+                _text(cx - stw * 0.5, b['y0'] + 5 * ui, b['subtext'], (0.90, 0.90, 0.90, 0.90))
+
+            elif btn_id in {'X', 'Y', 'Z'}:
+                # Main Letter
+                _font_size(int(13 * ui))
+                tw, th = blf.dimensions(0, b['label'])
+                _text(cx - tw * 0.5, b['y0'] + 19 * ui, b['label'], (1.0, 1.0, 1.0, 1.0))
+
+                # Directional Axis Arrows
+                arrow_col = (1.0, 1.0, 1.0, 0.95) if is_act else (
+                    (0.95, 0.25, 0.25, 0.95) if btn_id == 'X' else (
+                        (0.25, 0.88, 0.35, 0.95) if btn_id == 'Y' else (0.30, 0.60, 1.0, 0.95)
+                    )
+                )
+                ay = b['y0'] + 9 * ui
+                alw = 1.6 * ui
+                if btn_id == 'X':
+                    # Red horizontal axis arrow pointing right
+                    ax0 = cx - 11 * ui
+                    ax1 = cx + 11 * ui
+                    _fill(_line(ax0, ay, ax1, ay, alw), arrow_col)
+                    _fill([(ax1, ay), (ax1 - 5 * ui, ay + 3.5 * ui), (ax1 - 5 * ui, ay - 3.5 * ui)], arrow_col)
+                elif btn_id == 'Y':
+                    # Green diagonal axis arrow pointing up-right
+                    ax0 = cx - 9 * ui
+                    ay0 = ay - 4 * ui
+                    ax1 = cx + 9 * ui
+                    ay1 = ay + 5 * ui
+                    _fill(_line(ax0, ay0, ax1, ay1, alw), arrow_col)
+                    _fill([(ax1, ay1), (ax1 - 6 * ui, ay1), (ax1, ay1 - 6 * ui)], arrow_col)
+                elif btn_id == 'Z':
+                    # Blue vertical axis arrow pointing up
+                    ay0 = ay - 5 * ui
+                    ay1 = ay + 6 * ui
+                    _fill(_line(cx, ay0, cx, ay1, alw), arrow_col)
+                    _fill([(cx, ay1), (cx - 3.5 * ui, ay1 - 5 * ui), (cx + 3.5 * ui, ay1 - 5 * ui)], arrow_col)
+
+            elif btn_id in {'BOX', 'TWEAK'}:
+                _font_size(int(10.5 * ui))
+                tw, th = blf.dimensions(0, b['label'])
+                text_col = (0.05, 0.05, 0.05, 1.0) if is_act else (1.0, 1.0, 1.0, 1.0)
+                _text(cx - tw * 0.5, b['y0'] + 17 * ui, b['label'], text_col)
+
+                _font_size(int(7.5 * ui))
+                stw, sth = blf.dimensions(0, b['subtext'])
+                sub_col = (0.10, 0.10, 0.10, 0.95) if is_act else (0.80, 0.80, 0.80, 0.85)
+                _text(cx - stw * 0.5, b['y0'] + 5 * ui, b['subtext'], sub_col)
 
 
 def draw_cb():
@@ -159,6 +394,7 @@ def draw_cb():
     t = BORDER_PX if not (S.cursor_mode or S.preview_mode or S.navigation_mode or S.workspace_nav or S.walk_mode or S.tablet_mode) else (BORDER_PX + 1)
     _fill(_rect(0, 0, w, t) + _rect(0, h - t, w, h) +
           _rect(0, 0, t, h) + _rect(w - t, 0, w, h), border_col)
+
 
     if S.mode in {'HINT', 'BOX1', 'BOX2'}:
         _font_size(int(13 * ui))
@@ -219,9 +455,11 @@ def draw_cb():
         _fill(_rect(mx - 4 * ui, my - 4 * ui, mx + 4 * ui, my + 4 * ui), HINT_BG)
 
     if S.walk_mode:
-        label = "WALK MODE"
+        label = f"WALK MODE [{SENS_LEVELS[S.sens_idx]:.2f}x]"
     elif S.tablet_mode:
-        label = "TABLET MODE"
+        sel_name = getattr(S, 'tablet_select_modifier', None) or 'DIRECT'
+        tool_name = getattr(S, 'tablet_select_tool', 'TWEAK')
+        label = f"TABLET MODE [{tool_name} | {sel_name}]"
     elif S.cursor_mode:
         label = f"CURSOR MODE - {S.cursor_plane}"
     elif S.preview_mode:
@@ -248,6 +486,9 @@ def draw_cb():
     y0 = 12 * ui
     _fill(_rect(x0, y0, x1, y0 + th + 2 * pad), (0.0, 0.0, 0.0, 0.65))
     _text(x0 + pad, y0 + pad, label, border_col)
+
+    if S.tablet_mode and area.type == 'VIEW_3D':
+        draw_tablet_gui(area, region, ui)
 
     gpu.state.blend_set('NONE')
 
@@ -310,6 +551,14 @@ def clean_modal_keymaps():
 
 
 def shutdown():
+    if getattr(S, 'tablet_mode', False):
+        try:
+            from .mode_tablet import disable_touchview_integration
+            disable_touchview_integration(bpy.context)
+        except Exception:
+            pass
+        S.tablet_mode = False
+        S.tablet_ptr = 0
     S.active = False
     S.prefix = False
     S.navigation_mode = False
