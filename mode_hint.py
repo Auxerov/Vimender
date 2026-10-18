@@ -7,7 +7,8 @@ from bpy_extras.view3d_utils import location_3d_to_region_2d
 from .state import (
     S, HINT_BG, HINT_TEXT, HINT_TYPED, LEADER, PALETTE, MAX_HINTS,
     MIN_LABEL_LEN, MAX_LABEL_LEN, ALPHABET, tag_all, window_region,
-    ui_scale, make_labels, area_by_ptr
+    ui_scale, make_labels, area_by_ptr, ALL_DIRS, SENS_LEVELS,
+    CURSOR_MAX_SPEED, NAV_ACCEL_RATE, NAV_FRICTION
 )
 
 class Hint:

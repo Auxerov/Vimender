@@ -8,8 +8,9 @@ bl_info = {
     "category": "Interface",
 }
 
-if "bpy" in locals():
-    import importlib
+import importlib
+
+if "state" in locals():
     importlib.reload(state)
     importlib.reload(mode_walk)
     importlib.reload(mode_tablet)
@@ -33,14 +34,14 @@ else:
     from . import operators
 
 import bpy
-from .state import S, load_vimender_state
+from .state import S, load_vimender_state, get_preferences
 from .ui import (
     patch_view_pie, unpatch_view_pie, clean_modal_keymaps, shutdown,
     VIM_MT_editor_more, VIEW3D_MT_vim_view_pie
 )
 from .preferences import (
     VimenderPreferences, WM_OT_vim_export_keymap,
-    WM_OT_vim_import_keymap, WM_OT_vim_reset_keymap
+    WM_OT_vim_import_keymap, WM_OT_vim_reset_keymap, repair_corrupted_keymaps
 )
 from .operators import (
     WM_OT_vim_mode_toggle, WM_OT_vim_nudge, WM_OT_vim_set_editor,
@@ -111,10 +112,8 @@ def register():
     clean_modal_keymaps()
     register_search_key()
     try:
-        from .state import get_preferences
         prefs = get_preferences()
         if prefs:
-            from .preferences import repair_corrupted_keymaps
             repair_corrupted_keymaps(prefs)
     except Exception:
         pass

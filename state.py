@@ -235,6 +235,16 @@ _ALTGR_KEYCODES = None
 _ORIGINAL_VIEW_PIE_DRAW = None
 _keymaps_initialized = False
 
+def _node_abs_loc(n):
+    x, y = n.location.x, n.location.y
+    p = n.parent
+    while p is not None:
+        x += p.location.x
+        y += p.location.y
+        p = p.parent
+    return x, y
+
+
 def get_selection_center_2d(context, area):
     """Returns the screen (2D window) center and 3D world coordinate of selected elements."""
     if area is None:
@@ -741,37 +751,6 @@ def load_arrow_keys_layout() -> bool:
     return bool(load_vimender_config().get('arrow_keys_layout', False))
 
 
-def _auto_start():
-    if bpy.app.background:
-        return None
-    try:
-        if load_vimender_state() and not S.active:
-            bpy.ops.wm.vim_mode_toggle('INVOKE_DEFAULT')
-    except Exception as e:
-        print(f"[Vimender] Auto-start error: {e}")
-    return None
-
-
-@bpy.app.handlers.persistent
-def _on_load_pre(dummy):
-    if bpy.app.background:
-        return
-    shutdown()
-
-
-@bpy.app.handlers.persistent
-def _on_load_post(dummy):
-    if bpy.app.background:
-        return
-    shutdown()
-    clean_modal_keymaps()
-    register_search_key()
-    if load_vimender_state():
-        bpy.app.timers.register(_auto_start, first_interval=0.1)
-
-
-
-
 KEY_ITEMS = [
     (chr(c), chr(c), "") for c in range(ord('A'), ord('Z') + 1)
 ] + [
@@ -830,9 +809,9 @@ def get_preferences(context=None):
             prefs = addon.preferences
             if not _keymaps_initialized and prefs:
                 _keymaps_initialized = True
-                load_keymaps_from_config(prefs)
                 try:
-                    from .preferences import repair_corrupted_keymaps
+                    from .preferences import load_keymaps_from_config, repair_corrupted_keymaps
+                    load_keymaps_from_config(prefs)
                     repair_corrupted_keymaps(prefs)
                 except Exception:
                     pass

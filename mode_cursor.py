@@ -5,7 +5,8 @@ from mathutils import Vector
 from .state import (
     S, PURPLE, CURSOR_MAX_SPEED, CURSOR_ACCEL_RATE, CURSOR_FRICTION,
     CURSOR_WRAP_MARGIN, CURSOR_3D_SPEED, SENS_LEVELS, tag_all, window_region,
-    change_sens, is_altgr_pressed, check_shortcut, get_preferences, set_active_mode
+    change_sens, is_altgr_pressed, check_shortcut, get_preferences, set_active_mode,
+    ALL_DIRS, area_at, area_by_ptr, NAV_ACCEL_RATE, NAV_FRICTION
 )
 
 class _SmoothCursor:

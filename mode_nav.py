@@ -1,7 +1,8 @@
 import math
 import time
+import ctypes
 import bpy
-from mathutils import Vector, Matrix
+from mathutils import Vector, Matrix, Quaternion
 from .state import (
     S, ORBIT_MAX_SPEED, PAN_MAX_SPEED, ZOOM_MAX_SPEED, VIEW2D_PAN_SPEED,
     NAV_ACCEL_RATE, NAV_FRICTION, SENS_LEVELS, tag_all, window_region,
@@ -434,11 +435,7 @@ def handle_nav_event(op, context, event, win, area):
             print(f"[Vimender] search_mode error: {e}")
         return {'RUNNING_MODAL'}
 
-    if ((t in {'ESC', 'RET', 'NUMPAD_ENTER'}) or
-        check_shortcut(prefs, 'nav', event, 'B', fallback_ctrl=True) or
-        check_shortcut(prefs, 'preview', event, 'Y', fallback_ctrl=True) or
-        ((t == 'B' or event.unicode in {'b', 'B'}) and event.ctrl and not (event.alt or event.oskey or event.shift)) or
-        ((t == 'Y' or event.unicode in {'y', 'Y'}) and event.ctrl and not (event.alt or event.oskey or event.shift))) and v == 'PRESS':
+    if t in {'ESC', 'RET', 'NUMPAD_ENTER'} and v == 'PRESS':
         exit_nav_mode(context, op.report)
         return {'RUNNING_MODAL'}
 
@@ -712,11 +709,12 @@ def handle_orbit_pan_event(op, context, event, win, area):
     if t in {'NUMPAD_8', 'NUMPAD_2', 'NUMPAD_4', 'NUMPAD_6', 'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW'}:
         if not (event.ctrl or event.alt or event.oskey):
             nav_key = t
-    elif t in {'K', 'J', 'H', 'L'}:
+    elif t in {'K', 'J', 'H', 'L'} or ((event.unicode or "").upper() in {'K', 'J', 'H', 'L'}):
+        mapped = t if t in {'K', 'J', 'H', 'L'} else (event.unicode or "").upper()
         if not (event.ctrl or event.alt or event.oskey or event.shift):
-            nav_key = t
-        elif v == 'RELEASE' and t in S.nav.held:
-            nav_key = t
+            nav_key = mapped
+        elif v == 'RELEASE' and mapped in S.nav.held:
+            nav_key = mapped
 
     if nav_key and not (area and area.type in PASS_KEYS_IN) and not transform_active(win):
         S.nav.on_key(nav_key, v, shift=event.shift)

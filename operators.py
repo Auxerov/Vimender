@@ -2,6 +2,7 @@ import math
 import time
 import bpy
 from mathutils import Vector, Matrix, Quaternion
+from bpy_extras.view3d_utils import location_3d_to_region_2d
 from .state import (
     S, tag_all, window_region, area_at, area_by_ptr, focusable_areas, transform_active,
     is_blender_modal_active, send_modal_plus_minus, send_fake_escape, send_fake_numpad,
@@ -9,12 +10,14 @@ from .state import (
     is_view_pie_trigger, change_sens, _exec_view3d_op, save_vimender_state,
     MOUSE_CANCEL, MODIFIER_KEYS, CONSUME_KEYS, PASS_KEYS_IN,
     PREFIX_DIRS, PREFIX_REPEAT_TIMEOUT, PREFIX_TIMEOUT, ALL_DIRS, NUDGE_DIRS,
-    ARROW_DIRS, _addon_keymaps, NUMPAD_PIE_KEYS, is_edit_mode, set_active_mode
+    ARROW_DIRS, _addon_keymaps, NUMPAD_PIE_KEYS, is_edit_mode, set_active_mode,
+    get_selection_center_2d, get_active_transform_type, SENS_LEVELS,
+    CURSOR_MAX_SPEED, LETTERS
 )
 from .mode_walk import enter_walk_mode, exit_walk_mode, handle_walk_event
 from .mode_tablet import enter_tablet_mode, exit_tablet_mode, handle_tablet_event
 from .mode_cursor import enter_cursor_mode, exit_cursor_mode, handle_cursor_event
-from .mode_nav import neighbor_area, enter_nav_mode, exit_nav_mode, handle_nav_event, handle_orbit_pan_event
+from .mode_nav import neighbor_area, enter_nav_mode, exit_nav_mode, handle_nav_event, handle_orbit_pan_event, get_ordered_workspaces
 from .mode_preview import enter_preview_mode, exit_preview_mode, handle_preview_event
 from .mode_hint import start_hint_global, apply_single, apply_box
 from .ui import clean_modal_keymaps, install_draw_handlers, remove_draw_handlers, shutdown, draw_editor_pie, draw_vim_view_pie
@@ -1055,10 +1058,12 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             if v == 'RELEASE':
                 return {'RUNNING_MODAL'}
             if v == 'PRESS':
-                if S.preview_mode:
-                    set_active_mode('ORBIT_PAN', context, self.report)
-                else:
+                is_currently_orbit_pan = (not S.preview_mode and not S.navigation_mode and not S.workspace_nav and
+                                          not S.walk_mode and not S.tablet_mode and not S.cursor_mode and not S.mode)
+                if is_currently_orbit_pan:
                     set_active_mode('PREVIEW', context, self.report)
+                else:
+                    set_active_mode('ORBIT_PAN', context, self.report)
                 return {'RUNNING_MODAL'}
 
         if ((t == 'SPACE' and is_altgr_pressed(event)) or

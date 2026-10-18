@@ -326,7 +326,7 @@ class WM_OT_vim_export_keymap(bpy.types.Operator, ExportHelper):
             return {'CANCELLED'}
         data = {
             "addon": "Vimender",
-            "version": bl_info.get("version", (1, 0, 0)),
+            "version": (1, 3, 0),
             "keymaps": {},
             "arrow_keys_layout": bool(getattr(prefs, 'arrow_keys_layout', False)),
             "auto_start": bool(getattr(prefs, 'auto_start', False)),
