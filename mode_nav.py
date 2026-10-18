@@ -674,6 +674,20 @@ def handle_orbit_pan_event(op, context, event, win, area):
             elif v == 'RELEASE':
                 return {'RUNNING_MODAL'}
 
+    is_orbit_pan_toggle = (
+        check_shortcut(prefs, 'orbit_pan', event, 'U', fallback_ctrl=False) or
+        ((t in {'U', 'NUMPAD_5', 'P'} or (event.unicode or '').upper() in {'U', 'P'}) and not (event.ctrl or event.alt or event.oskey or event.shift))
+    )
+    if is_orbit_pan_toggle and not (area and area.type in PASS_KEYS_IN):
+        if v == 'PRESS':
+            S.nav_mode = 'PAN' if S.nav_mode == 'ORBIT' else 'ORBIT'
+            op.report({'INFO'}, f"Vimender: {S.nav_mode} MODE")
+            op._set_status(context)
+            if area:
+                area.tag_redraw()
+            tag_all()
+        return {'RUNNING_MODAL'}
+
     zoom_key = None
     if t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL', 'PAGE_UP'} or event.unicode in {'+', '='}:
         if not (event.ctrl or event.alt or event.oskey):
@@ -711,7 +725,7 @@ def handle_orbit_pan_event(op, context, event, win, area):
             nav_key = t
     elif t in {'K', 'J', 'H', 'L'} or ((event.unicode or "").upper() in {'K', 'J', 'H', 'L'}):
         mapped = t if t in {'K', 'J', 'H', 'L'} else (event.unicode or "").upper()
-        if not (event.ctrl or event.alt or event.oskey or event.shift):
+        if not (event.ctrl or event.alt or event.oskey):
             nav_key = mapped
         elif v == 'RELEASE' and mapped in S.nav.held:
             nav_key = mapped

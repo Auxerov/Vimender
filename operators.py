@@ -1521,37 +1521,11 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
             return {'FINISHED'}
 
         if tgt == "VIM_ORBIT":
-            S.cursor_mode = False
-            S.navigation_mode = False
-            S.workspace_nav = False
-            S.preview_mode = False
-            S.nav_mode = 'ORBIT'
-            S.clear_hint()
-            S.nav.reset()
-            S.smooth_cursor.reset()
-            self.report({'INFO'}, "Vimender: ORBIT MODE")
-            try:
-                context.workspace.status_text_set("Vimender: ORBIT MODE")
-            except Exception:
-                pass
-            tag_all()
+            set_active_mode('ORBIT', context, self.report)
             return {'FINISHED'}
 
         if tgt == "VIM_PAN":
-            S.cursor_mode = False
-            S.navigation_mode = False
-            S.workspace_nav = False
-            S.preview_mode = False
-            S.nav_mode = 'PAN'
-            S.clear_hint()
-            S.nav.reset()
-            S.smooth_cursor.reset()
-            self.report({'INFO'}, "Vimender: PAN MODE")
-            try:
-                context.workspace.status_text_set("Vimender: PAN MODE")
-            except Exception:
-                pass
-            tag_all()
+            set_active_mode('PAN', context, self.report)
             return {'FINISHED'}
 
         if tgt == "VIM_CURSOR":

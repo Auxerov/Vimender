@@ -964,12 +964,16 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         except Exception:
             pass
 
-    elif mode_name == 'ORBIT_PAN':
+    elif mode_name in {'ORBIT_PAN', 'ORBIT', 'PAN'}:
+        if mode_name == 'PAN':
+            S.nav_mode = 'PAN'
+        elif mode_name == 'ORBIT':
+            S.nav_mode = 'ORBIT'
         S.preview_mode = False
         if report_fn:
             report_fn({'INFO'}, f"Vimender: {S.nav_mode} MODE")
         try:
-            context.workspace.status_text_set(f"Vimender: {S.nav_mode} MODE | U/Num5: Toggle | F: Hint | C: Box | Ctrl+Y: Preview")
+            context.workspace.status_text_set(f"Vimender: {S.nav_mode} MODE | U/P/Num5: Toggle | F: Hint | C: Box | Ctrl+Y: Preview")
         except Exception:
             pass
 
