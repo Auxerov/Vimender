@@ -129,7 +129,12 @@ def draw_cb():
     ptr = area.as_pointer()
     active_ptr = S.hint_ptr if S.mode else (S.walk_ptr if S.walk_mode else (S.tablet_ptr if S.tablet_mode else S.hover_ptr))
     if not active_ptr:
-        active_ptr = ptr
+        win = ctx.window
+        if win and win.screen:
+            v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), win.screen.areas[0] if win.screen.areas else None)
+            if v3d:
+                S.hover_ptr = v3d.as_pointer()
+                active_ptr = S.hover_ptr
     if ptr != active_ptr:
         return
 
@@ -364,17 +369,18 @@ class VIM_MT_editor_more(bpy.types.Menu):
 def draw_vim_view_pie(self, context):
     pie = self.layout.menu_pie()
     pie.operator("view3d.view_axis", text="Left (4)", icon='AXIS_SIDE').type = 'LEFT'
-    pie.operator("view3d.view_axis", text="Right (3)", icon='AXIS_SIDE').type = 'RIGHT'
-    pie.operator("view3d.view_axis", text="Front (1)", icon='AXIS_FRONT').type = 'FRONT'
+    pie.operator("view3d.view_axis", text="Right (6)", icon='AXIS_SIDE').type = 'RIGHT'
+    pie.operator("view3d.view_axis", text="Bottom (2)", icon='AXIS_SIDE').type = 'BOTTOM'
+    pie.operator("view3d.view_axis", text="Back (8)", icon='AXIS_SIDE').type = 'BACK'
     pie.operator("view3d.view_axis", text="Top (7)", icon='AXIS_TOP').type = 'TOP'
-    pie.operator("view3d.view_axis", text="Back (8)").type = 'BACK'
     pie.operator("view3d.view_orbit", text="Opposite (9)").type = 'ORBITRIGHT'
-    pie.operator("view3d.view_camera", text="Camera (0)", icon='CAMERA_DATA')
-    pie.operator("view3d.view_selected", text="Selected (.)", icon='ZOOM_SELECTED')
+    pie.operator("view3d.view_axis", text="Front (1)", icon='AXIS_FRONT').type = 'FRONT'
+    pie.operator("view3d.view_axis", text="Right (3)", icon='AXIS_SIDE').type = 'RIGHT'
 
     col = pie.column()
+    col.operator("view3d.view_camera", text="Camera (0)", icon='CAMERA_DATA')
     col.operator("view3d.view_persportho", text="Persp/Ortho (5)")
-    col.operator("view3d.view_axis", text="Bottom (2)").type = 'BOTTOM'
+    col.operator("view3d.view_selected", text="Selected (.)", icon='ZOOM_SELECTED')
     col.operator("view3d.localview", text="Local View (/)")
 
 

@@ -517,7 +517,19 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         S.preview_mode = True
         S.clear_hint()
         S.nav.reset()
-        S.hover_ptr = 0
+        win = context.window
+        v3d = None
+        if win and win.screen:
+            if context.area and context.area.type == 'VIEW_3D':
+                v3d = context.area
+            else:
+                v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), win.screen.areas[0] if win.screen.areas else None)
+        if S.hover_ptr:
+            old_a = area_by_ptr(win, S.hover_ptr)
+            if not old_a:
+                S.hover_ptr = v3d.as_pointer() if v3d else 0
+        else:
+            S.hover_ptr = v3d.as_pointer() if v3d else 0
         S.prefix = False
         S.nudge_on = False
         S.navigation_mode = False
@@ -836,7 +848,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if time.time() - S.search_open_time > 0.4:
                     S.search_active = False
                     tag_all()
-                    tag_all()
+        if S.view_pie_active and (time.time() - S.pie_open_time > 4.0):
+            S.view_pie_active = False
+            S.pie_active = False
 
         if S.view_pie_active:
             if t in {'ESC', 'RET', 'NUMPAD_ENTER', 'TAB'} and v == 'PRESS':
@@ -859,18 +873,22 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if not v3d or v3d.type != 'VIEW_3D':
                     v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), v3d or context.area)
 
-                if (t in {'ZERO', 'NUMPAD_0', 'O'} or event.unicode == '0') and not (event.ctrl or event.alt or event.oskey):
+                if (t in {'ZERO', 'NUMPAD_0', 'O'} or event.unicode == '0'):
                     S.view_pie_active = False
                     S.pie_active = False
                     send_fake_escape()
-                    _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_camera)
+                    if event.ctrl and event.alt:
+                        _exec_view3d_op(context, win, v3d, bpy.ops.view3d.camera_to_view)
+                    elif not (event.ctrl or event.alt or event.oskey):
+                        _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_camera)
                     tag_all()
                     return {'RUNNING_MODAL'}
 
                 if (t in {'ONE', 'NUMPAD_1'} or event.unicode == '1') and not (event.alt or event.oskey):
                     S.view_pie_active = False
                     S.pie_active = False
-                    send_fake_escape()
+                    if getattr(context, 'region_popup', None) is not None:
+                        send_fake_escape()
                     axis = 'BACK' if event.ctrl else 'FRONT'
                     _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
                     tag_all()
@@ -879,7 +897,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if (t in {'THREE', 'NUMPAD_3'} or event.unicode == '3') and not (event.alt or event.oskey):
                     S.view_pie_active = False
                     S.pie_active = False
-                    send_fake_escape()
+                    if getattr(context, 'region_popup', None) is not None:
+                        send_fake_escape()
                     axis = 'LEFT' if event.ctrl else 'RIGHT'
                     _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
                     tag_all()
@@ -888,7 +907,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if (t in {'SEVEN', 'NUMPAD_7'} or event.unicode == '7') and not (event.alt or event.oskey):
                     S.view_pie_active = False
                     S.pie_active = False
-                    send_fake_escape()
+                    if getattr(context, 'region_popup', None) is not None:
+                        send_fake_escape()
                     axis = 'BOTTOM' if event.ctrl else 'TOP'
                     _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
                     tag_all()
@@ -897,7 +917,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if (t in {'NINE', 'NUMPAD_9'} or event.unicode == '9') and not (event.ctrl or event.alt or event.oskey or event.shift):
                     S.view_pie_active = False
                     S.pie_active = False
-                    send_fake_escape()
+                    if getattr(context, 'region_popup', None) is not None:
+                        send_fake_escape()
                     _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_orbit, angle=math.pi, type='ORBITRIGHT')
                     tag_all()
                     return {'RUNNING_MODAL'}
@@ -905,7 +926,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if (t in {'FOUR', 'NUMPAD_4'} or event.unicode == '4') and not (event.ctrl or event.alt or event.oskey or event.shift):
                     S.view_pie_active = False
                     S.pie_active = False
-                    send_fake_escape()
+                    if getattr(context, 'region_popup', None) is not None:
+                        send_fake_escape()
                     _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_axis, type='LEFT')
                     tag_all()
                     return {'RUNNING_MODAL'}
@@ -913,7 +935,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if (t in {'EIGHT', 'NUMPAD_8'} or event.unicode == '8') and not (event.ctrl or event.alt or event.oskey or event.shift):
                     S.view_pie_active = False
                     S.pie_active = False
-                    send_fake_escape()
+                    if getattr(context, 'region_popup', None) is not None:
+                        send_fake_escape()
                     _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_axis, type='BACK')
                     tag_all()
                     return {'RUNNING_MODAL'}
@@ -921,7 +944,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if (t in {'TWO', 'NUMPAD_2'} or event.unicode == '2') and not (event.ctrl or event.alt or event.oskey or event.shift):
                     S.view_pie_active = False
                     S.pie_active = False
-                    send_fake_escape()
+                    if getattr(context, 'region_popup', None) is not None:
+                        send_fake_escape()
                     _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_axis, type='BOTTOM')
                     tag_all()
                     return {'RUNNING_MODAL'}
@@ -949,7 +973,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     _exec_view3d_op(context, win, v3d, bpy.ops.view3d.localview)
                     tag_all()
                     return {'RUNNING_MODAL'}
-            elif v == 'RELEASE' and t in CONSUME_KEYS:
+            elif v == 'RELEASE' and (t in CONSUME_KEYS or t in {'PERIOD', 'COMMA', 'SLASH', 'NUMPAD_PERIOD', 'NUMPAD_COMMA', 'NUMPAD_SLASH'} or event.unicode in {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', ',', '/'}):
                 return {'RUNNING_MODAL'}
 
         if is_view_pie_trigger(event) and not (area and area.type in PASS_KEYS_IN) and not S.mode and not S.search_active and not S.save_dialog_open and not S.walk_mode:
