@@ -109,7 +109,7 @@ def get_remote_git_commit():
 
 def perform_addon_update():
     """
-    Direct One-Click Updater from GitHub:
+    Direct Updater from GitHub:
     Downloads main.zip from https://github.com/Auxerov/Vimender/archive/refs/heads/main.zip,
     extracts into addon folder, updates version.json, and hot-reloads all modules.
     No git clone required!
@@ -254,7 +254,7 @@ class WM_OT_vim_check_update(bpy.types.Operator):
 class WM_OT_vim_update_addon(bpy.types.Operator):
     bl_idname = "wm.vim_update_addon"
     bl_label = "Vimender: Update to Latest Version"
-    bl_description = "Pull and apply the latest Vimender release from GitHub (One-Click)"
+    bl_description = "Pull and apply the latest Vimender release from GitHub"
 
     def execute(self, context):
         prefs = get_preferences(context)
@@ -314,7 +314,7 @@ class WM_OT_vim_update_dialog(bpy.types.Operator):
         row = layout.row(align=True)
         row.scale_y = 1.4
         row.operator("wm.vim_check_update", text="Check for Updates", icon='FILE_REFRESH')
-        row.operator("wm.vim_update_addon", text="Update Now (One-Click)", icon='IMPORT')
+        row.operator("wm.vim_update_addon", text="Update Now", icon='IMPORT')
 
     def execute(self, context):
         return {'FINISHED'}
@@ -604,7 +604,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             btn_row = box_up.row(align=True)
             btn_row.scale_y = 1.35
             btn_row.operator("wm.vim_check_update", text="Check for Updates", icon='FILE_REFRESH')
-            btn_row.operator("wm.vim_update_addon", text="Update Now (One-Click)", icon='IMPORT')
+            btn_row.operator("wm.vim_update_addon", text="Update Now", icon='IMPORT')
 
             info_col = box_up.column(align=True)
             curr_sha = get_installed_git_commit()

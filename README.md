@@ -13,7 +13,7 @@
 - **Tablet & Touch Mode (`Ctrl + W`)**: Multi-touch gestures (pinch-to-zoom, two-finger pan/orbit), virtual selection toolbars, and touch transform gizmos.
 - **3D Cursor Navigation (`Ctrl + Num5`)**: Precise cursor positioning, axis nudges, and geometry snapping.
 - **First-Person Walk / Fly (`Alt + Q`)**: Immersive WASD / HJKL camera movement with gravity and collision options.
-- **One-Click Updates**: Check and update directly from GitHub with a single click inside Blender Preferences.
+- **GitHub Updates**: Check and update directly from GitHub inside Blender Preferences.
 
 ---
 
@@ -33,7 +33,7 @@
 
 ---
 
-## ⚙️ Configuration & One-Click Updates
+## ⚙️ Configuration & Updates
 
 Open **Edit > Preferences > Add-ons > Vimender**:
 - **Addon Updates (GitHub)**:

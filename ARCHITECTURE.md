@@ -29,7 +29,7 @@ Instead of navigating Blender's deep nested hotkey menus or relying heavily on a
 | :--- | :--- |
 | [`__init__.py`](file:///home/auxerov/Documents/Projects/Vimender/__init__.py) | Addon registration lifecycle, auto-start timers, topbar window menu integration, class registration. |
 | [`state.py`](file:///home/auxerov/Documents/Projects/Vimender/state.py) | Global state singleton `S` (`VimState`), JSON persistence (`vimender_config.json`), math helper vectors/quaternions. |
-| [`preferences.py`](file:///home/auxerov/Documents/Projects/Vimender/preferences.py) | User preferences UI, custom keymap bindings, export/import JSON, and the one-click GitHub updater. |
+| [`preferences.py`](file:///home/auxerov/Documents/Projects/Vimender/preferences.py) | User preferences UI, custom keymap bindings, export/import JSON, and the GitHub updater. |
 | [`operators.py`](file:///home/auxerov/Documents/Projects/Vimender/operators.py) | Core modal operator (`WM_OT_vim_mode_toggle`), transform nudge hooks (`G, R, S, E`), and search operators. |
 | [`ui.py`](file:///home/auxerov/Documents/Projects/Vimender/ui.py) | GPU drawing pipeline (hints, mode badges, tablet buttons, axis indicators) and pie menu patching. |
 | [`mode_nav.py`](file:///home/auxerov/Documents/Projects/Vimender/mode_nav.py) | Viewport camera manipulation (orbit, pan, zoom, view align, dolly). |
@@ -110,7 +110,7 @@ To enable tablet-only workflows without a physical keyboard:
 
 ---
 
-## 5. One-Click GitHub Updater (`preferences.py`)
+## 5. GitHub Updater (`preferences.py`)
 
 The addon includes a self-updating system pulling directly from [https://github.com/Auxerov/Vimender.git](https://github.com/Auxerov/Vimender.git).
 
