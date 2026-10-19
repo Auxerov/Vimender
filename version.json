@@ -1,4 +1,4 @@
 {
-  "commit": "9fa07c2e1249cbf96947a609719d7f87d49611b6",
-  "message": "Add Pen Mode with white theme, pass-through inputs, and isolated 2-finger pinch zoom"
+  "commit": "ea782deecdba53442658137752213b2959e54c03",
+  "message": "Instant pinch threshold and sensitivity scaling for Pen Mode"
 }
