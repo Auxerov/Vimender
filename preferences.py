@@ -199,7 +199,7 @@ def reload_vimender_submodules():
     addon_pkg = __package__ or __name__.partition('.')[0] or "Vimender"
     submodules = [
         "state", "preferences", "mode_walk", "mode_tablet",
-        "mode_cursor", "mode_nav", "mode_preview", "mode_hint",
+        "mode_cursor", "mode_nav", "mode_preview", "mode_pen", "mode_hint",
         "ui", "operators"
     ]
     reloaded = []
@@ -364,6 +364,7 @@ KEY_ITEMS = [
 KEY_PREFIXES = (
     ("search_mode", "Mode Search (Alt+Space)", "SPACE", False, False, True),
     ("preview", "Preview Mode Toggle (Ctrl+Y)", "Y", True, False, False),
+    ("pen", "Pen Mode Toggle (Ctrl+Alt+P)", "P", True, False, True),
     ("nav", "Navigation Mode Toggle (Ctrl+B)", "B", True, False, False),
     ("cursor", "Cursor Mode Toggle (Ctrl+Num5)", "NUMPAD_5", True, False, False),
     ("walk", "Walk Mode Toggle (Alt+Q)", "Q", False, False, True),
@@ -448,6 +449,11 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     ctrl_preview: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
     shift_preview: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
     alt_preview: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
+
+    key_pen: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='P', update=_on_keymap_change)
+    ctrl_pen: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
+    shift_pen: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_pen: bpy.props.BoolProperty(name="Alt", default=True, update=_on_keymap_change)
 
     key_nav: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='B', update=_on_keymap_change)
     ctrl_nav: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
@@ -644,6 +650,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             box.label(text="Mode Switching Shortcuts", icon='ARROW_LEFTRIGHT')
             self._draw_shortcut(box, "Mode Search (Alt+Space)", "search_mode")
             self._draw_shortcut(box, "Preview Mode Toggle (Ctrl+Y)", "preview")
+            self._draw_shortcut(box, "Pen Mode Toggle (Ctrl+Alt+P)", "pen")
             self._draw_shortcut(box, "Navigation Mode Toggle (Ctrl+B)", "nav")
             self._draw_shortcut(box, "Cursor Mode Toggle (Ctrl+Num5)", "cursor")
             self._draw_shortcut(box, "Walk Mode Toggle (Alt+Q)", "walk")

@@ -19,6 +19,7 @@ from .mode_tablet import enter_tablet_mode, exit_tablet_mode, handle_tablet_even
 from .mode_cursor import enter_cursor_mode, exit_cursor_mode, handle_cursor_event
 from .mode_nav import neighbor_area, enter_nav_mode, exit_nav_mode, handle_nav_event, handle_orbit_pan_event, get_ordered_workspaces
 from .mode_preview import enter_preview_mode, exit_preview_mode, handle_preview_event
+from .mode_pen import enter_pen_mode, exit_pen_mode, handle_pen_event
 from .mode_hint import start_hint_global, apply_single, apply_box
 from .ui import clean_modal_keymaps, install_draw_handlers, remove_draw_handlers, shutdown, draw_editor_pie, draw_vim_view_pie
 
@@ -228,6 +229,8 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         try:
             if S.cursor_mode:
                 txt = f"Vimender: CURSOR MODE [{S.cursor_plane}] | HJKL: Move | TAB: Plane | 0: Origin | S: Snap | Esc: Exit"
+            elif getattr(S, 'pen_mode', False):
+                txt = "Vimender: PEN MODE | Pass-Through: Pen/Mouse | 2-Finger Pinch: Zoom | Ctrl+Alt+P/Esc: Exit"
             elif S.navigation_mode or S.workspace_nav:
                 txt = "Vimender: NAVIGATION MODE"
             elif S.preview_mode:
@@ -926,10 +929,13 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             elif S.tablet_mode:
                 if getattr(S, 'touch_nav', None) and S.touch_nav.tick(context, win):
                     tag_all()
-            elif not S.mode and not S.preview_mode and not S.nudge_on and not S.tablet_mode and not transform_active(win) and not is_blender_modal_active(win):
+            elif getattr(S, 'pen_mode', False):
+                if getattr(S, 'pen_nav', None) and S.pen_nav.tick(context, win):
+                    tag_all()
+            elif not S.mode and not S.preview_mode and not getattr(S, 'pen_mode', False) and not S.nudge_on and not S.tablet_mode and not transform_active(win) and not is_blender_modal_active(win):
                 S.nav.tick(context, win)
 
-            if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not S.mode:
+            if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not getattr(S, 'pen_mode', False) and not S.mode:
                 if not S.nudge_on and transform_active(win):
                     self._start_nudge(context, win)
             return {'PASS_THROUGH'}
@@ -1250,12 +1256,27 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             if v == 'RELEASE':
                 return {'RUNNING_MODAL'}
             if v == 'PRESS':
-                is_currently_orbit_pan = (not S.preview_mode and not S.navigation_mode and not S.workspace_nav and
+                is_currently_orbit_pan = (not S.preview_mode and not getattr(S, 'pen_mode', False) and not S.navigation_mode and not S.workspace_nav and
                                           not S.walk_mode and not S.tablet_mode and not S.cursor_mode and not S.mode)
                 if is_currently_orbit_pan:
                     set_active_mode('PREVIEW', context, self.report)
                 else:
                     set_active_mode('ORBIT_PAN', context, self.report)
+                return {'RUNNING_MODAL'}
+
+        is_pen_shortcut = (
+            check_shortcut(prefs, 'pen', event, 'P', fallback_ctrl=True, fallback_alt=True) or
+            ((t == 'P' or event.unicode in {'p', 'P'}) and event.ctrl and event.alt and not (event.oskey or event.shift))
+        )
+        if is_pen_shortcut:
+            if v == 'RELEASE':
+                return {'RUNNING_MODAL'}
+            if v == 'PRESS':
+                if getattr(S, 'pen_mode', False):
+                    set_active_mode('ORBIT_PAN', context, self.report)
+                else:
+                    target_a = area or area_by_ptr(win, S.hover_ptr) or area_at(win, mx, my) or context.area
+                    set_active_mode('PEN', context, self.report, target_area=target_a)
                 return {'RUNNING_MODAL'}
 
         if ((t == 'SPACE' and is_altgr_pressed(event)) or
@@ -1353,6 +1374,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
         if S.navigation_mode or S.workspace_nav:
             return handle_nav_event(self, context, event, win, area)
+
+        if getattr(S, 'pen_mode', False):
+            return handle_pen_event(self, context, event, win, area)
 
         if S.preview_mode:
             return handle_preview_event(self, context, event, win, area)
@@ -1677,7 +1701,8 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
             ("VIM_PAN", "Pan Mode", "Vimender: Camera Pan navigation", 'VIEW_PAN', 2),
             ("VIM_CURSOR", "3D Cursor Mode", "Vimender: Smooth 3D Cursor control (HJKL)", 'PIVOT_CURSOR', 3),
             ("VIM_PREVIEW", "Preview Mode", "Vimender: Preview hover and select mode", 'RESTRICT_VIEW_OFF', 4),
-            ("VIM_PREFERENCES", "Vimender: Preferences / Keymaps", "Open Vimender preferences and customize keymaps", 'PREFERENCES', 5),
+            ("VIM_PEN", "Pen Mode", "Vimender: Stylus/Mouse drawing with 2-finger hand pinch-zoom (Ctrl+Alt+P)", 'PEN', 5),
+            ("VIM_PREFERENCES", "Vimender: Preferences / Keymaps", "Open Vimender preferences and customize keymaps", 'PREFERENCES', 6),
 
             ("BL_OBJECT", "Blender: Object Mode", "Switch active object to Object Mode", 'OBJECT_DATAMODE', 10),
             ("BL_EDIT", "Blender: Edit Mode", "Switch active object to Edit Mode", 'EDITMODE_HLT', 11),
@@ -1781,6 +1806,10 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
             except Exception:
                 pass
             tag_all()
+            return {'FINISHED'}
+
+        if tgt == "VIM_PEN":
+            enter_pen_mode(context, self.report)
             return {'FINISHED'}
 
         if tgt.startswith("BL_"):

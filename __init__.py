@@ -17,6 +17,7 @@ if "state" in locals():
     importlib.reload(mode_cursor)
     importlib.reload(mode_nav)
     importlib.reload(mode_preview)
+    importlib.reload(mode_pen)
     importlib.reload(mode_hint)
     importlib.reload(ui)
     importlib.reload(preferences)
@@ -28,6 +29,7 @@ else:
     from . import mode_cursor
     from . import mode_nav
     from . import mode_preview
+    from . import mode_pen
     from . import mode_hint
     from . import ui
     from . import preferences

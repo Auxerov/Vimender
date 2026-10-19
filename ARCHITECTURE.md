@@ -20,6 +20,7 @@ Instead of navigating Blender's deep nested hotkey menus or relying heavily on a
 - **Tablet / Touch Mode (`TABLET`)**: Multi-touch gesture navigation (pinch-to-zoom, two-finger pan/orbit), virtual on-screen modifier buttons (`SEL`, `+SHIFT`, `+CTRL`, `+ALT`), axis constraints (`X`, `Y`, `Z`), and touch transform gizmos.
 - **Hint Mode (`HINT`)**: Vimium/EasyMotion-style two-character visual jump tags projected directly onto 3D objects, vertices, edges, or faces in the viewport.
 - **Preview Mode (`PREVIEW`)**: Fast render and camera review mode.
+- **Pen Mode (`PEN`)**: Dedicated white-themed mode (`WHITE = (0.98, 0.98, 0.98, 1.0)`) for graphics tablets, digitizer styluses, and 2-in-1 convertible laptops. Default shortcut: `Ctrl+Alt+P` (guaranteed collision-free). Native mouse navigation (MMB orbit/pan, scroll zoom) and pen drawing/sculpting pass through directly to Blender without disruption. Two-finger hand pinching is isolated exclusively for viewport zoom and anchor panning, while single-finger touches and palm contacts are ignored.
 
 ---
 
@@ -36,6 +37,7 @@ Instead of navigating Blender's deep nested hotkey menus or relying heavily on a
 | [`mode_cursor.py`](file:///home/auxerov/Documents/Projects/Vimender/mode_cursor.py) | 3D cursor navigation, axial nudges, and geometry snapping. |
 | [`mode_walk.py`](file:///home/auxerov/Documents/Projects/Vimender/mode_walk.py) | First-person camera walk/fly controller. |
 | [`mode_tablet.py`](file:///home/auxerov/Documents/Projects/Vimender/mode_tablet.py) | Touch gesture recognition, stylus/finger tracking, virtual hitboxes, and touch selection. |
+| [`mode_pen.py`](file:///home/auxerov/Documents/Projects/Vimender/mode_pen.py) | Pen Mode controller: pass-through mouse/stylus events, isolated 2-finger multi-touch pinch-zoom navigator (`_PenNavigator`). |
 | [`mode_hint.py`](file:///home/auxerov/Documents/Projects/Vimender/mode_hint.py) | 3D-to-2D screen coordinate projection, visual hint code generation, and jump tree matching. |
 
 ---
@@ -130,7 +132,7 @@ After pulling new code, the updater reloads all submodules in `sys.modules`:
 ```python
 submodules = [
     "state", "preferences", "mode_walk", "mode_tablet",
-    "mode_cursor", "mode_nav", "mode_preview", "mode_hint", "ui", "operators"
+    "mode_cursor", "mode_nav", "mode_preview", "mode_pen", "mode_hint", "ui", "operators"
 ]
 ```
 This applies bug fixes and new features immediately without requiring a full Blender restart.
@@ -139,6 +141,11 @@ This applies bug fixes and new features immediately without requiring a full Ble
 
 ## 6. Recent Fixes & Change Log
 
+- **Pen Mode (`PEN`) Implementation**:
+  - Cloned and adapted from Preview Mode with a clean white visual theme (`WHITE = (0.98, 0.98, 0.98, 1.0)`).
+  - Assigned collision-free shortcut `Ctrl+Alt+P` (configurable via Preferences under Mode Switching Shortcuts).
+  - Seamless pass-through for standard mouse navigation and stylus/pen drawing without interruption.
+  - Dedicated multi-touch gesture processing (`_PenNavigator`) that isolates two-finger hand pinching (`ABS_MT`) exclusively for viewport zoom and anchor panning, discarding single-finger touches and palm contacts to prevent accidental scene rotation while drawing.
 - **Transform & Nudge Fix (`G, R, S, E` + `H, J, K, L`)**:
   - Restored modal nudge functionality when executing Grab, Rotate, Scale, or Extrude.
   - Intercepts directional keys and dispatches smooth delta movements while Blender native transform is active.

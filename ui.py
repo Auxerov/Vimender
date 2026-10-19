@@ -5,7 +5,7 @@ import bpy
 import gpu
 from gpu_extras.batch import batch_for_shader
 from .state import (
-    S, GREEN, CYAN, RED, PURPLE, YELLOW, ORANGE, GREY, BORDER_PX, HINT_BG,
+    S, GREEN, CYAN, RED, PURPLE, YELLOW, ORANGE, GREY, WHITE, BORDER_PX, HINT_BG,
     HINT_TEXT, HINT_TYPED, LEADER, SPACE_NAMES, window_region, area_by_ptr, ui_scale,
     tag_all, _handlers, _shader, _ORIGINAL_VIEW_PIE_DRAW, get_preferences, SENS_LEVELS,
     load_vimender_config, save_vimender_config
@@ -363,7 +363,13 @@ def draw_cb():
     if not S.active or area is None or region is None:
         return
     ptr = area.as_pointer()
-    active_ptr = S.hint_ptr if S.mode else (S.walk_ptr if S.walk_mode else (S.tablet_ptr if S.tablet_mode else S.hover_ptr))
+    active_ptr = S.hint_ptr if S.mode else (
+        S.walk_ptr if S.walk_mode else (
+            S.tablet_ptr if S.tablet_mode else (
+                getattr(S, 'pen_ptr', 0) if getattr(S, 'pen_mode', False) else S.hover_ptr
+            )
+        )
+    )
     if not active_ptr:
         win = ctx.window
         if win and win.screen:
@@ -384,6 +390,8 @@ def draw_cb():
         border_col = GREY
     elif S.cursor_mode:
         border_col = PURPLE
+    elif getattr(S, 'pen_mode', False):
+        border_col = WHITE
     elif S.preview_mode:
         border_col = YELLOW
     elif S.navigation_mode or S.workspace_nav:
@@ -392,7 +400,7 @@ def draw_cb():
         border_col = CYAN
     else:
         border_col = GREEN
-    t = BORDER_PX if not (S.cursor_mode or S.preview_mode or S.navigation_mode or S.workspace_nav or S.walk_mode or S.tablet_mode) else (BORDER_PX + 1)
+    t = BORDER_PX if not (S.cursor_mode or S.preview_mode or getattr(S, 'pen_mode', False) or S.navigation_mode or S.workspace_nav or S.walk_mode or S.tablet_mode) else (BORDER_PX + 1)
     _fill(_rect(0, 0, w, t) + _rect(0, h - t, w, h) +
           _rect(0, 0, t, h) + _rect(w - t, 0, w, h), border_col)
 
@@ -470,6 +478,8 @@ def draw_cb():
         label = f"TABLET MODE [{tool_name} | {sel_name}]"
     elif S.cursor_mode:
         label = f"CURSOR MODE - {S.cursor_plane}"
+    elif getattr(S, 'pen_mode', False):
+        label = "PEN MODE"
     elif S.preview_mode:
         label = "PREVIEW MODE"
     elif S.navigation_mode or S.workspace_nav:

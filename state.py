@@ -29,6 +29,7 @@ PURPLE = (0.78, 0.22, 0.98, 1.0)
 YELLOW = (0.95, 0.85, 0.15, 1.0)
 ORANGE = (1.00, 0.55, 0.05, 1.0)
 GREY = (0.60, 0.60, 0.60, 1.0)
+WHITE = (0.98, 0.98, 0.98, 1.0)
 HINT_BG = (1.0, 0.86, 0.25, 0.95)
 HINT_TEXT = (0.05, 0.05, 0.05, 1.0)
 HINT_TYPED = (0.85, 0.10, 0.10, 1.0)
@@ -199,9 +200,13 @@ class _State:
         self.tablet_prev_show_toolbar = {}
         self.tablet_prev_gizmos = {}
         self.preview_mode = True
+        self.pen_mode = False
+        self.pen_ptr = 0
+        self.pen_nav = None
         self.exit_walk_fn = None
         self.exit_tablet_fn = None
         self.exit_cursor_fn = None
+        self.exit_pen_fn = None
         self.touch_nav = None
         self.clear_hint()
 
@@ -948,6 +953,18 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         S.navigation_mode = False
         S.workspace_nav = False
 
+    if getattr(S, 'pen_mode', False):
+        S.pen_mode = False
+        S.pen_ptr = 0
+        if getattr(S, 'pen_nav', None):
+            S.pen_nav.reset()
+        try:
+            from .mode_tablet import _tracker
+            if not S.tablet_mode:
+                _tracker.stop()
+        except Exception:
+            pass
+
     if S.mode:
         S.clear_hint()
 
@@ -1020,6 +1037,30 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
             report_fn({'INFO'}, "Vimender: NAVIGATION MODE")
         try:
             context.workspace.status_text_set("Vimender: NAVIGATION MODE | HJKL: Move focus | Alt+HJKL: Workspace | Tab: Maximize | Esc: Exit")
+        except Exception:
+            pass
+
+    elif mode_name == 'PEN':
+        S.pen_mode = True
+        if target_area:
+            S.pen_ptr = target_area.as_pointer()
+        if getattr(S, 'pen_nav', None) is None:
+            try:
+                from .mode_pen import _PenNavigator
+                S.pen_nav = _PenNavigator()
+            except Exception:
+                pass
+        else:
+            S.pen_nav.reset()
+        try:
+            from .mode_tablet import _tracker
+            _tracker.start()
+        except Exception:
+            pass
+        if report_fn:
+            report_fn({'INFO'}, "Vimender: PEN MODE")
+        try:
+            context.workspace.status_text_set("Vimender: PEN MODE | Pass-Through: Pen/Mouse | 2-Finger Pinch: Zoom | Ctrl+Alt+P/Esc: Exit")
         except Exception:
             pass
 
