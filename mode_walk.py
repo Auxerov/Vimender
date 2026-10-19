@@ -167,6 +167,10 @@ class _SmoothWalker:
 
 S.smooth_walker = _SmoothWalker()
 
+# event.unicode is empty on RELEASE, so remember which logical key a physical key
+# was mapped to on PRESS; otherwise unicode-matched keys would never be released.
+_PRESS_ALIAS = {}
+
 def enter_walk_mode(context, area, report_fn=None):
     set_active_mode('WALK', context, report_fn, target_area=area)
 
@@ -202,6 +206,10 @@ def handle_walk_event(op, context, event, win, area):
         'k': 'K', 'K': 'K', 'l': 'L', 'L': 'L',
     }
     key_matched = t if (t in WALK_MOVE_KEYS or t in WALK_LOOK_KEYS) else UNICODE_WALK_MAP.get(event.unicode)
+    if v == 'PRESS' and key_matched and key_matched != t:
+        _PRESS_ALIAS[t] = key_matched
+    elif v == 'RELEASE' and t in _PRESS_ALIAS:
+        key_matched = _PRESS_ALIAS.pop(t)
     if key_matched:
         if not (event.ctrl or event.alt or event.oskey):
             S.smooth_walker.on_key(key_matched, v, shift=event.shift)

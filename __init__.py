@@ -34,9 +34,9 @@ else:
     from . import operators
 
 import bpy
-from .state import S, load_vimender_state, get_preferences
+from .state import S, load_vimender_state, get_preferences, close_x11_display
 from .ui import (
-    patch_view_pie, unpatch_view_pie, clean_modal_keymaps, shutdown,
+    patch_view_pie, unpatch_view_pie, restore_modal_keymaps, shutdown,
     VIM_MT_editor_more, VIEW3D_MT_vim_view_pie
 )
 from .preferences import (
@@ -95,7 +95,6 @@ def _on_load_post(dummy):
     if bpy.app.background:
         return
     shutdown()
-    clean_modal_keymaps()
     register_search_key()
     if load_vimender_state():
         bpy.app.timers.register(_auto_start, first_interval=0.1)
@@ -111,7 +110,6 @@ def register():
     for c in classes:
         bpy.utils.register_class(c)
     patch_view_pie()
-    clean_modal_keymaps()
     register_search_key()
     try:
         prefs = get_preferences()
@@ -131,7 +129,8 @@ def register():
 def unregister():
     unpatch_view_pie()
     shutdown()
-    clean_modal_keymaps()
+    restore_modal_keymaps()
+    close_x11_display()
     unregister_search_key()
     try:
         bpy.types.TOPBAR_MT_window.remove(_window_menu_draw)

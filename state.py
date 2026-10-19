@@ -4,6 +4,7 @@ import json
 import math
 import os
 import string
+import sys
 import time
 
 import blf
@@ -138,7 +139,7 @@ PREFIX_TIMEOUT = 3.0
 PREFIX_REPEAT_TIMEOUT = 0.8
 
 TRANSFORM_KEYWORDS = (
-    'transform', '_move', 'extrude', 'duplicate', 'bevel',
+    'transform', 'move', 'extrude', 'duplicate', 'bevel',
     'shrink_fatten', 'push_pull', 'translate', 'rotate', 'resize',
     'scale', 'tosphere', 'shear', 'bend', 'trackball', 'edge_slide', 'vert_slide',
     'loopcut', 'slide', 'inset', 'rip', 'knife', 'subdivide', 'smooth', 'modifier'
@@ -443,15 +444,29 @@ def transform_active(win):
 
 _X11_LIB = None
 _XTST_LIB = None
+_X11_DISPLAY = None
+_FAKE_INPUT_WARNED = False
+
+
+def _warn_fake_input_once(reason):
+    global _FAKE_INPUT_WARNED
+    if not _FAKE_INPUT_WARNED:
+        _FAKE_INPUT_WARNED = True
+        print(f"[Vimender] Fake key injection unavailable ({reason}); "
+              f"popup-closing helpers are disabled on this system.")
 
 
 def _get_x11():
+    """Load libX11/libXtst once. Returns (False, False) on non-Linux platforms."""
     global _X11_LIB, _XTST_LIB
+    if not sys.platform.startswith('linux'):
+        return False, False
     if _X11_LIB is None:
         try:
             _X11_LIB = ctypes.cdll.LoadLibrary('libX11.so.6')
             _X11_LIB.XOpenDisplay.restype = ctypes.c_void_p
             _X11_LIB.XKeysymToKeycode.restype = ctypes.c_uint
+            _X11_LIB.XStringToKeysym.restype = ctypes.c_ulong
         except Exception:
             _X11_LIB = False
     if _XTST_LIB is None:
@@ -462,130 +477,91 @@ def _get_x11():
     return _X11_LIB, _XTST_LIB
 
 
-def send_modal_plus_minus(is_up):
-    x11, xtst = _get_x11()
-    if not x11 or not xtst:
-        return
-    disp = None
+def _get_display():
+    """One cached X11 Display* for the whole session (opened lazily)."""
+    global _X11_DISPLAY
+    if _X11_DISPLAY:
+        return _X11_DISPLAY
+    x11, _ = _get_x11()
+    if not x11:
+        return None
     try:
         disp = x11.XOpenDisplay(None)
-        if not disp:
-            return
-        d_ptr = ctypes.c_void_p(disp)
-        sym = 0xff55 if is_up else 0xff56
-        kc = x11.XKeysymToKeycode(d_ptr, ctypes.c_ulong(sym))
-        if kc:
-            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), True, 0)
-            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), False, 0)
-            x11.XFlush(d_ptr)
     except Exception:
-        pass
-    finally:
-        if disp and x11:
-            try:
-                x11.XCloseDisplay(ctypes.c_void_p(disp))
-            except Exception:
-                pass
+        disp = None
+    if disp:
+        _X11_DISPLAY = ctypes.c_void_p(disp)
+    return _X11_DISPLAY
+
+
+def close_x11_display():
+    """Close the cached display. Call on addon unregister."""
+    global _X11_DISPLAY
+    if _X11_DISPLAY and _X11_LIB:
+        try:
+            _X11_LIB.XCloseDisplay(_X11_DISPLAY)
+        except Exception:
+            pass
+    _X11_DISPLAY = None
+
+
+def _fake_keysym(sym):
+    """Press+release a keysym through XTest. Returns True on success."""
+    x11, xtst = _get_x11()
+    if not x11 or not xtst:
+        _warn_fake_input_once("libX11/libXtst missing or non-Linux platform")
+        return False
+    d = _get_display()
+    if d is None:
+        _warn_fake_input_once("cannot open X display")
+        return False
+    try:
+        kc = x11.XKeysymToKeycode(d, ctypes.c_ulong(sym))
+        if not kc:
+            return False
+        xtst.XTestFakeKeyEvent(d, ctypes.c_uint(kc), True, 0)
+        xtst.XTestFakeKeyEvent(d, ctypes.c_uint(kc), False, 0)
+        x11.XFlush(d)
+        return True
+    except Exception:
+        close_x11_display()
+        return False
+
+
+def send_modal_plus_minus(is_up):
+    _fake_keysym(0xff55 if is_up else 0xff56)
 
 
 def send_fake_escape():
-    x11, xtst = _get_x11()
-    if not x11 or not xtst:
-        return
-    disp = None
-    try:
-        disp = x11.XOpenDisplay(None)
-        if not disp:
-            return
-        d_ptr = ctypes.c_void_p(disp)
-        sym = 0xff1b
-        kc = x11.XKeysymToKeycode(d_ptr, ctypes.c_ulong(sym))
-        if kc:
-            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), True, 0)
-            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), False, 0)
-            x11.XFlush(d_ptr)
-    except Exception:
-        pass
-    finally:
-        if disp and x11:
-            try:
-                x11.XCloseDisplay(ctypes.c_void_p(disp))
-            except Exception:
-                pass
+    _fake_keysym(0xff1b)
 
 
 def send_fake_numpad(num):
-    x11, xtst = _get_x11()
-    if not x11 or not xtst:
-        return
-    disp = None
-    try:
-        disp = x11.XOpenDisplay(None)
-        if not disp:
-            return
-        d_ptr = ctypes.c_void_p(disp)
-        sym = 0xffb0 + int(num)
-        kc = x11.XKeysymToKeycode(d_ptr, ctypes.c_ulong(sym))
-        if kc:
-            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), True, 0)
-            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), False, 0)
-            x11.XFlush(d_ptr)
-    except Exception:
-        pass
-    finally:
-        if disp and x11:
-            try:
-                x11.XCloseDisplay(ctypes.c_void_p(disp))
-            except Exception:
-                pass
+    _fake_keysym(0xffb0 + int(num))
 
 
 def send_fake_key(key_str):
-    """
-    Sends a genuine hardware key press and release event to Blender via X11 XTest.
-    Supports characters like 'g', 'r', 's', 'x', 'y', 'z', and special keys like 'Return', 'Escape', 'Tab'.
-    """
-    x11, xtst = _get_x11()
-    if not x11 or not xtst:
-        return False
-    disp = None
-    try:
-        disp = x11.XOpenDisplay(None)
-        if not disp:
-            return False
-        d_ptr = ctypes.c_void_p(disp)
-        special = {
-            'RETURN': 0xff0d, 'ENTER': 0xff0d,
-            'ESCAPE': 0xff1b, 'ESC': 0xff1b,
-            'TAB': 0xff09, 'SPACE': 0x0020,
-            'BACKSPACE': 0xff08, 'DELETE': 0xffff,
-        }
-        upper_k = key_str.upper()
-        if upper_k in special:
-            sym = special[upper_k]
-        else:
-            if hasattr(x11, 'XStringToKeysym'):
-                x11.XStringToKeysym.restype = ctypes.c_ulong
-                sym = x11.XStringToKeysym(key_str.lower().encode('latin1'))
-            else:
-                sym = 0
-            if not sym:
-                sym = ord(key_str.lower()[0])
-        kc = x11.XKeysymToKeycode(d_ptr, ctypes.c_ulong(sym))
-        if kc:
-            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), True, 0)
-            xtst.XTestFakeKeyEvent(d_ptr, ctypes.c_uint(kc), False, 0)
-            x11.XFlush(d_ptr)
-            return True
-    except Exception:
-        pass
-    finally:
-        if disp and x11:
+    """Send a real key press/release via X11 XTest (Linux/X11 only)."""
+    special = {
+        'RETURN': 0xff0d, 'ENTER': 0xff0d,
+        'ESCAPE': 0xff1b, 'ESC': 0xff1b,
+        'TAB': 0xff09, 'SPACE': 0x0020,
+        'BACKSPACE': 0xff08, 'DELETE': 0xffff,
+    }
+    upper_k = key_str.upper()
+    if upper_k in special:
+        sym = special[upper_k]
+    else:
+        x11, _ = _get_x11()
+        sym = 0
+        if x11:
             try:
-                x11.XCloseDisplay(ctypes.c_void_p(disp))
+                sym = x11.XStringToKeysym(key_str.lower().encode('latin1'))
             except Exception:
-                pass
-    return False
+                sym = 0
+        if not sym and key_str:
+            sym = ord(key_str.lower()[0])
+    return _fake_keysym(sym) if sym else False
 
 
 _ALTGR_KEYCODES = None
@@ -597,16 +573,13 @@ def _get_altgr_keycodes():
         return _ALTGR_KEYCODES
     kcs = [92, 108]
     x11, _ = _get_x11()
-    if x11:
+    d = _get_display() if x11 else None
+    if d is not None:
         try:
-            disp = x11.XOpenDisplay(None)
-            if disp:
-                d_ptr = ctypes.c_void_p(disp)
-                for sym in (0xfe03, 0xff7e, 0xffea):
-                    kc = x11.XKeysymToKeycode(d_ptr, ctypes.c_ulong(sym))
-                    if kc and kc not in kcs:
-                        kcs.append(kc)
-                x11.XCloseDisplay(d_ptr)
+            for sym in (0xfe03, 0xff7e, 0xffea):
+                kc = x11.XKeysymToKeycode(d, ctypes.c_ulong(sym))
+                if kc and kc not in kcs:
+                    kcs.append(kc)
         except Exception:
             pass
     _ALTGR_KEYCODES = tuple(kcs)
@@ -619,22 +592,17 @@ def is_altgr_pressed(event=None):
     if getattr(S, 'right_alt_down', False):
         return True
     x11, _ = _get_x11()
-    if x11:
+    d = _get_display() if x11 else None
+    if d is not None:
         try:
-            disp = x11.XOpenDisplay(None)
-            if disp:
-                d_ptr = ctypes.c_void_p(disp)
-                buf = (ctypes.c_char * 32)()
-                x11.XQueryKeymap(d_ptr, buf)
-                x11.XCloseDisplay(d_ptr)
-                kcs = _get_altgr_keycodes()
-                for kc in kcs:
-                    b_val = buf[kc >> 3]
-                    b_int = ord(b_val) if isinstance(b_val, (str, bytes)) and isinstance(b_val, str) else (b_val[0] if isinstance(b_val, bytes) else int(b_val))
-                    if (b_int >> (kc & 7)) & 1:
-                        return True
+            buf = (ctypes.c_char * 32)()
+            x11.XQueryKeymap(d, buf)
+            raw = buf.raw
+            for kc in _get_altgr_keycodes():
+                if (raw[kc >> 3] >> (kc & 7)) & 1:
+                    return True
         except Exception:
-            pass
+            close_x11_display()
     return False
 
 
@@ -729,6 +697,18 @@ def change_sens(delta):
     a = area_by_ptr(bpy.context.window, S.hover_ptr)
     if a:
         a.tag_redraw()
+
+
+def release_all_held():
+    """Drop every 'held key' state. Used when the window loses focus so that
+    a missed RELEASE event can't leave the camera/cursor drifting forever."""
+    for name in ('mover', 'smooth_cursor', 'smooth_walker', 'nav', 'smooth_box'):
+        obj = getattr(S, name, None)
+        if obj is not None:
+            try:
+                obj.reset()
+            except Exception:
+                pass
 
 
 def _exec_view3d_op(context, win, target_area, op_func, **kwargs):
@@ -1014,7 +994,7 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
             report_fn({'INFO'}, "Vimender: TABLET MODE")
         try:
             context.workspace.status_text_set(
-                "Vimender: TABLET MODE | Tap: Select | Left GUI: G/R/S & X/Y/Z | 1-Finger: Orbit/Move | 2-Fingers: Zoom/Pan | Ctrl+W/Esc: Exit"
+                "Vimender: TABLET MODE | Tap: Select | Left GUI: G/R/S & X/Y/Z | 1-Finger: Orbit/Move | 2-Fingers: Pinch Zoom/Pan/Twist | 2-Tap: Undo | 3-Tap: Redo | Ctrl+W/Esc: Exit"
             )
         except Exception:
             pass

@@ -50,7 +50,8 @@ class _SmoothBox:
         self.last_t = time.perf_counter()
         self.active = True
 
-    def on_key(self, key, val):
+    def on_key(self, key, val, shift=False):
+        self.shift = shift
         if val == 'PRESS':
             if not self.held and math.hypot(self.vx, self.vy) < 0.1:
                 self.last_t = time.perf_counter()
@@ -69,6 +70,8 @@ class _SmoothBox:
         dy = sum(ALL_DIRS[k][1] for k in self.held if k in ALL_DIRS)
 
         sens = SENS_LEVELS[S.sens_idx]
+        if getattr(self, 'shift', False):
+            sens *= 0.25
         max_spd = CURSOR_MAX_SPEED * sens * 1.25
 
         if dx != 0 or dy != 0:

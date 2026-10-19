@@ -7,7 +7,8 @@ from gpu_extras.batch import batch_for_shader
 from .state import (
     S, GREEN, CYAN, RED, PURPLE, YELLOW, ORANGE, GREY, BORDER_PX, HINT_BG,
     HINT_TEXT, HINT_TYPED, LEADER, SPACE_NAMES, window_region, area_by_ptr, ui_scale,
-    tag_all, _handlers, _shader, _ORIGINAL_VIEW_PIE_DRAW, get_preferences, SENS_LEVELS
+    tag_all, _handlers, _shader, _ORIGINAL_VIEW_PIE_DRAW, get_preferences, SENS_LEVELS,
+    load_vimender_config, save_vimender_config
 )
 
 def _get_shader():
@@ -441,6 +442,13 @@ def draw_cb():
             _fill(tiles, HINT_BG)
             _fill(glyphs, HINT_TEXT)
 
+    if S.mode == 'BOX1' and getattr(S, 'mouse', None):
+        mx, my = S.mouse
+        c_size = 12 * ui
+        _fill(_rect(mx - c_size, my - 1.5 * ui, mx + c_size, my + 1.5 * ui), GREEN)
+        _fill(_rect(mx - 1.5 * ui, my - c_size, mx + 1.5 * ui, my + c_size), GREEN)
+        _fill(_rect(mx - 4 * ui, my - 4 * ui, mx + 4 * ui, my + 4 * ui), HINT_BG)
+
     if S.mode == 'BOX2' and S.box_a:
         ax, ay = S.box_a
         mx, my = S.mouse
@@ -517,37 +525,86 @@ def remove_draw_handlers():
     _handlers.clear()
 
 
-def clean_modal_keymaps():
+_MODAL_MAPS = ('Transform Modal Map', 'Bevel Modal Map')
+_CONFLICT_PROPS = {
+    'PROPORTIONAL_SIZE_UP', 'PROPORTIONAL_SIZE_DOWN',
+    'SEGMENTS_UP', 'SEGMENTS_DOWN',
+}
+# Signatures of keymap items WE deactivated (so we only ever re-enable our own).
+_DISABLED_KMIS = set()
+
+
+def _modal_keyconfigs():
     wm = getattr(bpy.context, 'window_manager', None)
-    if not wm or not getattr(wm, 'keyconfigs', None):
+    kcs = getattr(wm, 'keyconfigs', None)
+    if not kcs:
+        return []
+    out, seen = [], set()
+    for kc in (kcs.user, getattr(kcs, 'active', None)):
+        if kc and kc.name not in seen:
+            seen.add(kc.name)
+            out.append(kc)
+    return out
+
+
+def _kmi_sig(kc, map_name, kmi):
+    return (kc.name, map_name, getattr(kmi, 'propvalue', ''), kmi.type,
+            kmi.value, kmi.shift, kmi.ctrl, kmi.alt)
+
+
+def _migrate_orbit_pan_default():
+    """One-time: old builds defaulted Orbit/Pan to Numpad 5. Never repeats,
+    so a user who deliberately picks Numpad 5 later is respected."""
+    cfg = load_vimender_config()
+    if cfg.get('orbit_pan_migrated'):
         return
-    modified = False
-    for kc in (wm.keyconfigs.default, wm.keyconfigs.user, getattr(wm.keyconfigs, 'active', None)):
-        if not kc:
-            continue
-        for map_name in ('Transform Modal Map', 'Bevel Modal Map'):
-            km = kc.keymaps.get(map_name)
-            if km:
-                for kmi in list(km.keymap_items):
-                    if getattr(kmi, 'propvalue', '') in {'PROPORTIONAL_SIZE_UP', 'PROPORTIONAL_SIZE_DOWN', 'SEGMENTS_UP', 'SEGMENTS_DOWN'}:
-                        try:
-                            km.keymap_items.remove(kmi)
-                            modified = True
-                        except Exception:
-                            pass
     prefs = get_preferences()
     if prefs and getattr(prefs, 'key_orbit_pan', '') == 'NUMPAD_5':
         try:
             prefs.key_orbit_pan = 'U'
-            modified = True
         except Exception:
             pass
-    if modified and not getattr(bpy.app, 'background', False):
-        try:
-            bpy.ops.wm.save_userpref()
-        except Exception:
-            pass
+    save_vimender_config({'orbit_pan_migrated': True})
 
+
+def clean_modal_keymaps():
+    """Temporarily DEACTIVATE (never delete) Blender modal-map items that
+    collide with Vimender's +/- handling. Fully reversible via
+    restore_modal_keymaps(); nothing is written to the user's preferences."""
+    for kc in _modal_keyconfigs():
+        for map_name in _MODAL_MAPS:
+            km = kc.keymaps.get(map_name)
+            if not km:
+                continue
+            for kmi in km.keymap_items:
+                try:
+                    if getattr(kmi, 'propvalue', '') in _CONFLICT_PROPS and kmi.active:
+                        kmi.active = False
+                        _DISABLED_KMIS.add(_kmi_sig(kc, map_name, kmi))
+                except Exception:
+                    pass
+    try:
+        _migrate_orbit_pan_default()
+    except Exception as e:
+        print(f"[Vimender] orbit_pan migration skipped: {e}")
+
+
+def restore_modal_keymaps():
+    """Re-enable exactly the items clean_modal_keymaps() deactivated."""
+    if not _DISABLED_KMIS:
+        return
+    for kc in _modal_keyconfigs():
+        for map_name in _MODAL_MAPS:
+            km = kc.keymaps.get(map_name)
+            if not km:
+                continue
+            for kmi in km.keymap_items:
+                try:
+                    if not kmi.active and _kmi_sig(kc, map_name, kmi) in _DISABLED_KMIS:
+                        kmi.active = True
+                except Exception:
+                    pass
+    _DISABLED_KMIS.clear()
 
 
 def shutdown():
@@ -564,12 +621,17 @@ def shutdown():
     S.navigation_mode = False
     S.workspace_nav = False
     S.cursor_mode = False
+    S.walk_mode = False
+    S.walk_ptr = 0
+    if S.smooth_walker:
+        S.smooth_walker.reset()
     S.preview_mode = True
     S.smooth_cursor.reset()
     S.nav.reset()
     S.clear_hint()
     S.hover_ptr = 0
     remove_draw_handlers()
+    restore_modal_keymaps()
     try:
         tag_all()
     except Exception:
@@ -649,7 +711,10 @@ def patch_view_pie():
     try:
         import bl_ui.space_view3d as sv
         if hasattr(sv, 'VIEW3D_MT_view_pie'):
-            _ORIGINAL_VIEW_PIE_DRAW = getattr(sv.VIEW3D_MT_view_pie, 'draw', None)
+            current = getattr(sv.VIEW3D_MT_view_pie, 'draw', None)
+            if current is draw_vim_view_pie or getattr(current, '__name__', '') == 'draw_vim_view_pie':
+                return  # already patched (reload); keep the true original
+            _ORIGINAL_VIEW_PIE_DRAW = current
             sv.VIEW3D_MT_view_pie.draw = draw_vim_view_pie
     except Exception:
         pass
@@ -661,6 +726,7 @@ def unpatch_view_pie():
         import bl_ui.space_view3d as sv
         if hasattr(sv, 'VIEW3D_MT_view_pie') and _ORIGINAL_VIEW_PIE_DRAW is not None:
             sv.VIEW3D_MT_view_pie.draw = _ORIGINAL_VIEW_PIE_DRAW
+            _ORIGINAL_VIEW_PIE_DRAW = None
     except Exception:
         pass
 

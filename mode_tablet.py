@@ -1,5 +1,6 @@
 import math
 import os
+import select
 import threading
 import time
 import bpy
@@ -11,7 +12,7 @@ from .state import (
     set_active_mode, get_preferences, SENS_LEVELS, change_sens,
     check_shortcut, ui_scale, send_fake_key, send_fake_escape,
     send_fake_numpad, transform_active, is_blender_modal_active,
-    get_active_transform_type
+    get_active_transform_type, load_vimender_config
 )
 
 try:
@@ -20,6 +21,13 @@ try:
     HAVE_EVDEV = True
 except ImportError:
     HAVE_EVDEV = False
+
+if HAVE_EVDEV:
+    MT_TOOL_PALM = getattr(ecodes, 'MT_TOOL_PALM', 2)
+    INPUT_PROP_DIRECT = getattr(ecodes, 'INPUT_PROP_DIRECT', 0x01)
+else:
+    MT_TOOL_PALM = 2
+    INPUT_PROP_DIRECT = 0x01
 
 
 def enable_touchview_integration(context=None):
@@ -64,15 +72,35 @@ def disable_touchview_integration(context=None):
         pass
 
 
+# ───────────────────────────── Touch gesture tuning ─────────────────────────────
+TOUCH_SLOP_N = 0.004                  # screen fraction a finger must travel before a drag starts
+PINCH_LATCH = 0.05                    # |ln(distance ratio)| before pinch-zoom engages (~5 %)
+TWIST_LATCH = math.radians(12.0)      # twist angle before two-finger rotate engages
+ORBIT_RAD_PER_WIDTH = math.pi         # one full-width swipe = 180° at sensitivity 1.0
+ORBIT_ABOUT_EYE = False               # False = true orbit around the pivot (iPad style)
+INERTIA_DECAY = 4.5                   # 1/s, higher = stops sooner
+INERTIA_MIN_ORBIT = 0.03              # rad/s
+INERTIA_MIN_PAN = 15.0                # px/s
+INERTIA_MIN_ZOOM = 0.03               # ln-ratio/s
+INERTIA_RELEASE_WINDOW = 0.10         # s: finger must still be moving this recently at lift-off
+VIEW_SENSOR_MM = 36.0                 # Blender's default viewport sensor width
+
+
+def _wrap_angle(a):
+    return (a + math.pi) % (2.0 * math.pi) - math.pi
+
+
 class EvdevMultiTouchTracker:
     """
-    True Linux Hardware Multi-Touch Gesture Recognizer using python-evdev.
-    Reads raw multi-touch Type B slots directly from the touchscreen kernel device:
-      - 1 finger: Smooth 3D Orbit (yaw + pitch rotation around pivot)
-      - 2 fingers: Pinch to Zoom (smooth geometric scaling)
-      - 2 fingers: Two-finger Pan (camera lateral movement)
-      - 2 fingers quick tap: Undo
-      - 3 fingers quick tap: Redo
+    Linux hardware multi-touch recognizer (python-evdev, MT protocol type B).
+
+    Produces *normalized* (0..1 of the screen) accumulated gesture deltas that
+    the main thread consumes in _TouchNavigator.tick():
+      - 1 finger : orbit (or direct object transform while a transform is active)
+      - 2 fingers: pan (midpoint), pinch-zoom (distance), twist (angle)
+      - 2-finger quick tap: undo      - 3-finger quick tap: redo
+    Palm contacts are ignored. Each gesture engages only after a small slop so
+    taps stay taps and a pinch doesn't jitter the pan.
     """
     TOUCH_PATHS = [
         "/dev/input/by-path/platform-AMDI0010:02-event",
@@ -82,83 +110,143 @@ class EvdevMultiTouchTracker:
     def __init__(self):
         self.dev = None
         self.thread = None
+        self._stop_evt = None
         self.running = False
         self.active = False
+        self.device_kind = ""
+        self.last_error = ""
         self.lock = threading.Lock()
 
-        # Multi-touch slots state
         self.current_slot = 0
-        self.slots = {}  # slot_id: {'x': float, 'y': float, 'down': bool}
-        self.prev_single = None
-        self.prev_dist = None
-        self.prev_mid = None
+        self.slots = {}   # slot_id: {'x','y','down','palm'}
+        self.x_min, self.x_rng = 0.0, 4096.0
+        self.y_min, self.y_rng = 0.0, 4096.0
 
-        # Tap detection
+        # tap detection
         self.touch_start_time = 0.0
         self.touch_max_fingers = 0
         self.touch_moved = False
+        self._last_n = 0
+        self._reset_tracking()
 
-        # Queued deltas for Blender main thread
-        self.orbit_delta = [0.0, 0.0]
-        self.transform_delta = [0.0, 0.0]
-        self.pan_delta = [0.0, 0.0]
-        self.zoom_delta = 0.0
+        # queued for the Blender main thread (guarded by self.lock)
+        self.orbit_delta = [0.0, 0.0]       # normalized
+        self.pan_delta = [0.0, 0.0]         # normalized (midpoint movement)
+        self.zoom_log = 0.0                 # sum of ln(dist_now / dist_prev)
+        self.twist = 0.0                    # radians, clockwise-positive on screen
+        self.transform_delta = [0.0, 0.0]   # RAW device units (legacy transform path)
+        self.mid_n = None                   # latest two-finger midpoint, normalized
+        self.finger_count = 0
+        self.touch_serial = 0               # increments whenever a new touch starts
         self.pending_undo = False
         self.pending_redo = False
 
+    # ---- device discovery -------------------------------------------------
+    @staticmethod
+    def _classify(d):
+        """'touchscreen' | 'pointer' (touchpad) | 'unknown' | None (not multitouch)."""
+        try:
+            caps = d.capabilities()
+        except Exception:
+            return None
+        codes = [c[0] if isinstance(c, tuple) else c for c in caps.get(ecodes.EV_ABS, [])]
+        if ecodes.ABS_MT_POSITION_X not in codes:
+            return None
+        try:
+            props = d.input_props()
+        except Exception:
+            return 'unknown'
+        return 'touchscreen' if INPUT_PROP_DIRECT in props else 'pointer'
+
     def find_device(self):
         if not HAVE_EVDEV:
+            self.last_error = "python-evdev is not installed in Blender's Python"
             return None
-        # Try direct known touch paths first
-        for p in self.TOUCH_PATHS:
-            if os.path.exists(p) and os.access(p, os.R_OK):
+        cfg_path = load_vimender_config().get('touch_device')
+        paths = ([cfg_path] if cfg_path else []) + list(self.TOUCH_PATHS)
+        for p in paths:
+            if p and os.path.exists(p) and os.access(p, os.R_OK):
                 try:
-                    return evdev.InputDevice(p)
+                    d = evdev.InputDevice(p)
+                    kind = self._classify(d)
+                    if kind in {'touchscreen', 'unknown'} or (cfg_path and p == cfg_path and kind):
+                        self.device_kind = kind
+                        return d
+                    d.close()
                 except Exception:
                     pass
-        # Search all evdev devices for touchscreen capabilities
+        best = None
         try:
             for path in evdev.list_devices():
                 try:
                     d = evdev.InputDevice(path)
-                    caps = d.capabilities()
-                    if ecodes.EV_ABS in caps:
-                        abs_codes = [c[0] if isinstance(c, tuple) else c for c in caps[ecodes.EV_ABS]]
-                        if ecodes.ABS_MT_POSITION_X in abs_codes:
-                            return d
                 except Exception:
                     continue
+                kind = self._classify(d)
+                if kind == 'touchscreen':
+                    if best:
+                        best.close()
+                    self.device_kind = kind
+                    return d
+                if kind == 'unknown' and best is None:
+                    best = d
+                    self.device_kind = kind
+                else:
+                    d.close()
         except Exception:
             pass
-        return None
+        if best is None:
+            self.last_error = ("no readable touchscreen in /dev/input "
+                               "(add your user to the 'input' group and re-login)")
+        return best
+
+    def _load_ranges(self, dev):
+        try:
+            ax = dev.absinfo(ecodes.ABS_MT_POSITION_X)
+            ay = dev.absinfo(ecodes.ABS_MT_POSITION_Y)
+            self.x_min, self.x_rng = float(ax.min), float(max(ax.max - ax.min, 1))
+            self.y_min, self.y_rng = float(ay.min), float(max(ay.max - ay.min, 1))
+        except Exception:
+            self.x_min, self.x_rng = 0.0, 4096.0
+            self.y_min, self.y_rng = 0.0, 4096.0
 
     def start(self):
         if self.running and self.dev:
             return True
-
         self.stop()
         dev = self.find_device()
         if not dev:
             self.active = False
+            print(f"[Vimender] Touch unavailable: {self.last_error}")
             return False
-
         self.dev = dev
+        self._load_ranges(dev)
         self.running = True
         self.active = True
         self.slots.clear()
-        self.prev_single = None
-        self.prev_dist = None
-        self.prev_mid = None
-        self.touch_max_fingers = 0
-        self.touch_moved = False
-
-        self.thread = threading.Thread(target=self._read_loop, daemon=True, name="EvdevMT")
+        self.current_slot = 0
+        self._last_n = 0
+        self._reset_gesture()
+        with self.lock:
+            self.orbit_delta = [0.0, 0.0]
+            self.pan_delta = [0.0, 0.0]
+            self.transform_delta = [0.0, 0.0]
+            self.zoom_log = 0.0
+            self.twist = 0.0
+            self.mid_n = None
+            self.finger_count = 0
+        self._stop_evt = threading.Event()
+        self.thread = threading.Thread(target=self._read_loop, args=(dev, self._stop_evt),
+                                       daemon=True, name="EvdevMT")
         self.thread.start()
-        print(f"[Vimender] Evdev Multi-touch active on {self.dev.name} ({self.dev.path})")
+        print(f"[Vimender] Multi-touch active on {dev.name} ({dev.path}) [{self.device_kind}]")
         return True
 
     def stop(self):
         self.running = False
+        if self._stop_evt:
+            self._stop_evt.set()
+            self._stop_evt = None
         if self.dev:
             try:
                 self.dev.close()
@@ -168,120 +256,169 @@ class EvdevMultiTouchTracker:
         self.thread = None
         self.active = False
 
-    def _read_loop(self):
-        while self.running and self.dev:
+    # ---- reader thread ----------------------------------------------------
+    def _read_loop(self, dev, stop_evt):
+        while not stop_evt.is_set():
             try:
-                for event in self.dev.read():
-                    if event.type == ecodes.EV_ABS:
-                        if event.code == ecodes.ABS_MT_SLOT:
-                            self.current_slot = event.value
-                        elif event.code == ecodes.ABS_MT_TRACKING_ID:
-                            if event.value == -1:
-                                if self.current_slot in self.slots:
-                                    self.slots[self.current_slot]['down'] = False
-                            else:
-                                if self.current_slot not in self.slots:
-                                    self.slots[self.current_slot] = {'x': 0.0, 'y': 0.0, 'down': True}
-                                else:
-                                    self.slots[self.current_slot]['down'] = True
-                        elif event.code == ecodes.ABS_MT_POSITION_X:
-                            if self.current_slot not in self.slots:
-                                self.slots[self.current_slot] = {'x': float(event.value), 'y': 0.0, 'down': True}
-                            else:
-                                self.slots[self.current_slot]['x'] = float(event.value)
-                        elif event.code == ecodes.ABS_MT_POSITION_Y:
-                            if self.current_slot not in self.slots:
-                                self.slots[self.current_slot] = {'x': 0.0, 'y': float(event.value), 'down': True}
-                            else:
-                                self.slots[self.current_slot]['y'] = float(event.value)
-
-                    elif event.type == ecodes.EV_SYN and event.code == ecodes.SYN_REPORT:
+                ready, _, _ = select.select([dev.fd], [], [], 0.05)
+                if not ready:
+                    continue
+                for ev in dev.read():
+                    if ev.type == ecodes.EV_ABS:
+                        c, val = ev.code, ev.value
+                        if c == ecodes.ABS_MT_SLOT:
+                            self.current_slot = val
+                            continue
+                        s = self.slots.setdefault(
+                            self.current_slot, {'x': 0.0, 'y': 0.0, 'down': True, 'palm': False})
+                        if c == ecodes.ABS_MT_TRACKING_ID:
+                            s['down'] = (val != -1)
+                            if val != -1:
+                                s['palm'] = False
+                        elif c == ecodes.ABS_MT_POSITION_X:
+                            s['x'] = float(val)
+                        elif c == ecodes.ABS_MT_POSITION_Y:
+                            s['y'] = float(val)
+                        elif c == ecodes.ABS_MT_TOOL_TYPE:
+                            s['palm'] = (val == MT_TOOL_PALM)
+                    elif ev.type == ecodes.EV_SYN and ev.code == ecodes.SYN_REPORT:
                         self._process_frame()
             except BlockingIOError:
                 time.sleep(0.003)
-            except Exception:
+            except Exception as e:
+                if not stop_evt.is_set():
+                    self.last_error = str(e)
                 break
-        self.active = False
+        if self.dev is dev:
+            self.active = False
+
+    # ---- gesture state ----------------------------------------------------
+    def _reset_tracking(self):
+        self.prev_single = None       # (nx, ny, rx, ry)
+        self.start_n = None
+        self.drag_engaged = False
+        self.prev_mid_n = None
+        self.prev_dist = None
+        self.prev_angle = None
+        self.acc_pan = 0.0
+        self.acc_zoom = 0.0
+        self.acc_twist = 0.0
+        self.pan_engaged = False
+        self.zoom_engaged = False
+        self.twist_engaged = False
+
+    def _reset_gesture(self):
+        self._reset_tracking()
+        self.touch_max_fingers = 0
+        self.touch_moved = False
+
+    def _norm(self, x, y):
+        return (x - self.x_min) / self.x_rng, (y - self.y_min) / self.y_rng
 
     def _process_frame(self):
-        active = [s for s in self.slots.values() if s.get('down', False)]
+        active = [s for s in self.slots.values() if s.get('down', False) and not s.get('palm', False)]
         n = len(active)
         now = time.perf_counter()
 
-        if n == 0:
-            if self.touch_max_fingers == 2 and not self.touch_moved:
-                if (now - self.touch_start_time) < 0.32:
-                    with self.lock:
-                        self.pending_undo = True
-            elif self.touch_max_fingers == 3 and not self.touch_moved:
-                if (now - self.touch_start_time) < 0.32:
-                    with self.lock:
-                        self.pending_redo = True
+        with self.lock:
+            if n > 0 and self.finger_count == 0:
+                self.touch_serial += 1
+            self.finger_count = n
 
-            self.prev_single = None
-            self.prev_dist = None
-            self.prev_mid = None
-            self.touch_max_fingers = 0
-            self.touch_moved = False
+        if n == 0:
+            if not self.touch_moved and (now - self.touch_start_time) < 0.32:
+                with self.lock:
+                    if self.touch_max_fingers == 2:
+                        self.pending_undo = True
+                    elif self.touch_max_fingers == 3:
+                        self.pending_redo = True
+            self._last_n = 0
+            self._reset_gesture()
             return
 
         if self.touch_max_fingers == 0:
             self.touch_start_time = now
             self.touch_moved = False
+        self.touch_max_fingers = max(self.touch_max_fingers, n)
 
-        if n > self.touch_max_fingers:
-            self.touch_max_fingers = n
+        if n != self._last_n:           # finger count changed: start tracking afresh
+            self._reset_tracking()
+            self._last_n = n
 
-        # 1 FINGER: ORBIT OR AXIS TRANSFORM
         if n == 1:
-            p = (active[0]['x'], active[0]['y'])
+            x, y = active[0]['x'], active[0]['y']
+            nx, ny = self._norm(x, y)
+            if self.start_n is None:
+                self.start_n = (nx, ny)
             if self.prev_single is not None:
-                dx = p[0] - self.prev_single[0]
-                dy = p[1] - self.prev_single[1]
-                if abs(dx) > 1.0 or abs(dy) > 1.0:
+                pnx, pny, px, py = self.prev_single
+                dx, dy = x - px, y - py
+                if not self.drag_engaged and math.hypot(nx - self.start_n[0], ny - self.start_n[1]) > TOUCH_SLOP_N:
+                    self.drag_engaged = True
                     self.touch_moved = True
-                    with self.lock:
-                        if getattr(S, 'tablet_in_transform', None) or getattr(S, 'tablet_active_axis', None) in {'X', 'Y', 'Z'}:
+                transforming = (getattr(S, 'tablet_in_transform', None) or
+                                getattr(S, 'tablet_active_axis', None) in {'X', 'Y', 'Z'})
+                with self.lock:
+                    if transforming:
+                        if abs(dx) > 1.0 or abs(dy) > 1.0:
+                            self.touch_moved = True
                             self.transform_delta[0] += dx
                             self.transform_delta[1] += dy
-                        elif getattr(S, 'tablet_select_tool', None) == 'BOX':
-                            pass
-                        else:
-                            self.orbit_delta[0] += dx
-                            self.orbit_delta[1] += dy
-            self.prev_single = p
-            self.prev_dist = None
-            self.prev_mid = None
+                    elif self.drag_engaged and getattr(S, 'tablet_select_tool', None) != 'BOX':
+                        self.orbit_delta[0] += nx - pnx
+                        self.orbit_delta[1] += ny - pny
+            self.prev_single = (nx, ny, x, y)
 
-        # 2 FINGERS: PINCH-ZOOM AND PAN
         elif n == 2:
             self.prev_single = None
+            p0, p1 = active[0], active[1]
+            mx, my = (p0['x'] + p1['x']) * 0.5, (p0['y'] + p1['y']) * 0.5
+            mid_n = self._norm(mx, my)
+            dist = math.hypot(p1['x'] - p0['x'], p1['y'] - p0['y'])
+            angle = math.atan2(p1['y'] - p0['y'], p1['x'] - p0['x'])   # y is down => clockwise-positive
+            with self.lock:
+                self.mid_n = mid_n
+
             if getattr(S, 'tablet_in_transform', None):
+                self.prev_mid_n = None
                 self.prev_dist = None
-                self.prev_mid = None
-            else:
-                p0 = (active[0]['x'], active[0]['y'])
-                p1 = (active[1]['x'], active[1]['y'])
+                self.prev_angle = None
+                return
 
-                dist = math.hypot(p0[0] - p1[0], p0[1] - p1[1])
-                if self.prev_dist is not None:
-                    d_dist = dist - self.prev_dist
-                    if abs(d_dist) > 2.0:
-                        self.touch_moved = True
-                        with self.lock:
-                            self.zoom_delta += d_dist
-                self.prev_dist = dist
+            if self.prev_mid_n is not None and self.prev_dist and dist > 1.0:
+                dmx, dmy = mid_n[0] - self.prev_mid_n[0], mid_n[1] - self.prev_mid_n[1]
+                dlog = math.log(dist / self.prev_dist)
+                dang = _wrap_angle(angle - self.prev_angle)
 
-                mid = ((p0[0] + p1[0]) * 0.5, (p0[1] + p1[1]) * 0.5)
-                if self.prev_mid is not None:
-                    dmx = mid[0] - self.prev_mid[0]
-                    dmy = mid[1] - self.prev_mid[1]
-                    if math.hypot(dmx, dmy) > 2.0:
-                        self.touch_moved = True
-                        with self.lock:
-                            self.pan_delta[0] += dmx
-                            self.pan_delta[1] += dmy
-                self.prev_mid = mid
+                self.acc_pan += math.hypot(dmx, dmy)
+                self.acc_zoom += dlog
+                self.acc_twist += dang
+                if not self.pan_engaged and self.acc_pan > TOUCH_SLOP_N:
+                    self.pan_engaged = True
+                if not self.zoom_engaged and abs(self.acc_zoom) > PINCH_LATCH:
+                    self.zoom_engaged = True
+                if not self.twist_engaged and abs(self.acc_twist) > TWIST_LATCH:
+                    self.twist_engaged = True
+                if self.pan_engaged or self.zoom_engaged or self.twist_engaged:
+                    self.touch_moved = True
+
+                with self.lock:
+                    if self.pan_engaged:
+                        self.pan_delta[0] += dmx
+                        self.pan_delta[1] += dmy
+                    if self.zoom_engaged:
+                        self.zoom_log += dlog
+                    if self.twist_engaged:
+                        self.twist += dang
+            self.prev_mid_n = mid_n
+            self.prev_dist = dist
+            self.prev_angle = angle
+
+        else:   # 3+ fingers: no navigation (3-finger tap = redo)
+            self.prev_single = None
+            self.prev_mid_n = None
+            self.prev_dist = None
+            self.prev_angle = None
 
 
 _tracker = EvdevMultiTouchTracker()
@@ -289,18 +426,93 @@ _tracker = EvdevMultiTouchTracker()
 
 class _TouchNavigator:
     """
-    Main manager for tablet gestures, managing evdev multitouch and single-touch fallbacks.
+    Consumes the tracker's gesture deltas on Blender's main thread and drives the
+    3D view like an iPad app:
+      - pan sticks to the fingers 1:1,
+      - pinch zooms about the point between the fingers,
+      - two-finger twist rolls the view (set "touch_twist": "OFF" in
+        vimender_config.json to disable),
+      - one-finger orbit, with momentum (inertia) after a flick.
     """
     def __init__(self):
         self.last_tap_time = 0.0
         self.last_tap_x = 0.0
         self.last_tap_y = 0.0
+        self._clear_motion()
+
+    def _clear_motion(self):
+        self.v_yaw = 0.0
+        self.v_pitch = 0.0
+        self.v_pan = [0.0, 0.0]       # px/s, region coords (y up)
+        self.v_zoom = 0.0             # ln-ratio per second
+        self.last_input_t = 0.0
+        self.coasting = False
+        self._last_t = 0.0
+        self._serial = -1
+        self._anchor = (0.0, 0.0)     # last two-finger midpoint, px from region centre
 
     def reset(self):
         self.last_tap_time = 0.0
         self.last_tap_x = 0.0
         self.last_tap_y = 0.0
+        self._clear_motion()
         _tracker.stop()
+
+    def _stop_inertia(self):
+        self.v_yaw = self.v_pitch = self.v_zoom = 0.0
+        self.v_pan = [0.0, 0.0]
+        self.coasting = False
+
+    def _step(self, rv3d, space, reg, yaw, pitch, roll, dpx, dpy, zlog, anchor):
+        """Apply one frame of navigation. Uses only live rv3d properties (never the
+        lazily-updated view matrices), so it stays correct between redraws."""
+        changed = False
+        rot = rv3d.view_rotation
+        d = rv3d.view_distance
+
+        if roll:
+            rv3d.view_rotation = (rot @ Quaternion(Vector((0.0, 0.0, 1.0)), roll)).normalized()
+            rot = rv3d.view_rotation
+            changed = True
+
+        if yaw or pitch:
+            up_vec = rot @ Vector((0.0, 1.0, 0.0))
+            right = rot @ Vector((1.0, 0.0, 0.0))
+            eye = rv3d.view_location + (rot @ Vector((0.0, 0.0, d)))
+            q_pitch = Quaternion(right, pitch)
+            if up_vec.z > 0.05:                      # turntable: keep the horizon level
+                q_yaw = Quaternion(Vector((0.0, 0.0, 1.0)), yaw)
+                test_rot = (q_pitch @ rot).normalized()
+                if (test_rot @ Vector((0.0, 1.0, 0.0))).z > 0.02:
+                    new_rot = (q_yaw @ test_rot).normalized()
+                else:
+                    new_rot = (q_yaw @ rot).normalized()
+            else:                                    # rolled / upside-down: free trackball
+                q_yaw = Quaternion(up_vec, yaw)
+                new_rot = (q_yaw @ q_pitch @ rot).normalized()
+            rv3d.view_rotation = new_rot
+            if ORBIT_ABOUT_EYE:
+                rv3d.view_location = eye - (new_rot @ Vector((0.0, 0.0, d)))
+            rot = new_rot
+            changed = True
+
+        if dpx or dpy or zlog:
+            f = max(0.2, min(5.0, math.exp(-zlog)))      # fingers spread => view_distance shrinks
+            d_new = max(d * f, 0.01)
+            f = d_new / d
+            lens = max(getattr(space, 'lens', 50.0), 1.0)
+            # world units per screen pixel on the focus plane (same for persp and ortho)
+            u = d * VIEW_SENSOR_MM / (lens * max(reg.width, reg.height, 1))
+            right = rot @ Vector((1.0, 0.0, 0.0))
+            up = rot @ Vector((0.0, 1.0, 0.0))
+            sx, sy = anchor
+            s_cur = (right * sx + up * sy) * u
+            s_prev = (right * (sx - dpx) + up * (sy - dpy)) * u
+            # keeps the world point that was under the fingers under the fingers
+            rv3d.view_location = rv3d.view_location + s_prev - s_cur * f
+            rv3d.view_distance = d_new
+            changed = True
+        return changed
 
     def tick(self, context=None, win=None):
         if not _tracker.active:
@@ -318,34 +530,28 @@ class _TouchNavigator:
         )
         if not area or area.type != 'VIEW_3D':
             return False
-
-        rv3d = area.spaces.active.region_3d if area.spaces else None
-        if not rv3d:
+        space = area.spaces.active if area.spaces else None
+        rv3d = space.region_3d if space else None
+        reg = window_region(area)
+        if not rv3d or not reg:
             return False
 
         with _tracker.lock:
             odx, ody = _tracker.orbit_delta
-            _tracker.orbit_delta[0] = 0.0
-            _tracker.orbit_delta[1] = 0.0
-
+            _tracker.orbit_delta[0] = _tracker.orbit_delta[1] = 0.0
             tdx, tdy = _tracker.transform_delta
-            _tracker.transform_delta[0] = 0.0
-            _tracker.transform_delta[1] = 0.0
-
+            _tracker.transform_delta[0] = _tracker.transform_delta[1] = 0.0
             pdx, pdy = _tracker.pan_delta
-            _tracker.pan_delta[0] = 0.0
-            _tracker.pan_delta[1] = 0.0
-
-            z_delta = _tracker.zoom_delta
-            _tracker.zoom_delta = 0.0
-
-            undo = _tracker.pending_undo
-            _tracker.pending_undo = False
-
-            redo = _tracker.pending_redo
-            _tracker.pending_redo = False
-
-        changed = False
+            _tracker.pan_delta[0] = _tracker.pan_delta[1] = 0.0
+            zlog = _tracker.zoom_log
+            _tracker.zoom_log = 0.0
+            twist = _tracker.twist
+            _tracker.twist = 0.0
+            undo, _tracker.pending_undo = _tracker.pending_undo, False
+            redo, _tracker.pending_redo = _tracker.pending_redo, False
+            mid_n = _tracker.mid_n
+            fingers = _tracker.finger_count
+            serial = _tracker.touch_serial
 
         if undo:
             try:
@@ -353,7 +559,6 @@ class _TouchNavigator:
             except Exception:
                 pass
             return True
-
         if redo:
             try:
                 bpy.ops.ed.redo()
@@ -361,55 +566,76 @@ class _TouchNavigator:
                 pass
             return True
 
+        now = time.perf_counter()
+        dt = min(max(now - self._last_t, 0.001), 0.05) if self._last_t else 0.016
+        self._last_t = now
+
+        if serial != self._serial:          # a new touch stops any momentum
+            self._serial = serial
+            self._stop_inertia()
+
         sens = SENS_LEVELS[S.sens_idx]
+        changed = False
 
-        # Suppress viewport navigation while transform is active or in BOX select
-        if getattr(S, 'tablet_in_transform', None) or getattr(S, 'tablet_select_tool', None) == 'BOX':
-            odx = 0.0
-            ody = 0.0
-            pdx = 0.0
-            pdy = 0.0
-            z_delta = 0.0
-
-        # 0. TOUCH OBJECT TRANSFORM (when in transform or axis locked)
+        # direct object transform (raw device units, unchanged behaviour)
         if abs(tdx) > 0.05 or abs(tdy) > 0.05:
             if apply_touch_transform(context, area, tdx, tdy, sens):
                 changed = True
 
-        # 1. ORBIT (1-finger drag)
-        if abs(odx) > 0.05 or abs(ody) > 0.05:
-            yaw = -odx * (0.00055 * sens)
-            pitch = -ody * (0.00050 * sens)
+        if getattr(S, 'tablet_in_transform', None) or getattr(S, 'tablet_select_tool', None) == 'BOX':
+            odx = ody = pdx = pdy = zlog = twist = 0.0
+            self._stop_inertia()
 
-            q_yaw = Quaternion(Vector((0.0, 0.0, 1.0)), yaw)
-            right = rv3d.view_rotation @ Vector((1.0, 0.0, 0.0))
-            q_pitch = Quaternion(right, pitch)
+        W = max(float(win.width), 1.0)
+        H = max(float(win.height), 1.0)
 
-            eye = rv3d.view_location + (rv3d.view_rotation @ Vector((0.0, 0.0, rv3d.view_distance)))
-            test_rot = (q_pitch @ rv3d.view_rotation).normalized()
-            up_z = (test_rot @ Vector((0.0, 1.0, 0.0))).z
-            if up_z > 0.02:
-                new_rot = (q_yaw @ test_rot).normalized()
-            else:
-                new_rot = (q_yaw @ rv3d.view_rotation).normalized()
+        # normalized touch deltas -> radians / pixels
+        yaw = -odx * ORBIT_RAD_PER_WIDTH * sens
+        pitch = -ody * (H / W) * ORBIT_RAD_PER_WIDTH * sens
+        dpx = pdx * W
+        dpy = -pdy * H                       # evdev y is down, Blender y is up
+        roll = twist if str(load_vimender_config().get('touch_twist', 'ROLL')).upper() != 'OFF' else 0.0
 
-            rv3d.view_rotation = new_rot
-            rv3d.view_location = eye - (new_rot @ Vector((0.0, 0.0, rv3d.view_distance)))
-            changed = True
+        if mid_n is not None:
+            self._anchor = (mid_n[0] * W - reg.x - reg.width * 0.5,
+                            (1.0 - mid_n[1]) * H - reg.y - reg.height * 0.5)
 
-        # 2. PINCH TO ZOOM (2 fingers)
-        if abs(z_delta) > 0.5:
-            zoom_factor = max(0.1, min(10.0, 1.0 - (z_delta * 0.00035 * sens)))
-            rv3d.view_distance = max(0.01, rv3d.view_distance * zoom_factor)
-            changed = True
+        live = bool(yaw or pitch or dpx or dpy or zlog or roll)
+        if live:
+            self.last_input_t = now
+            self.coasting = False
+            k = 0.5   # smooth the release velocity
+            self.v_yaw = self.v_yaw * (1 - k) + (yaw / dt) * k
+            self.v_pitch = self.v_pitch * (1 - k) + (pitch / dt) * k
+            self.v_pan[0] = self.v_pan[0] * (1 - k) + (dpx / dt) * k
+            self.v_pan[1] = self.v_pan[1] * (1 - k) + (dpy / dt) * k
+            self.v_zoom = self.v_zoom * (1 - k) + (zlog / dt) * k
+        elif fingers == 0:
+            if not self.coasting:
+                if now - self.last_input_t > INERTIA_RELEASE_WINDOW:
+                    self._stop_inertia()         # finger rested before lifting: no flick
+                else:
+                    self.coasting = True
+            if self.coasting:
+                if (abs(self.v_yaw) < INERTIA_MIN_ORBIT and abs(self.v_pitch) < INERTIA_MIN_ORBIT and
+                        math.hypot(*self.v_pan) < INERTIA_MIN_PAN and abs(self.v_zoom) < INERTIA_MIN_ZOOM):
+                    self._stop_inertia()
+                else:
+                    yaw, pitch = self.v_yaw * dt, self.v_pitch * dt
+                    dpx, dpy = self.v_pan[0] * dt, self.v_pan[1] * dt
+                    zlog = self.v_zoom * dt
+                    decay = math.exp(-INERTIA_DECAY * dt)
+                    self.v_yaw *= decay
+                    self.v_pitch *= decay
+                    self.v_pan[0] *= decay
+                    self.v_pan[1] *= decay
+                    self.v_zoom *= decay
 
-        # 3. TWO-FINGER PAN (2 fingers)
-        if abs(pdx) > 0.1 or abs(pdy) > 0.1:
-            pan_sens = (rv3d.view_distance / 6000.0) * sens
-            right = rv3d.view_rotation @ Vector((1.0, 0.0, 0.0))
-            up = rv3d.view_rotation @ Vector((0.0, 1.0, 0.0))
-            rv3d.view_location += (-right * pdx + up * pdy) * pan_sens
-            changed = True
+        if yaw or pitch or roll or dpx or dpy or zlog:
+            if rv3d.view_perspective == 'CAMERA' and not getattr(space, 'lock_camera', False):
+                rv3d.view_perspective = 'PERSP'
+            if self._step(rv3d, space, reg, yaw, pitch, roll, dpx, dpy, zlog, self._anchor):
+                changed = True
 
         if changed:
             area.tag_redraw()

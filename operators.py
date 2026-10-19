@@ -4,7 +4,7 @@ import bpy
 from mathutils import Vector, Matrix, Quaternion
 from bpy_extras.view3d_utils import location_3d_to_region_2d
 from .state import (
-    S, tag_all, window_region, area_at, area_by_ptr, focusable_areas, transform_active,
+    S, release_all_held, tag_all, window_region, area_at, area_by_ptr, focusable_areas, transform_active,
     is_blender_modal_active, send_modal_plus_minus, send_fake_escape, send_fake_numpad,
     adjust_active_modal_or_modifier, check_shortcut, get_preferences, is_altgr_pressed,
     is_view_pie_trigger, change_sens, _exec_view3d_op, save_vimender_state,
@@ -76,10 +76,16 @@ class WM_OT_vim_nudge(bpy.types.Operator):
     bl_label = "Vim Smooth Transform Control"
     bl_options = {'INTERNAL'}
 
+    initial_key: bpy.props.StringProperty(default="")
+    initial_val: bpy.props.StringProperty(default="")
+    initial_shift: bpy.props.BoolProperty(default=False)
+    start_x: bpy.props.IntProperty(default=-1)
+    start_y: bpy.props.IntProperty(default=-1)
+
     _timer = None
 
     def invoke(self, context, event):
-        if S.preview_mode or S.navigation_mode or S.cursor_mode:
+        if not S.active or S.navigation_mode or S.cursor_mode or S.walk_mode or S.tablet_mode or S.mode:
             return {'CANCELLED'}
         S.nudge_on = True
         S.nav.reset()
@@ -95,31 +101,50 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         except Exception:
             pass
 
-        area = area_at(context.window, event.mouse_x, event.mouse_y) or context.area
+        win = context.window
+        mx = self.start_x if self.start_x >= 0 else getattr(event, 'mouse_x', None)
+        my = self.start_y if self.start_y >= 0 else getattr(event, 'mouse_y', None)
+
+        area = (area_at(win, mx, my) if (win and mx is not None and my is not None) else None) or context.area
         if not area or area.type != 'VIEW_3D':
-            area = next((a for a in context.screen.areas if a.type == 'VIEW_3D'), context.area)
+            area = next((a for a in context.screen.areas if a.type == 'VIEW_3D'), context.area) if (context.screen and context.screen.areas) else context.area
         self.area = area
         self.region = window_region(area) if area else None
 
-        win = context.window
-        margin = 25.0
-        self.min_x = margin
-        self.max_x = float(max(win.width - margin, 50.0))
-        self.min_y = margin
-        self.max_y = float(max(win.height - margin, 50.0))
+        margin = 30.0
+        if self.region:
+            self.min_x = float(self.region.x + margin)
+            self.max_x = float(self.region.x + max(self.region.width - margin, 50.0))
+            self.min_y = float(self.region.y + margin)
+            self.max_y = float(self.region.y + max(self.region.height - margin, 50.0))
+        else:
+            self.min_x = margin
+            self.max_x = float(max(win.width - margin, 50.0)) if win else 1800.0
+            self.min_y = margin
+            self.max_y = float(max(win.height - margin, 50.0)) if win else 1000.0
 
-        self.sub_x = float(event.mouse_x)
-        self.sub_y = float(event.mouse_y)
-        self.sub_x = max(min(self.sub_x, self.max_x), self.min_x)
-        self.sub_y = max(min(self.sub_y, self.max_y), self.min_y)
-
-        self.pivot_2d = Vector((self.sub_x, self.sub_y))
         center_info = get_selection_center_2d(context, self.area)
         if center_info and center_info[0] is not None and center_info[1] is not None:
             self.pivot_2d = Vector((float(center_info[0]), float(center_info[1])))
+        elif mx is not None and my is not None:
+            self.pivot_2d = Vector((float(mx), float(my)))
+        elif self.region:
+            self.pivot_2d = Vector((float(self.region.x + self.region.width / 2), float(self.region.y + self.region.height / 2)))
+        else:
+            self.pivot_2d = Vector(((self.min_x + self.max_x) / 2.0, (self.min_y + self.max_y) / 2.0))
 
         self.pivot_2d.x = max(min(self.pivot_2d.x, self.max_x - 30.0), self.min_x + 30.0)
         self.pivot_2d.y = max(min(self.pivot_2d.y, self.max_y - 30.0), self.min_y + 30.0)
+
+        if mx is not None and my is not None and self.min_x <= mx <= self.max_x and self.min_y <= my <= self.max_y:
+            self.sub_x = float(mx)
+            self.sub_y = float(my)
+        else:
+            self.sub_x = self.pivot_2d.x
+            self.sub_y = self.pivot_2d.y
+
+        self.sub_x = max(min(self.sub_x, self.max_x), self.min_x)
+        self.sub_y = max(min(self.sub_y, self.max_y), self.min_y)
 
         dx_p = self.sub_x - self.pivot_2d.x
         dy_p = self.sub_y - self.pivot_2d.y
@@ -134,18 +159,29 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         )
         max_safe_r = max(edge_dist - 15.0, 30.0)
 
+        tr_type = get_active_transform_type(win)
         if dist_p < 25.0:
             self.scale_dir = Vector((0.7071, 0.7071))
             self.scale_dist = 60.0
             self.rot_angle = 0.0
             self.rot_radius = max(min(120.0, max_safe_r), 30.0)
+            if tr_type == 'ROTATE':
+                self.sub_x = self.pivot_2d.x + self.rot_radius
+                self.sub_y = self.pivot_2d.y
+                if win:
+                    win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
+            elif tr_type == 'RESIZE':
+                self.sub_x = self.pivot_2d.x + self.scale_dir.x * self.scale_dist
+                self.sub_y = self.pivot_2d.y + self.scale_dir.y * self.scale_dist
+                if win:
+                    win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
         else:
             dx_abs = abs(dx_p) if abs(dx_p) > 0.01 else 0.7071
             dy_abs = abs(dy_p) if abs(dy_p) > 0.01 else 0.7071
             self.scale_dir = Vector((dx_abs, dy_abs)).normalized()
             self.scale_dist = max(dist_p, 25.0)
             self.rot_angle = math.atan2(dy_p, dx_p)
-            self.rot_radius = max(min(120.0, max_safe_r), 30.0)
+            self.rot_radius = max(min(dist_p, max_safe_r), 30.0)
 
         self.vx = 0.0
         self.vy = 0.0
@@ -153,7 +189,13 @@ class WM_OT_vim_nudge(bpy.types.Operator):
         self.scale_vel = 0.0
         self.held_nudge = set()
         self.last_t = time.perf_counter()
-        self._shift_held = bool(event.shift)
+        self._shift_held = bool(self.initial_shift or getattr(event, 'shift', False))
+
+        ev_type = self.initial_key or getattr(event, 'type', None)
+        ev_val = self.initial_val or getattr(event, 'value', None)
+        if ev_type in {'NUMPAD_8', 'NUMPAD_2', 'NUMPAD_4', 'NUMPAD_6', 'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW', 'H', 'J', 'K', 'L'} and ev_val == 'PRESS':
+            self.held_nudge.add(ev_type)
+            self._step(context, win, 0.016, is_press=True)
 
         wm = context.window_manager
         self._timer = wm.event_timer_add(0.008, window=context.window)
@@ -218,7 +260,10 @@ class WM_OT_vim_nudge(bpy.types.Operator):
             if self.vy < 0.0:
                 self.vy = 0.0
 
-        win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
+        if win:
+            win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
+        if self.area:
+            self.area.tag_redraw()
 
     def _calc_axis_dir(self, context, area, axis, press_count):
         if not area or area.type != 'VIEW_3D':
@@ -310,7 +355,10 @@ class WM_OT_vim_nudge(bpy.types.Operator):
                 raw_y = self.pivot_2d.y + self.rot_radius * math.sin(self.rot_angle)
                 self.sub_x = max(min(raw_x, self.max_x), self.min_x)
                 self.sub_y = max(min(raw_y, self.max_y), self.min_y)
-                win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
+                if win:
+                    win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
+                if self.area:
+                    self.area.tag_redraw()
             return
 
         elif tr_type == 'RESIZE':
@@ -343,7 +391,10 @@ class WM_OT_vim_nudge(bpy.types.Operator):
                 self.scale_dist = new_dist
                 self.sub_x = self.pivot_2d.x + self.scale_dir.x * self.scale_dist
                 self.sub_y = self.pivot_2d.y + self.scale_dir.y * self.scale_dist
-                win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
+                if win:
+                    win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
+                if self.area:
+                    self.area.tag_redraw()
             return
 
         elif self.locked_axis is not None and self.axis_dir_2d is not None:
@@ -395,7 +446,7 @@ class WM_OT_vim_nudge(bpy.types.Operator):
 
     def modal(self, context, event):
         win = context.window
-        if not S.active or not transform_active(win) or S.preview_mode or S.navigation_mode or S.cursor_mode:
+        if not S.active or not transform_active(win) or S.navigation_mode or S.cursor_mode or S.walk_mode or S.tablet_mode or S.mode:
             self._cleanup(context)
             return {'FINISHED'}
 
@@ -560,6 +611,10 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         S.navigation_mode = False
         S.workspace_nav = False
         S.cursor_mode = False
+        S.walk_mode = False
+        S.walk_ptr = 0
+        if S.smooth_walker:
+            S.smooth_walker.reset()
         S.tablet_mode = False
         if getattr(S, 'touch_nav', None):
             S.touch_nav.reset()
@@ -642,11 +697,32 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if a:
             a.tag_redraw()
 
-    def _start_nudge(self, context, win):
+    def _start_nudge(self, context, win, initial_key="", initial_val="", initial_shift=False, start_x=-1, start_y=-1):
         try:
-            with context.temp_override(window=win):
-                bpy.ops.wm.vim_nudge('INVOKE_DEFAULT')
-        except Exception:
+            if not win:
+                win = context.window
+            if not win:
+                return
+            area = area_by_ptr(win, S.hover_ptr) or context.area
+            if not area or area.type != 'VIEW_3D':
+                area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), context.area) if (win and win.screen) else context.area
+            region = window_region(area) if area else None
+            kw = {'window': win}
+            if area:
+                kw['area'] = area
+            if region:
+                kw['region'] = region
+            with context.temp_override(**kw):
+                bpy.ops.wm.vim_nudge(
+                    'INVOKE_DEFAULT',
+                    initial_key=initial_key,
+                    initial_val=initial_val,
+                    initial_shift=initial_shift,
+                    start_x=start_x,
+                    start_y=start_y,
+                )
+        except Exception as e:
+            print(f"[Vimender] _start_nudge error: {e}")
             S.nudge_on = False
 
     def _start_hint(self, context, win, area, box, action, mx, my):
@@ -826,13 +902,18 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         win = context.window
         t, v = event.type, event.value
 
+        if t == 'WINDOW_DEACTIVATE':
+            # Focus lost: RELEASE events will never arrive, so drop held-key state.
+            release_all_held()
+            return {'PASS_THROUGH'}
+
         if t in {'TIMER', 'TIMER_REPORT'}:
             if S.prefix and time.time() - S.prefix_t > S.prefix_timeout:
                 self._end_prefix(context)
             if S.pie_active and time.time() - S.pie_open_time > 5.0:
                 S.pie_active = False
                 S.view_pie_active = False
-            if S.mode == 'BOX2':
+            if S.mode in {'BOX1', 'BOX2'}:
                 a = area_by_ptr(win, S.hint_ptr)
                 r = window_region(a) if a else None
                 if r and S.smooth_box.tick(r):
@@ -848,7 +929,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             elif not S.mode and not S.preview_mode and not S.nudge_on and not S.tablet_mode and not transform_active(win) and not is_blender_modal_active(win):
                 S.nav.tick(context, win)
 
-            if not S.preview_mode and not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode:
+            if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not S.mode:
                 if not S.nudge_on and transform_active(win):
                     self._start_nudge(context, win)
             return {'PASS_THROUGH'}
@@ -1048,7 +1129,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 return res
 
         if transform_active(win) or is_blender_modal_active(win):
-            if not S.preview_mode and not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode:
+            if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not S.mode:
                 if (t in {'N', 'M'} or event.unicode in {'n', 'N', 'm', 'M'}) and not (event.ctrl or event.alt or event.oskey):
                     if v == 'PRESS':
                         is_up = (t == 'N' or event.unicode in {'n', 'N'})
@@ -1058,12 +1139,44 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                             area.tag_redraw()
                     return {'RUNNING_MODAL'}
                 if not S.nudge_on and transform_active(win):
-                    self._start_nudge(context, win)
+                    is_nudge_key = t in {'H', 'J', 'K', 'L', 'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW', 'NUMPAD_8', 'NUMPAD_2', 'NUMPAD_4', 'NUMPAD_6'}
+                    init_k = t if is_nudge_key else ""
+                    init_v = v if is_nudge_key else ""
+                    self._start_nudge(context, win, initial_key=init_k, initial_val=init_v, initial_shift=event.shift, start_x=event.mouse_x, start_y=event.mouse_y)
+                    if is_nudge_key and v == 'PRESS':
+                        return {'RUNNING_MODAL'}
+                if t in {'H', 'J', 'K', 'L', 'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW', 'NUMPAD_8', 'NUMPAD_2', 'NUMPAD_4', 'NUMPAD_6'} and not (event.ctrl or event.alt or event.oskey):
+                    return {'PASS_THROUGH'}
             return {'PASS_THROUGH'}
 
         prefs = get_preferences(context)
         use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
         plain = not (event.alt or event.oskey)
+
+        if t in {'G', 'R', 'S', 'E'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
+            if t == 'R':
+                S.last_transform_type = 'ROTATE'
+            elif t == 'S':
+                S.last_transform_type = 'RESIZE'
+            else:
+                S.last_transform_type = 'TRANSLATE'
+
+            target_v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
+            if target_v3d and target_v3d.type == 'VIEW_3D':
+                center_info = get_selection_center_2d(context, target_v3d)
+                if center_info and center_info[0] is not None and center_info[1] is not None:
+                    cx, cy = center_info[0], center_info[1]
+                    reg = window_region(target_v3d)
+                    if reg:
+                        margin = 40
+                        if reg.x + margin < cx < reg.x + reg.width - margin and reg.y + margin < cy < reg.y + reg.height - margin:
+                            if t in {'G', 'E'}:
+                                win.cursor_warp(int(cx), int(cy))
+                            elif t in {'R', 'S'}:
+                                warp_x = cx + 120
+                                if warp_x > reg.x + reg.width - margin:
+                                    warp_x = cx - 120
+                                win.cursor_warp(int(warp_x), int(cy))
 
         if t in {'RIGHT_ALT', 'LINEFEED'}:
             if v == 'PRESS':
@@ -1298,9 +1411,12 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             tag_all()
             return {'RUNNING_MODAL'}
 
+        BOX_DIRS = {'H', 'J', 'K', 'L', 'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW',
+                    'NUMPAD_8', 'NUMPAD_2', 'NUMPAD_4', 'NUMPAD_6'}
+
         if S.mode == 'BOX2':
-            if t in NUDGE_DIRS or (use_arrow_layout and t in ARROW_DIRS):
-                S.smooth_box.on_key(t, v)
+            if t in BOX_DIRS or (use_arrow_layout and t in ARROW_DIRS):
+                S.smooth_box.on_key(t, v, shift=event.shift)
                 return {'RUNNING_MODAL'}
 
             if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS'} or
@@ -1308,7 +1424,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 change_sens(1 if (t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL'} or event.unicode == '+') else -1)
                 return {'RUNNING_MODAL'}
 
-            if t in {'C', 'RET', 'NUMPAD_ENTER'} and v == 'PRESS':
+            if t in {'C', 'RET', 'NUMPAD_ENTER', 'SPACE'} and v == 'PRESS':
                 self._finish_box2(context, win, event.shift)
                 return {'RUNNING_MODAL'}
 
@@ -1364,16 +1480,55 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
             return {'RUNNING_MODAL'}
 
-        if t in MOUSE_CANCEL and v in {'PRESS', 'NOTHING'}:
-            self._cancel_hint(context, win)
-            return {'PASS_THROUGH'}
+        if S.mode == 'BOX1':
+            if t in BOX_DIRS or (use_arrow_layout and t in ARROW_DIRS):
+                if v == 'PRESS':
+                    if S.box_a is None:
+                        S.box_a = (S.mouse[0], S.mouse[1])
+                        S.mode = 'BOX2'
+                        S.smooth_box.reset(S.mouse[0], S.mouse[1])
+                        self._set_status(context)
+                        a = area_by_ptr(win, S.hint_ptr)
+                        if a:
+                            a.tag_redraw()
+                S.smooth_box.on_key(t, v, shift=event.shift)
+                return {'RUNNING_MODAL'}
 
-        if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
-            return {'PASS_THROUGH'}
+            if t in {'SPACE', 'RET', 'NUMPAD_ENTER'} and v == 'PRESS':
+                if S.box_a is None:
+                    S.box_a = (S.mouse[0], S.mouse[1])
+                    S.mode = 'BOX2'
+                    S.smooth_box.reset(S.mouse[0], S.mouse[1])
+                    self._set_status(context)
+                    a = area_by_ptr(win, S.hint_ptr)
+                    if a:
+                        a.tag_redraw()
+                return {'RUNNING_MODAL'}
 
-        if (t in {'ESC', 'F'} or (S.mode == 'BOX1' and t == 'C')) and v == 'PRESS':
-            self._cancel_hint(context, win)
-            return {'RUNNING_MODAL'}
+            if t == 'LEFTMOUSE' and v == 'PRESS':
+                if S.box_a is None:
+                    S.box_a = (S.mouse[0], S.mouse[1])
+                    S.mode = 'BOX2'
+                    S.smooth_box.reset(S.mouse[0], S.mouse[1])
+                    self._set_status(context)
+                    a = area_by_ptr(win, S.hint_ptr)
+                    if a:
+                        a.tag_redraw()
+                return {'RUNNING_MODAL'}
+
+            if (t in {'ESC', 'F', 'C'}) and v == 'PRESS':
+                self._cancel_hint(context, win)
+                return {'RUNNING_MODAL'}
+
+            if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
+                a = area_by_ptr(win, S.hint_ptr)
+                r = window_region(a) if a else None
+                if r:
+                    S.mouse = (mx - r.x, my - r.y)
+                    S.smooth_box.x = float(mx - r.x)
+                    S.smooth_box.y = float(my - r.y)
+                    a.tag_redraw()
+                return {'PASS_THROUGH'}
 
         if t == 'BACK_SPACE':
             if v == 'PRESS' and S.typed:
@@ -2175,6 +2330,7 @@ class WM_OT_vim_close_search(bpy.types.Operator):
 
 
 def register_search_key():
+    unregister_search_key()  # avoid stacking duplicate items on every file load
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.addon
     if kc is None:
