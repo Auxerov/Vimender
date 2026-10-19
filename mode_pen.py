@@ -4,7 +4,7 @@ import bpy
 from mathutils import Vector
 from .state import (
     S, WHITE, tag_all, get_preferences, check_shortcut,
-    set_active_mode, area_at, area_by_ptr, window_region
+    set_active_mode, area_at, area_by_ptr, window_region, SENS_LEVELS
 )
 
 VIEW_SENSOR_MM = 36.0
@@ -66,25 +66,15 @@ class _PenNavigator:
             _tracker.pending_redo = False
 
             fingers = _tracker.finger_count
-            if fingers == 2:
-                pdx, pdy = _tracker.pan_delta
-                _tracker.pan_delta[0] = _tracker.pan_delta[1] = 0.0
-                zlog = _tracker.zoom_log
-                _tracker.zoom_log = 0.0
-                mid_n = _tracker.mid_n
-            else:
-                _tracker.pan_delta[0] = _tracker.pan_delta[1] = 0.0
-                _tracker.zoom_log = 0.0
-                pdx = pdy = 0.0
-                zlog = 0.0
-                mid_n = None
+            pdx, pdy = _tracker.pan_delta
+            _tracker.pan_delta[0] = _tracker.pan_delta[1] = 0.0
+            zlog = _tracker.zoom_log
+            _tracker.zoom_log = 0.0
+            mid_n = _tracker.mid_n
 
         now = time.perf_counter()
         dt = min(max(now - self._last_t, 0.001), 0.05) if self._last_t else 0.016
         self._last_t = now
-
-        if fingers != 2:
-            return False
 
         W = max(float(win.width), 1.0)
         H = max(float(win.height), 1.0)
@@ -92,6 +82,9 @@ class _PenNavigator:
         # Normalized pan deltas -> region pixels
         dpx = pdx * W
         dpy = -pdy * H  # evdev y is down, Blender y is up
+
+        if fingers != 2 and not (dpx or dpy or zlog):
+            return False
 
         if mid_n is not None:
             self._anchor = (
@@ -107,8 +100,13 @@ class _PenNavigator:
             rot = rv3d.view_rotation
             d = rv3d.view_distance
 
+            sens = SENS_LEVELS[S.sens_idx] if hasattr(S, 'sens_idx') else 1.0
+            effective_zlog = zlog * 1.5 * sens
+            effective_dpx = dpx * sens
+            effective_dpy = dpy * sens
+
             # Smooth exponential pinch-zoom factor
-            f = max(0.2, min(5.0, math.exp(-zlog)))
+            f = max(0.2, min(5.0, math.exp(-effective_zlog)))
             d_new = max(d * f, 0.001)
             f = d_new / d
 
@@ -118,7 +116,7 @@ class _PenNavigator:
             up = rot @ Vector((0.0, 1.0, 0.0))
             sx, sy = self._anchor
             s_cur = (right * sx + up * sy) * u
-            s_prev = (right * (sx - dpx) + up * (sy - dpy)) * u
+            s_prev = (right * (sx - effective_dpx) + up * (sy - effective_dpy)) * u
 
             # Keep the point under the fingers pinned during zoom and two-finger pan
             rv3d.view_location = rv3d.view_location + s_prev - s_cur * f

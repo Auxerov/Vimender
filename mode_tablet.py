@@ -393,11 +393,14 @@ class EvdevMultiTouchTracker:
                 self.acc_pan += math.hypot(dmx, dmy)
                 self.acc_zoom += dlog
                 self.acc_twist += dang
-                if not self.pan_engaged and self.acc_pan > TOUCH_SLOP_N:
+                is_pen = getattr(S, 'pen_mode', False)
+                pan_thresh = 0.003 if is_pen else TOUCH_SLOP_N
+                zoom_thresh = 0.004 if is_pen else PINCH_LATCH
+                if not self.pan_engaged and self.acc_pan > pan_thresh:
                     self.pan_engaged = True
-                if not self.zoom_engaged and abs(self.acc_zoom) > PINCH_LATCH:
+                if not self.zoom_engaged and abs(self.acc_zoom) > zoom_thresh:
                     self.zoom_engaged = True
-                if not self.twist_engaged and abs(self.acc_twist) > TWIST_LATCH:
+                if not is_pen and not self.twist_engaged and abs(self.acc_twist) > TWIST_LATCH:
                     self.twist_engaged = True
                 if self.pan_engaged or self.zoom_engaged or self.twist_engaged:
                     self.touch_moved = True
