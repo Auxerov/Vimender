@@ -1285,8 +1285,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     set_active_mode('PEN', context, self.report, target_area=target_a)
                 return {'RUNNING_MODAL'}
 
-        if ((t == 'SPACE' and is_altgr_pressed(event)) or
-            check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
+        if ((t == 'SPACE' and is_altgr_pressed(event) and event.shift) or
+            check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_shift=True, fallback_alt=True)) and v == 'PRESS':
             try:
                 with context.temp_override(window=win):
                     bpy.ops.wm.vim_fuzzy_search('INVOKE_DEFAULT')
@@ -1294,8 +1294,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 print(f"[Vimender] fuzzy_search error: {e}")
             return {'RUNNING_MODAL'}
 
-        if (check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_alt=True) or
-            (t == 'SPACE' and event.alt and not (event.ctrl or event.shift or event.oskey))) and v == 'PRESS':
+        if ((t == 'SPACE' and is_altgr_pressed(event) and not event.shift) or
+            check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
             try:
                 with context.temp_override(window=win):
                     bpy.ops.wm.vim_search_mode('INVOKE_DEFAULT')
@@ -1393,8 +1393,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         prefs = get_preferences(context)
 
         use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
-        if ((t == 'SPACE' and is_altgr_pressed(event)) or
-            check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
+        if ((t == 'SPACE' and is_altgr_pressed(event) and event.shift) or
+            check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_shift=True, fallback_alt=True)) and v == 'PRESS':
             self._cancel_hint(context, win)
             try:
                 with context.temp_override(window=win):
@@ -1403,8 +1403,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 print(f"[Vimender] fuzzy_search error: {e}")
             return {'RUNNING_MODAL'}
 
-        if (check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_alt=True) or
-            (t == 'SPACE' and event.alt and not (event.ctrl or event.shift or event.oskey))) and v == 'PRESS':
+        if ((t == 'SPACE' and is_altgr_pressed(event) and not event.shift) or
+            check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
             self._cancel_hint(context, win)
             try:
                 with context.temp_override(window=win):
@@ -2373,8 +2373,8 @@ def register_search_key():
     km = kc.keymaps.new('Window', space_type='EMPTY', region_type='WINDOW')
     kmi1 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'SPACE', 'PRESS', ctrl=True)
     kmi2 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'F3', 'PRESS', ctrl=True)
-    kmi3 = km.keymap_items.new(WM_OT_vim_search_mode.bl_idname, 'SPACE', 'PRESS', alt=True)
-    kmi4 = km.keymap_items.new(WM_OT_vim_fuzzy_search.bl_idname, 'SPACE', 'PRESS', alt=True, ctrl=True)
+    kmi3 = km.keymap_items.new(WM_OT_vim_search_mode.bl_idname, 'SPACE', 'PRESS', alt=True, ctrl=True)
+    kmi4 = km.keymap_items.new(WM_OT_vim_fuzzy_search.bl_idname, 'SPACE', 'PRESS', alt=True, ctrl=True, shift=True)
     kmi_close = km.keymap_items.new(WM_OT_vim_close_search.bl_idname, 'TAB', 'PRESS')
     kmi_quit = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'Q', 'PRESS', ctrl=True)
     kmi_quit.properties.action = 'QUIT'

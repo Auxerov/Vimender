@@ -413,8 +413,14 @@ def handle_nav_event(op, context, event, win, area):
     if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
         return {'PASS_THROUGH'}
 
-    if ((t == 'SPACE' and is_altgr_pressed(event)) or
-        check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
+    if t in {'RIGHT_ALT', 'LINEFEED'}:
+        if v == 'PRESS':
+            S.right_alt_down = True
+        elif v == 'RELEASE':
+            S.right_alt_down = False
+
+    if ((t == 'SPACE' and is_altgr_pressed(event) and event.shift) or
+        check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_shift=True, fallback_alt=True)) and v == 'PRESS':
         S.navigation_mode = False
         S.workspace_nav = False
         try:
@@ -424,8 +430,8 @@ def handle_nav_event(op, context, event, win, area):
             print(f"[Vimender] fuzzy_search error: {e}")
         return {'RUNNING_MODAL'}
 
-    if (check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_alt=True) or
-        (t == 'SPACE' and event.alt and not (event.ctrl or event.shift or event.oskey))) and v == 'PRESS':
+    if ((t == 'SPACE' and is_altgr_pressed(event) and not event.shift) or
+        check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
         S.navigation_mode = False
         S.workspace_nav = False
         try:

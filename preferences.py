@@ -362,7 +362,7 @@ KEY_ITEMS = [
 
 
 KEY_PREFIXES = (
-    ("search_mode", "Mode Search (Alt+Space)", "SPACE", False, False, True),
+    ("search_mode", "Mode Search (AltGr+Space)", "SPACE", True, False, True),
     ("preview", "Preview Mode Toggle (Ctrl+Y)", "Y", True, False, False),
     ("pen", "Pen Mode Toggle (Ctrl+Alt+P)", "P", True, False, True),
     ("nav", "Navigation Mode Toggle (Ctrl+B)", "B", True, False, False),
@@ -373,7 +373,7 @@ KEY_PREFIXES = (
     ("editor_pie", "Editor Pie Menu", "NONE", False, False, False),
     ("search_menu", "General Search (Space)", "SPACE", False, False, False),
     ("search_object", "Search Objects / Cursor (Ctrl+Space)", "SPACE", True, False, False),
-    ("fuzzy_search", "Data Search (AltGr+Space)", "SPACE", True, False, True),
+    ("fuzzy_search", "Data Search (Shift+AltGr+Space)", "SPACE", True, True, True),
     ("hint_select", "Hint Click Select (F)", "F", False, False, False),
     ("box_select", "Box Hint Select (C)", "C", False, False, False),
     ("bevel", "Bevel Tool (B)", "B", False, False, False),
@@ -486,7 +486,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     alt_editor_pie: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
     key_search_mode: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE', update=_on_keymap_change)
-    ctrl_search_mode: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
+    ctrl_search_mode: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
     shift_search_mode: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
     alt_search_mode: bpy.props.BoolProperty(name="Alt", default=True, update=_on_keymap_change)
 
@@ -502,7 +502,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
 
     key_fuzzy_search: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE', update=_on_keymap_change)
     ctrl_fuzzy_search: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
-    shift_fuzzy_search: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    shift_fuzzy_search: bpy.props.BoolProperty(name="Shift", default=True, update=_on_keymap_change)
     alt_fuzzy_search: bpy.props.BoolProperty(name="Alt", default=True, update=_on_keymap_change)
 
     key_hint_select: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='F', update=_on_keymap_change)
@@ -668,7 +668,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             # 4. Mode Switching Shortcuts
             box = layout.box()
             box.label(text="Mode Switching Shortcuts", icon='ARROW_LEFTRIGHT')
-            self._draw_shortcut(box, "Mode Search (Alt+Space)", "search_mode")
+            self._draw_shortcut(box, "Mode Search (AltGr+Space)", "search_mode")
             self._draw_shortcut(box, "Preview Mode Toggle (Ctrl+Y)", "preview")
             self._draw_shortcut(box, "Pen Mode Toggle (Ctrl+Alt+P)", "pen")
             self._draw_shortcut(box, "Navigation Mode Toggle (Ctrl+B)", "nav")
@@ -682,7 +682,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             box2.label(text="Tool & General Shortcuts", icon='EVENT_F')
             self._draw_shortcut(box2, "General Search (Space)", "search_menu")
             self._draw_shortcut(box2, "Search Objects / Cursor (Ctrl+Space)", "search_object")
-            self._draw_shortcut(box2, "Data Search (AltGr+Space)", "fuzzy_search")
+            self._draw_shortcut(box2, "Data Search (Shift+AltGr+Space)", "fuzzy_search")
             self._draw_shortcut(box2, "Hint Click Select (F)", "hint_select")
             self._draw_shortcut(box2, "Box Hint Select (C)", "box_select")
             self._draw_shortcut(box2, "Bevel Tool (B)", "bevel")

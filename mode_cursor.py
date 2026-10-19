@@ -214,8 +214,14 @@ def handle_cursor_event(op, context, event, win, area):
     t, v = event.type, event.value
     prefs = get_preferences(context)
 
-    if ((t == 'SPACE' and is_altgr_pressed(event)) or
-        check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
+    if t in {'RIGHT_ALT', 'LINEFEED'}:
+        if v == 'PRESS':
+            S.right_alt_down = True
+        elif v == 'RELEASE':
+            S.right_alt_down = False
+
+    if ((t == 'SPACE' and is_altgr_pressed(event) and event.shift) or
+        check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_shift=True, fallback_alt=True)) and v == 'PRESS':
         try:
             with context.temp_override(window=win):
                 bpy.ops.wm.vim_fuzzy_search('INVOKE_DEFAULT')
@@ -223,8 +229,8 @@ def handle_cursor_event(op, context, event, win, area):
             print(f"[Vimender] fuzzy_search error: {e}")
         return {'RUNNING_MODAL'}
 
-    if (check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_alt=True) or
-        (t == 'SPACE' and event.alt and not (event.ctrl or event.shift or event.oskey))) and v == 'PRESS':
+    if ((t == 'SPACE' and is_altgr_pressed(event) and not event.shift) or
+        check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
         try:
             with context.temp_override(window=win):
                 bpy.ops.wm.vim_search_mode('INVOKE_DEFAULT')

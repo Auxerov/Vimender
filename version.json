@@ -1,4 +1,4 @@
 {
-  "commit": "f81aeadc35e0cece98b758f78ec09e70c647f94e",
-  "message": "fix(stylus,pen): evdev stylus upper barrel button pan on native wayland and exit pen mode to preview"
+  "commit": "HEAD",
+  "message": "feat(nav,tablet): rebind search mode to AltGr+Space and port instant pinch zoom to tablet mode"
 }

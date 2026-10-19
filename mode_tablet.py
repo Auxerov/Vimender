@@ -393,9 +393,8 @@ class EvdevMultiTouchTracker:
                 self.acc_pan += math.hypot(dmx, dmy)
                 self.acc_zoom += dlog
                 self.acc_twist += dang
-                is_pen = getattr(S, 'pen_mode', False)
-                pan_thresh = 0.003 if is_pen else TOUCH_SLOP_N
-                zoom_thresh = 0.004 if is_pen else PINCH_LATCH
+                pan_thresh = 0.003
+                zoom_thresh = 0.004
                 if not self.pan_engaged and self.acc_pan > pan_thresh:
                     self.pan_engaged = True
                 if not self.zoom_engaged and abs(self.acc_zoom) > zoom_thresh:
@@ -501,7 +500,7 @@ class _TouchNavigator:
 
         if dpx or dpy or zlog:
             f = max(0.2, min(5.0, math.exp(-zlog)))      # fingers spread => view_distance shrinks
-            d_new = max(d * f, 0.01)
+            d_new = max(d * f, 0.001)
             f = d_new / d
             lens = max(getattr(space, 'lens', 50.0), 1.0)
             # world units per screen pixel on the focus plane (same for persp and ortho)
@@ -595,15 +594,16 @@ class _TouchNavigator:
         # normalized touch deltas -> radians / pixels
         yaw = -odx * ORBIT_RAD_PER_WIDTH * sens
         pitch = -ody * (H / W) * ORBIT_RAD_PER_WIDTH * sens
-        dpx = pdx * W
-        dpy = -pdy * H                       # evdev y is down, Blender y is up
+        dpx = pdx * W * sens
+        dpy = -pdy * H * sens                # evdev y is down, Blender y is up
+        effective_zlog = zlog * 1.5 * sens
         roll = twist if str(load_vimender_config().get('touch_twist', 'ROLL')).upper() != 'OFF' else 0.0
 
         if mid_n is not None:
             self._anchor = (mid_n[0] * W - reg.x - reg.width * 0.5,
                             (1.0 - mid_n[1]) * H - reg.y - reg.height * 0.5)
 
-        live = bool(yaw or pitch or dpx or dpy or zlog or roll)
+        live = bool(yaw or pitch or dpx or dpy or effective_zlog or roll)
         if live:
             self.last_input_t = now
             self.coasting = False
@@ -612,7 +612,7 @@ class _TouchNavigator:
             self.v_pitch = self.v_pitch * (1 - k) + (pitch / dt) * k
             self.v_pan[0] = self.v_pan[0] * (1 - k) + (dpx / dt) * k
             self.v_pan[1] = self.v_pan[1] * (1 - k) + (dpy / dt) * k
-            self.v_zoom = self.v_zoom * (1 - k) + (zlog / dt) * k
+            self.v_zoom = 0.0  # zero zoom inertia on release to match Pen Mode's rock-solid feel
         elif fingers == 0:
             if not self.coasting:
                 if now - self.last_input_t > INERTIA_RELEASE_WINDOW:
@@ -621,23 +621,22 @@ class _TouchNavigator:
                     self.coasting = True
             if self.coasting:
                 if (abs(self.v_yaw) < INERTIA_MIN_ORBIT and abs(self.v_pitch) < INERTIA_MIN_ORBIT and
-                        math.hypot(*self.v_pan) < INERTIA_MIN_PAN and abs(self.v_zoom) < INERTIA_MIN_ZOOM):
+                        math.hypot(*self.v_pan) < INERTIA_MIN_PAN):
                     self._stop_inertia()
                 else:
                     yaw, pitch = self.v_yaw * dt, self.v_pitch * dt
                     dpx, dpy = self.v_pan[0] * dt, self.v_pan[1] * dt
-                    zlog = self.v_zoom * dt
                     decay = math.exp(-INERTIA_DECAY * dt)
                     self.v_yaw *= decay
                     self.v_pitch *= decay
                     self.v_pan[0] *= decay
                     self.v_pan[1] *= decay
-                    self.v_zoom *= decay
 
-        if yaw or pitch or roll or dpx or dpy or zlog:
+        cur_zlog = effective_zlog if live else 0.0
+        if yaw or pitch or roll or dpx or dpy or cur_zlog:
             if rv3d.view_perspective == 'CAMERA' and not getattr(space, 'lock_camera', False):
                 rv3d.view_perspective = 'PERSP'
-            if self._step(rv3d, space, reg, yaw, pitch, roll, dpx, dpy, zlog, self._anchor):
+            if self._step(rv3d, space, reg, yaw, pitch, roll, dpx, dpy, cur_zlog, self._anchor):
                 changed = True
 
         if changed:
