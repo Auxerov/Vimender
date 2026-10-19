@@ -900,7 +900,7 @@ def set_tablet_select_tool(tool_id, context=None, area=None, report_fn=None):
     sync_tablet_tool_mode(context, use_area)
     tag_all()
     if report_fn:
-        tname = "Blender Box Select (Kutu Seçimi)" if tool_id == 'BOX' else "Tweak (Düz Seçim)"
+        tname = "Blender Box Select" if tool_id == 'BOX' else "Tweak (Normal Select)"
         report_fn({'INFO'}, f"Tablet Tool: {tname}")
 
 
@@ -951,7 +951,7 @@ def sync_tablet_tool_mode(context=None, area=None):
 def apply_tablet_view_settings(context=None, target_area=None):
     """
     Called when entering Tablet Mode:
-    1. Hides the default Blender T-toolbar ('t ile açılan model gizlensin').
+    1. Hides the default Blender T-toolbar for a clean workspace.
     2. Enables 3D interactive transform gizmos (arrows/rings/boxes) for touch.
     3. Activates the active selection tool ('builtin.select' or 'builtin.select_box').
     """
@@ -1220,10 +1220,10 @@ def get_tablet_axis_buttons(region, ui):
 def get_tablet_selection_buttons(region, ui):
     """
     Returns rectangular button hitboxes for Tablet Mode Bottom-Left Selection GUI:
-    - SEL (Düz seçim / Normal Select)
-    - +SHIFT (Shift + seçim / Multi-Select Toggle)
-    - +CTRL (Ctrl + seçim / Deselect)
-    - +ALT (Alt + seçim / Loop & Depth Select)
+    - SEL (Normal Select)
+    - +SHIFT (Multi-Select Toggle)
+    - +CTRL (Deselect)
+    - +ALT (Loop & Depth Select)
     """
     if not region:
         return []
@@ -1531,16 +1531,16 @@ def handle_tablet_event(op, context, event, win, area):
                         bid = hit_sel['id']
                         if bid == 'SEL_NORMAL':
                             S.tablet_select_modifier = None
-                            op.report({'INFO'}, "Tablet Select: Direct (Düz Seçim)")
+                            op.report({'INFO'}, "Tablet Select: Direct (Normal Select)")
                         elif bid == 'SEL_SHIFT':
                             S.tablet_select_modifier = None if S.tablet_select_modifier == 'SHIFT' else 'SHIFT'
-                            op.report({'INFO'}, f"Tablet Select: {'+SHIFT (Çoklu Seçim)' if S.tablet_select_modifier else 'Normal'}")
+                            op.report({'INFO'}, f"Tablet Select: {'+SHIFT (Multi-Select)' if S.tablet_select_modifier else 'Normal'}")
                         elif bid == 'SEL_CTRL':
                             S.tablet_select_modifier = None if S.tablet_select_modifier == 'CTRL' else 'CTRL'
-                            op.report({'INFO'}, f"Tablet Select: {'+CTRL (Seçimden Çıkar)' if S.tablet_select_modifier else 'Normal'}")
+                            op.report({'INFO'}, f"Tablet Select: {'+CTRL (Deselect)' if S.tablet_select_modifier else 'Normal'}")
                         elif bid == 'SEL_ALT':
                             S.tablet_select_modifier = None if S.tablet_select_modifier == 'ALT' else 'ALT'
-                            op.report({'INFO'}, f"Tablet Select: {'+ALT (Derinlik / Döngü Seçim)' if S.tablet_select_modifier else 'Normal'}")
+                            op.report({'INFO'}, f"Tablet Select: {'+ALT (Loop & Depth Select)' if S.tablet_select_modifier else 'Normal'}")
                         sync_tablet_tool_mode(context, area)
                         tag_all()
                         return {'RUNNING_MODAL'}

@@ -41,7 +41,9 @@ from .ui import (
 )
 from .preferences import (
     VimenderPreferences, WM_OT_vim_export_keymap,
-    WM_OT_vim_import_keymap, WM_OT_vim_reset_keymap, repair_corrupted_keymaps
+    WM_OT_vim_import_keymap, WM_OT_vim_reset_keymap,
+    WM_OT_vim_check_update, WM_OT_vim_update_addon,
+    repair_corrupted_keymaps
 )
 from .operators import (
     WM_OT_vim_mode_toggle, WM_OT_vim_nudge, WM_OT_vim_set_editor,
@@ -67,6 +69,8 @@ classes = (
     WM_OT_vim_export_keymap,
     WM_OT_vim_import_keymap,
     WM_OT_vim_reset_keymap,
+    WM_OT_vim_check_update,
+    WM_OT_vim_update_addon,
     VIM_MT_editor_more,
     VIEW3D_MT_vim_view_pie,
 )

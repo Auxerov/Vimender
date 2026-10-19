@@ -266,7 +266,7 @@ def draw_tablet_gui(area, region, ui):
             sub_col = (0.15, 0.15, 0.15, 0.95) if is_act else (0.75, 0.75, 0.75, 0.85)
             _text(cx - stw * 0.5, b['y0'] + 6 * ui, b['subtext'], sub_col)
 
-    # 6. Bottom-Right Axis Selection GUI (Dikeylemesine: X, Y, Z - Mode yazısının üstünde)
+    # 6. Bottom-Right Axis Selection GUI (Vertical layout: X, Y, Z above mode badge)
     try:
         from .mode_tablet import get_tablet_axis_buttons
         axis_buttons = get_tablet_axis_buttons(region, ui)
