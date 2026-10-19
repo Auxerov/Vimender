@@ -16,6 +16,320 @@ from .state import (
     get_preferences, _keymaps_initialized
 )
 
+def get_addon_directory():
+    """
+    Returns the real directory path of the Vimender addon, resolving symlinks.
+    """
+    return os.path.dirname(os.path.realpath(os.path.abspath(__file__)))
+
+
+_cached_installed_commit = None
+
+
+def get_installed_git_commit(addon_dir=None):
+    """
+    Returns the current local commit hash or version without blocking.
+    Checks version.json first, then .git, with in-memory caching.
+    """
+    global _cached_installed_commit
+    if _cached_installed_commit is not None:
+        return _cached_installed_commit
+
+    if addon_dir is None:
+        addon_dir = get_addon_directory()
+
+    # 1. Check version.json (pure python, instant, no git dependency)
+    try:
+        vfile = os.path.join(addon_dir, "version.json")
+        if os.path.exists(vfile):
+            with open(vfile, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                val = d.get("commit", "")
+                if val:
+                    _cached_installed_commit = val
+                    return val
+    except Exception:
+        pass
+
+    # 2. Check git rev-parse if .git directory exists
+    try:
+        git_dir = os.path.join(addon_dir, ".git")
+        if os.path.exists(git_dir):
+            res = subprocess.run(
+                ["git", "-C", addon_dir, "rev-parse", "HEAD"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=2
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                _cached_installed_commit = res.stdout.strip()
+                return _cached_installed_commit
+    except Exception:
+        pass
+
+    _cached_installed_commit = "1ef78b3"
+    return _cached_installed_commit
+
+
+def get_remote_git_commit():
+    """
+    Queries GitHub for the latest commit SHA and description on the main branch.
+    First tries 'git ls-remote' (fast and rate-limit free), then falls back to GitHub REST API.
+    """
+    # 1. Try git ls-remote first
+    try:
+        res = subprocess.run(
+            ["git", "ls-remote", "https://github.com/Auxerov/Vimender.git", "HEAD"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=6
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            sha = res.stdout.strip().split()[0]
+            return sha, "Latest commit on origin/main"
+    except Exception:
+        pass
+
+    # 2. Fallback to GitHub REST API
+    try:
+        req = urllib.request.Request(
+            "https://api.github.com/repos/Auxerov/Vimender/commits/main",
+            headers={"User-Agent": "Vimender-Blender-Addon"}
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            sha = data.get("sha", "")
+            msg = data.get("commit", {}).get("message", "").splitlines()[0]
+            return sha, msg
+    except Exception as e:
+        return "", f"Check failed: {e}"
+
+
+def perform_addon_update():
+    """
+    Direct One-Click Updater from GitHub:
+    Downloads main.zip from https://github.com/Auxerov/Vimender/archive/refs/heads/main.zip,
+    extracts into addon folder, updates version.json, and hot-reloads all modules.
+    No git clone required!
+    """
+    global _cached_installed_commit
+    addon_dir = get_addon_directory()
+
+    # 1. Direct ZIP download from GitHub
+    try:
+        req = urllib.request.Request(
+            "https://github.com/Auxerov/Vimender/archive/refs/heads/main.zip",
+            headers={"User-Agent": "Vimender-Blender-Addon"}
+        )
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            zip_bytes = resp.read()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            zip_path = os.path.join(tmp_dir, "vimender_update.zip")
+            with open(zip_path, "wb") as f:
+                f.write(zip_bytes)
+
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                zf.extractall(tmp_dir)
+
+            extracted_subdirs = [
+                os.path.join(tmp_dir, d) for d in os.listdir(tmp_dir)
+                if os.path.isdir(os.path.join(tmp_dir, d)) and d != "__MACOSX"
+            ]
+            if not extracted_subdirs:
+                return False, "Failed to locate extracted files in downloaded archive"
+
+            source_dir = extracted_subdirs[0]
+
+            # Copy all files into addon_dir (skipping touchview or git if any)
+            for item in os.listdir(source_dir):
+                if item in ("touchview", ".git"):
+                    continue
+                s = os.path.join(source_dir, item)
+                d = os.path.join(addon_dir, item)
+                if os.path.isdir(s):
+                    shutil.copytree(s, d, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(s, d)
+
+            # Query GitHub for latest commit hash to write to version.json
+            remote_sha, msg = get_remote_git_commit()
+            if remote_sha:
+                _cached_installed_commit = remote_sha
+                vfile = os.path.join(addon_dir, "version.json")
+                try:
+                    with open(vfile, "w", encoding="utf-8") as f:
+                        json.dump({"commit": remote_sha, "message": msg}, f, indent=2)
+                except Exception:
+                    pass
+
+        return True, f"Updated successfully from GitHub! ({remote_sha[:7] if remote_sha else 'Latest'})"
+    except Exception as e:
+        print(f"[Vimender] Zip download failed, checking git fallback: {e}")
+
+    # 2. Git fallback if git repo exists
+    git_dir = os.path.join(addon_dir, ".git")
+    if os.path.exists(git_dir):
+        try:
+            fetch_res = subprocess.run(
+                ["git", "-C", addon_dir, "fetch", "origin", "main"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=15
+            )
+            if fetch_res.returncode == 0:
+                reset_res = subprocess.run(
+                    ["git", "-C", addon_dir, "reset", "--hard", "origin/main"],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10
+                )
+                if reset_res.returncode == 0:
+                    _cached_installed_commit = None
+                    new_sha = get_installed_git_commit(addon_dir)
+                    return True, f"Git update successful (Commit: {new_sha[:7]})"
+        except Exception as e:
+            return False, f"Git update error: {e}"
+
+    return False, "Failed to update from GitHub. Please check internet connection."
+
+
+def reload_vimender_submodules():
+    """
+    Reloads all Vimender Python modules in sys.modules so changes take effect immediately.
+    """
+    addon_pkg = __package__ or __name__.partition('.')[0] or "Vimender"
+    submodules = [
+        "state", "preferences", "mode_walk", "mode_tablet",
+        "mode_cursor", "mode_nav", "mode_preview", "mode_hint",
+        "ui", "operators"
+    ]
+    reloaded = []
+    for mod_name in submodules:
+        full_name = f"{addon_pkg}.{mod_name}"
+        if full_name in sys.modules:
+            try:
+                importlib.reload(sys.modules[full_name])
+                reloaded.append(mod_name)
+            except Exception as e:
+                print(f"[Vimender] Module reload error for {full_name}: {e}")
+    tag_all()
+    return reloaded
+
+
+class WM_OT_vim_check_update(bpy.types.Operator):
+    bl_idname = "wm.vim_check_update"
+    bl_label = "Vimender: Check for Updates"
+    bl_description = "Check GitHub repository for newer Vimender versions"
+
+    def execute(self, context):
+        prefs = get_preferences(context)
+        if not prefs:
+            self.report({'ERROR'}, "Vimender preferences not found")
+            return {'CANCELLED'}
+
+        local_sha = get_installed_git_commit()
+        if local_sha:
+            prefs.installed_commit = local_sha
+
+        remote_sha, note = get_remote_git_commit()
+        if not remote_sha:
+            prefs.update_status = f"Check failed: {note}"
+            self.report({'WARNING'}, f"Could not check remote updates: {note}")
+            return {'CANCELLED'}
+
+        prefs.latest_commit = remote_sha
+        prefs.latest_commit_msg = note
+
+        if local_sha and local_sha.lower() == remote_sha.lower():
+            prefs.update_status = "Vimender is up to date!"
+            prefs.update_available = False
+            self.report({'INFO'}, "Vimender is up to date!")
+        else:
+            prefs.update_status = f"Update available: {remote_sha[:7]}"
+            prefs.update_available = True
+            self.report({'INFO'}, f"Update available: {remote_sha[:7]} ({note})")
+
+        return {'FINISHED'}
+
+
+class WM_OT_vim_update_addon(bpy.types.Operator):
+    bl_idname = "wm.vim_update_addon"
+    bl_label = "Vimender: Update to Latest Version"
+    bl_description = "Pull and apply the latest Vimender release from GitHub (One-Click)"
+
+    def execute(self, context):
+        prefs = get_preferences(context)
+        self.report({'INFO'}, "Updating Vimender directly from GitHub...")
+        success, msg = perform_addon_update()
+        if not success:
+            if prefs:
+                prefs.update_status = f"Update error: {msg}"
+            self.report({'ERROR'}, msg)
+            return {'CANCELLED'}
+
+        reloaded = reload_vimender_submodules()
+        new_sha = get_installed_git_commit()
+        if prefs:
+            if new_sha:
+                prefs.installed_commit = new_sha
+            prefs.update_status = "Updated successfully! Modules reloaded."
+            prefs.update_available = False
+
+        self.report({'INFO'}, f"Vimender updated successfully! ({len(reloaded)} modules reloaded)")
+        return {'FINISHED'}
+
+
+class WM_OT_vim_update_dialog(bpy.types.Operator):
+    bl_idname = "wm.vim_update_dialog"
+    bl_label = "Vimender Update Dialog"
+    bl_description = "Open the Vimender updater dialog"
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=420)
+
+    def draw(self, context):
+        layout = self.layout
+        prefs = get_preferences(context)
+
+        box = layout.box()
+        box.label(text="Vimender GitHub Updater", icon='URL')
+
+        col = box.column(align=True)
+        curr_sha = get_installed_git_commit()
+        if curr_sha:
+            col.label(text=f"Current Commit: {curr_sha[:7]}", icon='CHECKMARK')
+        else:
+            col.label(text="Version: 1.3.0", icon='INFO')
+
+        latest_sha = getattr(prefs, "latest_commit", "")
+        if latest_sha:
+            msg = getattr(prefs, "latest_commit_msg", "")
+            suffix = f" ({msg})" if msg else ""
+            col.label(text=f"Latest on GitHub: {latest_sha[:7]}{suffix}", icon='IMPORT')
+
+        status_str = getattr(prefs, "update_status", "Ready to check")
+        col.label(text=f"Status: {status_str}", icon='INFO')
+        col.label(text="Repo: https://github.com/Auxerov/Vimender.git")
+
+        layout.separator()
+        row = layout.row(align=True)
+        row.scale_y = 1.4
+        row.operator("wm.vim_check_update", text="Check for Updates", icon='FILE_REFRESH')
+        row.operator("wm.vim_update_addon", text="Update Now (One-Click)", icon='IMPORT')
+
+    def execute(self, context):
+        return {'FINISHED'}
+
+
+def ensure_updater_classes_registered():
+    for op_cls in (WM_OT_vim_check_update, WM_OT_vim_update_addon, WM_OT_vim_update_dialog):
+        sub_id = op_cls.bl_idname.partition('.')[2]
+        if not hasattr(bpy.ops.wm, sub_id):
+            try:
+                bpy.utils.register_class(op_cls)
+            except Exception:
+                pass
+
+
 KEY_ITEMS = [
     (chr(c), chr(c), "") for c in range(ord('A'), ord('Z') + 1)
 ] + [
@@ -279,8 +593,9 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             layout = getattr(self, "layout", None)
         if layout is None:
             return
+        # 1. Prominent Addon Updates Section (Top of Preferences)
         try:
-            # 1. Prominent Addon Updates Section (Top of Preferences)
+            ensure_updater_classes_registered()
             box_up = layout.box()
             header_row = box_up.row(align=True)
             header_row.label(text="Vimender Updates (GitHub)", icon='URL')
@@ -292,7 +607,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             btn_row.operator("wm.vim_update_addon", text="Update Now (One-Click)", icon='IMPORT')
 
             info_col = box_up.column(align=True)
-            curr_sha = getattr(self, "installed_commit", "") or get_installed_git_commit()
+            curr_sha = get_installed_git_commit()
             if curr_sha:
                 info_col.label(text=f"Current Commit: {curr_sha[:7]}", icon='CHECKMARK')
             else:
@@ -307,7 +622,11 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             status_str = getattr(self, "update_status", "Ready to check")
             info_col.label(text=f"Status: {status_str}", icon='INFO')
             info_col.label(text="Repo: https://github.com/Auxerov/Vimender.git")
+        except Exception as e:
+            box_up = layout.box()
+            box_up.label(text=f"Updater note: {e}", icon='INFO')
 
+        try:
             # 2. Keymap Export / Import
             top_box = layout.box()
             top_row = top_box.row(align=True)
@@ -476,269 +795,6 @@ class WM_OT_vim_reset_keymap(bpy.types.Operator):
         self.report({'INFO'}, "Vimender: Keymaps reset to defaults")
         return {'FINISHED'}
 
-
-def get_addon_directory():
-    """
-    Returns the real directory path of the Vimender addon, resolving symlinks.
-    """
-    return os.path.dirname(os.path.realpath(os.path.abspath(__file__)))
-
-
-def get_installed_git_commit(addon_dir=None):
-    """
-    Returns the current local git commit hash if this addon is a git repository.
-    """
-    if addon_dir is None:
-        addon_dir = get_addon_directory()
-    try:
-        git_dir = os.path.join(addon_dir, ".git")
-        if os.path.exists(git_dir):
-            res = subprocess.run(
-                ["git", "-C", addon_dir, "rev-parse", "HEAD"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=4
-            )
-            if res.returncode == 0:
-                return res.stdout.strip()
-    except Exception:
-        pass
-    return ""
-
-
-def get_remote_git_commit():
-    """
-    Queries GitHub for the latest commit SHA and description on the main branch.
-    First tries 'git ls-remote' (fast and rate-limit free), then falls back to GitHub REST API.
-    """
-    # 1. Try git ls-remote first
-    try:
-        res = subprocess.run(
-            ["git", "ls-remote", "https://github.com/Auxerov/Vimender.git", "HEAD"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=6
-        )
-        if res.returncode == 0 and res.stdout.strip():
-            sha = res.stdout.strip().split()[0]
-            return sha, "Latest commit on origin/main"
-    except Exception:
-        pass
-
-    # 2. Fallback to GitHub REST API
-    try:
-        req = urllib.request.Request(
-            "https://api.github.com/repos/Auxerov/Vimender/commits/main",
-            headers={"User-Agent": "Vimender-Blender-Addon"}
-        )
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            sha = data.get("sha", "")
-            msg = data.get("commit", {}).get("message", "").splitlines()[0]
-            return sha, msg
-    except Exception as e:
-        return "", f"Check failed: {e}"
-
-
-def perform_addon_update():
-    """
-    Updates the addon directory from https://github.com/Auxerov/Vimender.git.
-    If the addon directory is a Git repository, it runs 'git fetch' and 'git reset --hard'.
-    Otherwise, it downloads the repository archive (main.zip), unpacks it, and updates files.
-    """
-    addon_dir = get_addon_directory()
-    git_dir = os.path.join(addon_dir, ".git")
-
-    if os.path.exists(git_dir):
-        try:
-            fetch_res = subprocess.run(
-                ["git", "-C", addon_dir, "fetch", "origin", "main"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=25
-            )
-            if fetch_res.returncode == 0:
-                reset_res = subprocess.run(
-                    ["git", "-C", addon_dir, "reset", "--hard", "origin/main"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    timeout=15
-                )
-                if reset_res.returncode == 0:
-                    new_sha = get_installed_git_commit(addon_dir)
-                    return True, f"Git update successful (Commit: {new_sha[:7] if new_sha else 'HEAD'})"
-        except Exception as e:
-            print(f"[Vimender] Git update failed, falling back to zip archive: {e}")
-
-    # Fallback to ZIP download
-    try:
-        req = urllib.request.Request(
-            "https://github.com/Auxerov/Vimender/archive/refs/heads/main.zip",
-            headers={"User-Agent": "Vimender-Blender-Addon"}
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            zip_bytes = resp.read()
-
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            zip_path = os.path.join(tmp_dir, "vimender_update.zip")
-            with open(zip_path, "wb") as f:
-                f.write(zip_bytes)
-
-            with zipfile.ZipFile(zip_path, 'r') as zf:
-                zf.extractall(tmp_dir)
-
-            extracted_subdirs = [
-                os.path.join(tmp_dir, d) for d in os.listdir(tmp_dir)
-                if os.path.isdir(os.path.join(tmp_dir, d)) and d != "__MACOSX"
-            ]
-            if not extracted_subdirs:
-                return False, "Failed to locate extracted files in downloaded archive"
-
-            source_dir = extracted_subdirs[0]
-
-            for item in os.listdir(source_dir):
-                s = os.path.join(source_dir, item)
-                d = os.path.join(addon_dir, item)
-                if os.path.isdir(s):
-                    shutil.copytree(s, d, dirs_exist_ok=True)
-                else:
-                    shutil.copy2(s, d)
-
-        return True, "Zip download and update successful!"
-    except Exception as e:
-        return False, f"Update failed: {e}"
-
-
-def reload_vimender_submodules():
-    """
-    Reloads all Vimender Python modules in sys.modules so changes take effect immediately.
-    """
-    addon_pkg = __package__ or __name__.partition('.')[0] or "Vimender"
-    submodules = [
-        "state", "preferences", "mode_walk", "mode_tablet",
-        "mode_cursor", "mode_nav", "mode_preview", "mode_hint",
-        "ui", "operators"
-    ]
-    reloaded = []
-    for mod_name in submodules:
-        full_name = f"{addon_pkg}.{mod_name}"
-        if full_name in sys.modules:
-            try:
-                importlib.reload(sys.modules[full_name])
-                reloaded.append(mod_name)
-            except Exception as e:
-                print(f"[Vimender] Module reload error for {full_name}: {e}")
-    tag_all()
-    return reloaded
-
-
-class WM_OT_vim_check_update(bpy.types.Operator):
-    bl_idname = "wm.vim_check_update"
-    bl_label = "Vimender: Check for Updates"
-    bl_description = "Check GitHub repository for newer Vimender versions"
-
-    def execute(self, context):
-        prefs = get_preferences(context)
-        if not prefs:
-            self.report({'ERROR'}, "Vimender preferences not found")
-            return {'CANCELLED'}
-
-        local_sha = get_installed_git_commit()
-        if local_sha:
-            prefs.installed_commit = local_sha
-
-        remote_sha, note = get_remote_git_commit()
-        if not remote_sha:
-            prefs.update_status = f"Check failed: {note}"
-            self.report({'WARNING'}, f"Could not check remote updates: {note}")
-            return {'CANCELLED'}
-
-        prefs.latest_commit = remote_sha
-        prefs.latest_commit_msg = note
-
-        if local_sha and local_sha.lower() == remote_sha.lower():
-            prefs.update_status = "Vimender is up to date!"
-            prefs.update_available = False
-            self.report({'INFO'}, "Vimender is up to date!")
-        else:
-            prefs.update_status = f"Update available: {remote_sha[:7]}"
-            prefs.update_available = True
-            self.report({'INFO'}, f"Update available: {remote_sha[:7]} ({note})")
-
-        return {'FINISHED'}
-
-
-class WM_OT_vim_update_addon(bpy.types.Operator):
-    bl_idname = "wm.vim_update_addon"
-    bl_label = "Vimender: Update to Latest Version"
-    bl_description = "Pull and apply the latest Vimender release from GitHub (One-Click)"
-
-    def execute(self, context):
-        prefs = get_preferences(context)
-        self.report({'INFO'}, "Updating Vimender from GitHub...")
-        success, msg = perform_addon_update()
-        if not success:
-            if prefs:
-                prefs.update_status = f"Update error: {msg}"
-            self.report({'ERROR'}, msg)
-            return {'CANCELLED'}
-
-        reloaded = reload_vimender_submodules()
-        new_sha = get_installed_git_commit()
-        if prefs:
-            if new_sha:
-                prefs.installed_commit = new_sha
-            prefs.update_status = "Updated successfully! Modules reloaded."
-            prefs.update_available = False
-
-        self.report({'INFO'}, f"Vimender updated successfully! ({len(reloaded)} modules reloaded)")
-        return {'FINISHED'}
-
-
-class WM_OT_vim_update_dialog(bpy.types.Operator):
-    bl_idname = "wm.vim_update_dialog"
-    bl_label = "Vimender Update Dialog"
-    bl_description = "Open the Vimender updater dialog"
-
-    def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=420)
-
-    def draw(self, context):
-        layout = self.layout
-        prefs = get_preferences(context)
-
-        box = layout.box()
-        box.label(text="Vimender GitHub Updater", icon='URL')
-
-        col = box.column(align=True)
-        curr_sha = getattr(prefs, "installed_commit", "") or get_installed_git_commit()
-        if curr_sha:
-            col.label(text=f"Current Commit: {curr_sha[:7]}", icon='CHECKMARK')
-        else:
-            col.label(text="Version: 1.3.0", icon='INFO')
-
-        latest_sha = getattr(prefs, "latest_commit", "")
-        if latest_sha:
-            msg = getattr(prefs, "latest_commit_msg", "")
-            suffix = f" ({msg})" if msg else ""
-            col.label(text=f"Latest on GitHub: {latest_sha[:7]}{suffix}", icon='IMPORT')
-
-        status_str = getattr(prefs, "update_status", "Ready to check")
-        col.label(text=f"Status: {status_str}", icon='INFO')
-        col.label(text="Repo: https://github.com/Auxerov/Vimender.git")
-
-        layout.separator()
-        row = layout.row(align=True)
-        row.scale_y = 1.4
-        row.operator("wm.vim_check_update", text="Check for Updates", icon='FILE_REFRESH')
-        row.operator("wm.vim_update_addon", text="Update Now (One-Click)", icon='IMPORT')
-
-    def execute(self, context):
-        return {'FINISHED'}
 
 
 
