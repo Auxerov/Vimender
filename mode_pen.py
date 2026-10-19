@@ -131,12 +131,16 @@ def enter_pen_mode(context, report_fn=None):
 
 
 def exit_pen_mode(context, report_fn=None):
-    set_active_mode('ORBIT_PAN', context, report_fn)
+    set_active_mode('PREVIEW', context, report_fn)
 
 
 def handle_pen_event(op, context, event, win, area):
     t, v = event.type, event.value
     prefs = get_preferences(context)
+
+    if t == 'ESC' and v == 'PRESS':
+        exit_pen_mode(context, op.report)
+        return {'RUNNING_MODAL'}
 
     # Box Hint Select (C) just like Preview Mode
     if check_shortcut(prefs, 'box_select', event, 'C', fallback_ctrl=False, allow_shift_alt_extend=True) and v == 'PRESS':

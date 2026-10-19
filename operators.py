@@ -622,8 +622,11 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if getattr(S, 'touch_nav', None):
             S.touch_nav.reset()
         try:
-            from .mode_tablet import disable_touchview_integration
+            from .mode_tablet import disable_touchview_integration, _stylus_tracker, _StylusNavigator
             disable_touchview_integration(context)
+            _stylus_tracker.start()
+            if getattr(S, 'stylus_nav', None) is None:
+                S.stylus_nav = _StylusNavigator()
         except Exception:
             pass
         wm = context.window_manager
@@ -934,6 +937,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     tag_all()
             elif not S.mode and not S.preview_mode and not getattr(S, 'pen_mode', False) and not S.nudge_on and not S.tablet_mode and not transform_active(win) and not is_blender_modal_active(win):
                 S.nav.tick(context, win)
+
+            if getattr(S, 'stylus_nav', None) and S.stylus_nav.tick(context, win):
+                tag_all()
 
             if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not getattr(S, 'pen_mode', False) and not S.mode:
                 if not S.nudge_on and transform_active(win):
@@ -1273,7 +1279,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
             if v == 'PRESS':
                 if getattr(S, 'pen_mode', False):
-                    set_active_mode('ORBIT_PAN', context, self.report)
+                    set_active_mode('PREVIEW', context, self.report)
                 else:
                     target_a = area or area_by_ptr(win, S.hover_ptr) or area_at(win, mx, my) or context.area
                     set_active_mode('PEN', context, self.report, target_area=target_a)

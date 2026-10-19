@@ -20,7 +20,7 @@ Instead of navigating Blender's deep nested hotkey menus or relying heavily on a
 - **Tablet / Touch Mode (`TABLET`)**: Multi-touch gesture navigation (pinch-to-zoom, two-finger pan/orbit), virtual on-screen modifier buttons (`SEL`, `+SHIFT`, `+CTRL`, `+ALT`), axis constraints (`X`, `Y`, `Z`), and touch transform gizmos.
 - **Hint Mode (`HINT`)**: Vimium/EasyMotion-style two-character visual jump tags projected directly onto 3D objects, vertices, edges, or faces in the viewport.
 - **Preview Mode (`PREVIEW`)**: Fast render and camera review mode.
-- **Pen Mode (`PEN`)**: Dedicated white-themed mode (`WHITE = (0.98, 0.98, 0.98, 1.0)`) for graphics tablets, digitizer styluses, and 2-in-1 convertible laptops. Default shortcut: `Ctrl+Alt+P` (guaranteed collision-free). Native mouse navigation (MMB orbit/pan, scroll zoom) and pen drawing/sculpting pass through directly to Blender without disruption. Two-finger hand pinching is isolated exclusively for viewport zoom and anchor panning, while single-finger touches and palm contacts are ignored.
+- **Pen Mode (`PEN`)**: Dedicated white-themed mode (`WHITE = (0.98, 0.98, 0.98, 1.0)`) for graphics tablets, digitizer styluses, and 2-in-1 convertible laptops. Default shortcut: `Ctrl+Alt+P` (guaranteed collision-free). Native mouse navigation (MMB orbit/pan, scroll zoom) and pen drawing/sculpting pass through directly to Blender without disruption. Two-finger hand pinching is isolated exclusively for viewport zoom and anchor panning, while single-finger touches and palm contacts are ignored. Exiting Pen Mode (via `Ctrl+Alt+P` or `Esc`) transitions directly to **`PREVIEW`** mode.
 
 ---
 
@@ -36,8 +36,8 @@ Instead of navigating Blender's deep nested hotkey menus or relying heavily on a
 | [`mode_nav.py`](file:///home/auxerov/Documents/Projects/Vimender/mode_nav.py) | Viewport camera manipulation (orbit, pan, zoom, view align, dolly). |
 | [`mode_cursor.py`](file:///home/auxerov/Documents/Projects/Vimender/mode_cursor.py) | 3D cursor navigation, axial nudges, and geometry snapping. |
 | [`mode_walk.py`](file:///home/auxerov/Documents/Projects/Vimender/mode_walk.py) | First-person camera walk/fly controller. |
-| [`mode_tablet.py`](file:///home/auxerov/Documents/Projects/Vimender/mode_tablet.py) | Touch gesture recognition, stylus/finger tracking, virtual hitboxes, and touch selection. |
-| [`mode_pen.py`](file:///home/auxerov/Documents/Projects/Vimender/mode_pen.py) | Pen Mode controller: pass-through mouse/stylus events, isolated 2-finger multi-touch pinch-zoom navigator (`_PenNavigator`). |
+| [`mode_tablet.py`](file:///home/auxerov/Documents/Projects/Vimender/mode_tablet.py) | Touch gesture recognition (`EvdevMultiTouchTracker`), direct hardware stylus upper barrel button pan tracker (`EvdevStylusTracker`, `_StylusNavigator`), virtual hitboxes, and touch selection. |
+| [`mode_pen.py`](file:///home/auxerov/Documents/Projects/Vimender/mode_pen.py) | Pen Mode controller: pass-through mouse/stylus events, isolated 2-finger multi-touch pinch-zoom navigator (`_PenNavigator`), exit transition to `PREVIEW` mode. |
 | [`mode_hint.py`](file:///home/auxerov/Documents/Projects/Vimender/mode_hint.py) | 3D-to-2D screen coordinate projection, visual hint code generation, and jump tree matching. |
 
 ---
@@ -141,6 +141,12 @@ This applies bug fixes and new features immediately without requiring a full Ble
 
 ## 6. Recent Fixes & Change Log
 
+- **Permanent Stylus Upper Barrel Button Pan (Native Wayland)**:
+  - Implemented `EvdevStylusTracker` and `_StylusNavigator` directly reading `/dev/input/event6` / `platform-AMDI0010:02-event-mouse`.
+  - Upper barrel button reliably pans the 3D viewport at zero latency in all modes (Orbit, Preview, Pen, Tablet).
+  - Completely removed `WAYLAND_DISPLAY=""` workaround, restoring native crisp 1.25x scaling without UI blowup.
+- **Pen Mode Exit to PREVIEW**:
+  - Exiting Pen Mode (via `Ctrl+Alt+P` toggle or `Esc`) now transitions directly to **`PREVIEW`** mode instead of `ORBIT_PAN`.
 - **Pen Mode (`PEN`) Implementation**:
   - Cloned and adapted from Preview Mode with a clean white visual theme (`WHITE = (0.98, 0.98, 0.98, 1.0)`).
   - Assigned collision-free shortcut `Ctrl+Alt+P` (configurable via Preferences under Mode Switching Shortcuts).

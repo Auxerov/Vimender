@@ -648,6 +648,237 @@ class _TouchNavigator:
 S.touch_nav = _TouchNavigator()
 
 
+class EvdevStylusTracker:
+    """
+    Direct Linux hardware tracker for Stylus / Wacom Digital Pen buttons and motion.
+    Reads /dev/input/event6 directly via evdev to provide 100% reliable Upper Button Pan
+    under Native Wayland without relying on Mutter forwarding or XWayland workarounds.
+    """
+    STYLUS_PATHS = [
+        "/dev/input/by-path/platform-AMDI0010:02-event-mouse",
+        "/dev/input/event6",
+    ]
+
+    def __init__(self):
+        self.dev = None
+        self.thread = None
+        self._stop_evt = None
+        self.running = False
+        self.active = False
+        self.last_error = ""
+        self.lock = threading.Lock()
+
+        self.btn_pan_down = False
+        self.last_x = None
+        self.last_y = None
+        self.pan_delta = [0.0, 0.0]
+        self.x_min, self.x_rng = 0.0, 30182.0
+        self.y_min, self.y_rng = 0.0, 18864.0
+
+    def find_device(self):
+        if not HAVE_EVDEV:
+            self.last_error = "python-evdev is not installed in Blender's Python"
+            return None
+        cfg_path = load_vimender_config().get('stylus_device')
+        paths = ([cfg_path] if cfg_path else []) + list(self.STYLUS_PATHS)
+        for p in paths:
+            if p and os.path.exists(p) and os.access(p, os.R_OK):
+                try:
+                    d = evdev.InputDevice(p)
+                    caps = d.capabilities()
+                    if ecodes.EV_KEY in caps:
+                        keys = caps[ecodes.EV_KEY]
+                        if ecodes.BTN_TOOL_PEN in keys or ecodes.BTN_STYLUS in keys:
+                            return d
+                    d.close()
+                except Exception:
+                    pass
+        try:
+            for p in evdev.list_devices():
+                try:
+                    d = evdev.InputDevice(p)
+                    caps = d.capabilities()
+                    if ecodes.EV_KEY in caps:
+                        keys = caps[ecodes.EV_KEY]
+                        if ecodes.BTN_TOOL_PEN in keys or ecodes.BTN_STYLUS in keys:
+                            return d
+                    d.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self.last_error = "No readable pen / stylus device found"
+        return None
+
+    def _load_ranges(self, dev):
+        try:
+            ax = dev.absinfo(ecodes.ABS_X)
+            ay = dev.absinfo(ecodes.ABS_Y)
+            self.x_min, self.x_rng = float(ax.min), float(max(ax.max - ax.min, 1))
+            self.y_min, self.y_rng = float(ay.min), float(max(ay.max - ay.min, 1))
+        except Exception:
+            self.x_min, self.x_rng = 0.0, 30182.0
+            self.y_min, self.y_rng = 0.0, 18864.0
+
+    def start(self):
+        if self.running and self.dev:
+            return True
+        self.stop()
+        dev = self.find_device()
+        if not dev:
+            self.active = False
+            return False
+        self.dev = dev
+        self._load_ranges(dev)
+        self.running = True
+        self.active = True
+        with self.lock:
+            self.btn_pan_down = False
+            self.last_x = None
+            self.last_y = None
+            self.pan_delta = [0.0, 0.0]
+        self._stop_evt = threading.Event()
+        self.thread = threading.Thread(target=self._read_loop, args=(dev, self._stop_evt),
+                                       daemon=True, name="EvdevStylus")
+        self.thread.start()
+        print(f"[Vimender] Stylus hardware listener active on {dev.name} ({dev.path})")
+        return True
+
+    def stop(self):
+        self.running = False
+        if self._stop_evt:
+            self._stop_evt.set()
+            self._stop_evt = None
+        if self.dev:
+            try:
+                self.dev.close()
+            except Exception:
+                pass
+            self.dev = None
+        self.thread = None
+        self.active = False
+
+    def _read_loop(self, dev, stop_evt):
+        curr_x = None
+        curr_y = None
+        btn_pan = False
+
+        while not stop_evt.is_set():
+            try:
+                ready, _, _ = select.select([dev.fd], [], [], 0.02)
+                if not ready:
+                    continue
+                pan_btn_mode = str(load_vimender_config().get('stylus_pan_button', 'BTN_STYLUS')).upper()
+                for ev in dev.read():
+                    if ev.type == ecodes.EV_KEY:
+                        is_pan_btn = False
+                        if pan_btn_mode == 'BTN_STYLUS2':
+                            is_pan_btn = (ev.code == ecodes.BTN_STYLUS2)
+                        elif pan_btn_mode == 'BOTH':
+                            is_pan_btn = (ev.code in (ecodes.BTN_STYLUS, ecodes.BTN_STYLUS2))
+                        else:
+                            is_pan_btn = (ev.code == ecodes.BTN_STYLUS)
+
+                        if is_pan_btn:
+                            btn_pan = bool(ev.value)
+                            with self.lock:
+                                self.btn_pan_down = btn_pan
+                                if not btn_pan:
+                                    self.last_x = None
+                                    self.last_y = None
+                    elif ev.type == ecodes.EV_ABS:
+                        if ev.code == ecodes.ABS_X:
+                            curr_x = float(ev.value)
+                        elif ev.code == ecodes.ABS_Y:
+                            curr_y = float(ev.value)
+                    elif ev.type == ecodes.EV_SYN and ev.code == ecodes.SYN_REPORT:
+                        if btn_pan and curr_x is not None and curr_y is not None:
+                            with self.lock:
+                                if self.last_x is not None and self.last_y is not None:
+                                    dx = (curr_x - self.last_x) / self.x_rng
+                                    dy = (curr_y - self.last_y) / self.y_rng
+                                    self.pan_delta[0] += dx
+                                    self.pan_delta[1] += dy
+                                self.last_x = curr_x
+                                self.last_y = curr_y
+                        else:
+                            with self.lock:
+                                self.last_x = curr_x
+                                self.last_y = curr_y
+            except BlockingIOError:
+                time.sleep(0.003)
+            except Exception:
+                break
+        if self.dev is dev:
+            self.active = False
+
+
+_stylus_tracker = EvdevStylusTracker()
+
+
+class _StylusNavigator:
+    """
+    Consumes stylus tracker pan deltas on Blender's main thread and pans
+    the active 3D viewport smoothly when the upper barrel button is held.
+    """
+    def reset(self):
+        with _stylus_tracker.lock:
+            _stylus_tracker.pan_delta[0] = _stylus_tracker.pan_delta[1] = 0.0
+            _stylus_tracker.btn_pan_down = False
+            _stylus_tracker.last_x = None
+            _stylus_tracker.last_y = None
+
+    def tick(self, context=None, win=None):
+        if not getattr(_stylus_tracker, 'active', False):
+            return False
+
+        with _stylus_tracker.lock:
+            pdx, pdy = _stylus_tracker.pan_delta
+            _stylus_tracker.pan_delta[0] = _stylus_tracker.pan_delta[1] = 0.0
+
+        if pdx == 0.0 and pdy == 0.0:
+            return False
+
+        if context is None:
+            context = bpy.context
+        if win is None:
+            win = context.window
+
+        area = (
+            area_by_ptr(win, getattr(S, 'pen_ptr', 0)) or
+            area_by_ptr(win, S.hover_ptr) or
+            next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None) if win and win.screen else None
+        )
+        if not area or area.type != 'VIEW_3D':
+            return False
+
+        space = area.spaces.active if area.spaces else None
+        rv3d = space.region_3d if space else None
+        reg = window_region(area)
+        if not rv3d or not reg:
+            return False
+
+        W = max(float(win.width), 1.0)
+        H = max(float(win.height), 1.0)
+        dpx = pdx * W
+        dpy = -pdy * H  # evdev y is down, Blender y is up
+
+        rot = rv3d.view_rotation
+        d = rv3d.view_distance
+        sens = SENS_LEVELS[S.sens_idx] if hasattr(S, 'sens_idx') else 1.0
+        lens = max(getattr(space, 'lens', 50.0), 1.0)
+        u = d * VIEW_SENSOR_MM / (lens * max(reg.width, reg.height, 1)) * sens
+        right = rot @ Vector((1.0, 0.0, 0.0))
+        up = rot @ Vector((0.0, 1.0, 0.0))
+
+        rv3d.view_location = rv3d.view_location - (right * dpx + up * dpy) * u
+        area.tag_redraw()
+        return True
+
+
+S.stylus_nav = _StylusNavigator()
+
+
 def apply_touch_transform(context, area, tdx, tdy, sens, is_blender_coords=False):
     """
     Direct hand / touch object transform:

@@ -203,6 +203,7 @@ class _State:
         self.pen_mode = False
         self.pen_ptr = 0
         self.pen_nav = None
+        self.stylus_nav = None
         self.exit_walk_fn = None
         self.exit_tablet_fn = None
         self.exit_cursor_fn = None

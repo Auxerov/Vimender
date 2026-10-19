@@ -1,4 +1,4 @@
 {
-  "commit": "ea782deecdba53442658137752213b2959e54c03",
-  "message": "Instant pinch threshold and sensitivity scaling for Pen Mode"
+  "commit": "f81aeadc35e0cece98b758f78ec09e70c647f94e",
+  "message": "fix(stylus,pen): evdev stylus upper barrel button pan on native wayland and exit pen mode to preview"
 }

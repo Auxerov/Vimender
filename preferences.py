@@ -558,6 +558,25 @@ class VimenderPreferences(bpy.types.AddonPreferences):
         set=_set_arrow_keys_layout
     )
 
+    def _get_stylus_pan_button(self):
+        return str(load_vimender_config().get('stylus_pan_button', 'BTN_STYLUS')).upper()
+
+    def _set_stylus_pan_button(self, val):
+        save_vimender_config({'stylus_pan_button': str(val).upper()})
+
+    stylus_pan_button: bpy.props.EnumProperty(
+        name="Stylus Pan Button",
+        description="Physical barrel button used for Viewport Pan",
+        items=[
+            ('BTN_STYLUS', "Upper Barrel Button (Default)", "Hardware BTN_STYLUS / code 331 pans the 3D viewport"),
+            ('BTN_STYLUS2', "Lower Barrel Button", "Hardware BTN_STYLUS2 / code 332 pans the 3D viewport"),
+            ('BOTH', "Either Barrel Button", "Allow either button to Pan"),
+        ],
+        default='BTN_STYLUS',
+        get=_get_stylus_pan_button,
+        set=_set_stylus_pan_button,
+    )
+
     update_status: bpy.props.StringProperty(
         name="Update Status",
         default="Ready to check",
@@ -644,6 +663,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             box0 = layout.box()
             box0.label(text="Input Devices & Layout", icon='KEYBOARD')
             box0.prop(self, "arrow_keys_layout", text="Arrow Keys Layout (Laptop / No Numpad)")
+            box0.prop(self, "stylus_pan_button", text="Stylus Pan Button")
 
             # 4. Mode Switching Shortcuts
             box = layout.box()
