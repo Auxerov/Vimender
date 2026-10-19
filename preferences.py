@@ -280,16 +280,47 @@ class VimenderPreferences(bpy.types.AddonPreferences):
         if layout is None:
             return
         try:
+            # 1. Prominent Addon Updates Section (Top of Preferences)
+            box_up = layout.box()
+            header_row = box_up.row(align=True)
+            header_row.label(text="Vimender Updates (GitHub)", icon='URL')
+
+            # Prominent Action Buttons
+            btn_row = box_up.row(align=True)
+            btn_row.scale_y = 1.35
+            btn_row.operator("wm.vim_check_update", text="Check for Updates", icon='FILE_REFRESH')
+            btn_row.operator("wm.vim_update_addon", text="Update Now (One-Click)", icon='IMPORT')
+
+            info_col = box_up.column(align=True)
+            curr_sha = getattr(self, "installed_commit", "") or get_installed_git_commit()
+            if curr_sha:
+                info_col.label(text=f"Current Commit: {curr_sha[:7]}", icon='CHECKMARK')
+            else:
+                info_col.label(text="Version: 1.3.0", icon='INFO')
+
+            latest_sha = getattr(self, "latest_commit", "")
+            if latest_sha:
+                msg = getattr(self, "latest_commit_msg", "")
+                suffix = f" ({msg})" if msg else ""
+                info_col.label(text=f"Latest on GitHub: {latest_sha[:7]}{suffix}", icon='IMPORT')
+
+            status_str = getattr(self, "update_status", "Ready to check")
+            info_col.label(text=f"Status: {status_str}", icon='INFO')
+            info_col.label(text="Repo: https://github.com/Auxerov/Vimender.git")
+
+            # 2. Keymap Export / Import
             top_box = layout.box()
             top_row = top_box.row(align=True)
             top_row.operator("wm.vim_export_keymap", text="Export Keymap", icon='EXPORT')
             top_row.operator("wm.vim_import_keymap", text="Import Keymap", icon='IMPORT')
             top_row.operator("wm.vim_reset_keymap", text="Reset Defaults", icon='LOOP_BACK')
 
+            # 3. Input Devices & Layout
             box0 = layout.box()
             box0.label(text="Input Devices & Layout", icon='KEYBOARD')
             box0.prop(self, "arrow_keys_layout", text="Arrow Keys Layout (Laptop / No Numpad)")
 
+            # 4. Mode Switching Shortcuts
             box = layout.box()
             box.label(text="Mode Switching Shortcuts", icon='ARROW_LEFTRIGHT')
             self._draw_shortcut(box, "Mode Search (Alt+Space)", "search_mode")
@@ -300,6 +331,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             self._draw_shortcut(box, "Tablet Mode Toggle (Ctrl+W)", "tablet")
             self._draw_shortcut(box, "Orbit / Pan Mode Toggle (U)", "orbit_pan")
 
+            # 5. Tool & General Shortcuts
             box2 = layout.box()
             box2.label(text="Tool & General Shortcuts", icon='EVENT_F')
             self._draw_shortcut(box2, "General Search (Space)", "search_menu")
@@ -311,33 +343,10 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             self._draw_shortcut(box2, "Persp / Ortho View (Y / Asterisk)", "persp_ortho")
             self._draw_shortcut(box2, "Focus Selected View (Numpad . / I)", "view_selected")
 
+            # 6. General Settings
             box3 = layout.box()
             box3.label(text="General Settings", icon='PREFERENCES')
             box3.prop(self, "auto_start", text="Auto-Start Vimender on Launch")
-
-            box_up = layout.box()
-            box_up.label(text="Addon Updates (GitHub)", icon='URL')
-            col = box_up.column(align=True)
-            col.label(text="Repository: https://github.com/Auxerov/Vimender.git")
-
-            curr_sha = getattr(self, "installed_commit", "") or get_installed_git_commit()
-            if curr_sha:
-                col.label(text=f"Installed Commit: {curr_sha[:7]}", icon='CHECKMARK')
-            else:
-                col.label(text="Version: 1.3.0", icon='INFO')
-
-            latest_sha = getattr(self, "latest_commit", "")
-            if latest_sha:
-                msg = getattr(self, "latest_commit_msg", "")
-                suffix = f" ({msg})" if msg else ""
-                col.label(text=f"Latest Remote: {latest_sha[:7]}{suffix}", icon='IMPORT')
-
-            status_str = getattr(self, "update_status", "Ready to check")
-            col.label(text=f"Status: {status_str}")
-
-            row = box_up.row(align=True)
-            row.operator("wm.vim_check_update", text="Check for Updates", icon='FILE_REFRESH')
-            row.operator("wm.vim_update_addon", text="Update Now", icon='IMPORT')
         except Exception as e:
             layout.label(text=f"Vimender Preferences error: {e}", icon='ERROR')
             print(f"[Vimender] Preferences draw error: {e}")
@@ -629,7 +638,7 @@ def reload_vimender_submodules():
 
 class WM_OT_vim_check_update(bpy.types.Operator):
     bl_idname = "wm.vim_check_update"
-    bl_label = "Check for Updates"
+    bl_label = "Vimender: Check for Updates"
     bl_description = "Check GitHub repository for newer Vimender versions"
 
     def execute(self, context):
@@ -665,8 +674,8 @@ class WM_OT_vim_check_update(bpy.types.Operator):
 
 class WM_OT_vim_update_addon(bpy.types.Operator):
     bl_idname = "wm.vim_update_addon"
-    bl_label = "Update Vimender Now"
-    bl_description = "Pull and apply the latest Vimender release from GitHub"
+    bl_label = "Vimender: Update to Latest Version"
+    bl_description = "Pull and apply the latest Vimender release from GitHub (One-Click)"
 
     def execute(self, context):
         prefs = get_preferences(context)
@@ -688,6 +697,49 @@ class WM_OT_vim_update_addon(bpy.types.Operator):
 
         self.report({'INFO'}, f"Vimender updated successfully! ({len(reloaded)} modules reloaded)")
         return {'FINISHED'}
+
+
+class WM_OT_vim_update_dialog(bpy.types.Operator):
+    bl_idname = "wm.vim_update_dialog"
+    bl_label = "Vimender Update Dialog"
+    bl_description = "Open the Vimender updater dialog"
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=420)
+
+    def draw(self, context):
+        layout = self.layout
+        prefs = get_preferences(context)
+
+        box = layout.box()
+        box.label(text="Vimender GitHub Updater", icon='URL')
+
+        col = box.column(align=True)
+        curr_sha = getattr(prefs, "installed_commit", "") or get_installed_git_commit()
+        if curr_sha:
+            col.label(text=f"Current Commit: {curr_sha[:7]}", icon='CHECKMARK')
+        else:
+            col.label(text="Version: 1.3.0", icon='INFO')
+
+        latest_sha = getattr(prefs, "latest_commit", "")
+        if latest_sha:
+            msg = getattr(prefs, "latest_commit_msg", "")
+            suffix = f" ({msg})" if msg else ""
+            col.label(text=f"Latest on GitHub: {latest_sha[:7]}{suffix}", icon='IMPORT')
+
+        status_str = getattr(prefs, "update_status", "Ready to check")
+        col.label(text=f"Status: {status_str}", icon='INFO')
+        col.label(text="Repo: https://github.com/Auxerov/Vimender.git")
+
+        layout.separator()
+        row = layout.row(align=True)
+        row.scale_y = 1.4
+        row.operator("wm.vim_check_update", text="Check for Updates", icon='FILE_REFRESH')
+        row.operator("wm.vim_update_addon", text="Update Now (One-Click)", icon='IMPORT')
+
+    def execute(self, context):
+        return {'FINISHED'}
+
 
 
 

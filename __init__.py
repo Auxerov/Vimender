@@ -43,7 +43,7 @@ from .preferences import (
     VimenderPreferences, WM_OT_vim_export_keymap,
     WM_OT_vim_import_keymap, WM_OT_vim_reset_keymap,
     WM_OT_vim_check_update, WM_OT_vim_update_addon,
-    repair_corrupted_keymaps
+    WM_OT_vim_update_dialog, repair_corrupted_keymaps
 )
 from .operators import (
     WM_OT_vim_mode_toggle, WM_OT_vim_nudge, WM_OT_vim_set_editor,
@@ -71,6 +71,7 @@ classes = (
     WM_OT_vim_reset_keymap,
     WM_OT_vim_check_update,
     WM_OT_vim_update_addon,
+    WM_OT_vim_update_dialog,
     VIM_MT_editor_more,
     VIEW3D_MT_vim_view_pie,
 )
@@ -108,6 +109,13 @@ def _window_menu_draw(self, context):
     self.layout.separator()
     self.layout.operator(WM_OT_vim_mode_toggle.bl_idname, text="Vimender Mode",
                          icon='CHECKBOX_HLT' if S.active else 'CHECKBOX_DEHLT')
+    self.layout.operator(WM_OT_vim_check_update.bl_idname, text="Vimender: Check for Updates", icon='FILE_REFRESH')
+    self.layout.operator(WM_OT_vim_update_addon.bl_idname, text="Vimender: Update Now", icon='IMPORT')
+
+
+def _view3d_menu_draw(self, context):
+    self.layout.separator()
+    self.layout.operator(WM_OT_vim_update_dialog.bl_idname, text="Vimender: Check Updates...", icon='URL')
 
 
 def register():
@@ -122,6 +130,10 @@ def register():
     except Exception:
         pass
     bpy.types.TOPBAR_MT_window.append(_window_menu_draw)
+    try:
+        bpy.types.VIEW3D_MT_view.append(_view3d_menu_draw)
+    except Exception:
+        pass
     if _on_load_pre not in bpy.app.handlers.load_pre:
         bpy.app.handlers.load_pre.append(_on_load_pre)
     if _on_load_post not in bpy.app.handlers.load_post:
@@ -138,6 +150,10 @@ def unregister():
     unregister_search_key()
     try:
         bpy.types.TOPBAR_MT_window.remove(_window_menu_draw)
+    except Exception:
+        pass
+    try:
+        bpy.types.VIEW3D_MT_view.remove(_view3d_menu_draw)
     except Exception:
         pass
     if _on_load_pre in bpy.app.handlers.load_pre:
