@@ -72,18 +72,18 @@ def disable_touchview_integration(context=None):
         pass
 
 
-# ───────────────────────────── Touch gesture tuning ─────────────────────────────
-TOUCH_SLOP_N = 0.004                  # screen fraction a finger must travel before a drag starts
-PINCH_LATCH = 0.05                    # |ln(distance ratio)| before pinch-zoom engages (~5 %)
-TWIST_LATCH = math.radians(12.0)      # twist angle before two-finger rotate engages
-ORBIT_RAD_PER_WIDTH = math.pi         # one full-width swipe = 180° at sensitivity 1.0
-ORBIT_ABOUT_EYE = False               # False = true orbit around the pivot (iPad style)
-INERTIA_DECAY = 4.5                   # 1/s, higher = stops sooner
-INERTIA_MIN_ORBIT = 0.03              # rad/s
-INERTIA_MIN_PAN = 15.0                # px/s
-INERTIA_MIN_ZOOM = 0.03               # ln-ratio/s
-INERTIA_RELEASE_WINDOW = 0.10         # s: finger must still be moving this recently at lift-off
-VIEW_SENSOR_MM = 36.0                 # Blender's default viewport sensor width
+
+TOUCH_SLOP_N = 0.004
+PINCH_LATCH = 0.05
+TWIST_LATCH = math.radians(12.0)
+ORBIT_RAD_PER_WIDTH = math.pi
+ORBIT_ABOUT_EYE = False
+INERTIA_DECAY = 4.5
+INERTIA_MIN_ORBIT = 0.03
+INERTIA_MIN_PAN = 15.0
+INERTIA_MIN_ZOOM = 0.03
+INERTIA_RELEASE_WINDOW = 0.10
+VIEW_SENSOR_MM = 36.0
 
 
 def _wrap_angle(a):
@@ -118,30 +118,30 @@ class EvdevMultiTouchTracker:
         self.lock = threading.Lock()
 
         self.current_slot = 0
-        self.slots = {}   # slot_id: {'x','y','down','palm'}
+        self.slots = {}
         self.x_min, self.x_rng = 0.0, 4096.0
         self.y_min, self.y_rng = 0.0, 4096.0
 
-        # tap detection
+
         self.touch_start_time = 0.0
         self.touch_max_fingers = 0
         self.touch_moved = False
         self._last_n = 0
         self._reset_tracking()
 
-        # queued for the Blender main thread (guarded by self.lock)
-        self.orbit_delta = [0.0, 0.0]       # normalized
-        self.pan_delta = [0.0, 0.0]         # normalized (midpoint movement)
-        self.zoom_log = 0.0                 # sum of ln(dist_now / dist_prev)
-        self.twist = 0.0                    # radians, clockwise-positive on screen
-        self.transform_delta = [0.0, 0.0]   # RAW device units (legacy transform path)
-        self.mid_n = None                   # latest two-finger midpoint, normalized
+
+        self.orbit_delta = [0.0, 0.0]
+        self.pan_delta = [0.0, 0.0]
+        self.zoom_log = 0.0
+        self.twist = 0.0
+        self.transform_delta = [0.0, 0.0]
+        self.mid_n = None
         self.finger_count = 0
-        self.touch_serial = 0               # increments whenever a new touch starts
+        self.touch_serial = 0
         self.pending_undo = False
         self.pending_redo = False
 
-    # ---- device discovery -------------------------------------------------
+
     @staticmethod
     def _classify(d):
         """'touchscreen' | 'pointer' (touchpad) | 'unknown' | None (not multitouch)."""
@@ -256,7 +256,7 @@ class EvdevMultiTouchTracker:
         self.thread = None
         self.active = False
 
-    # ---- reader thread ----------------------------------------------------
+
     def _read_loop(self, dev, stop_evt):
         while not stop_evt.is_set():
             try:
@@ -292,9 +292,9 @@ class EvdevMultiTouchTracker:
         if self.dev is dev:
             self.active = False
 
-    # ---- gesture state ----------------------------------------------------
+
     def _reset_tracking(self):
-        self.prev_single = None       # (nx, ny, rx, ry)
+        self.prev_single = None
         self.start_n = None
         self.drag_engaged = False
         self.prev_mid_n = None
@@ -341,7 +341,7 @@ class EvdevMultiTouchTracker:
             self.touch_moved = False
         self.touch_max_fingers = max(self.touch_max_fingers, n)
 
-        if n != self._last_n:           # finger count changed: start tracking afresh
+        if n != self._last_n:
             self._reset_tracking()
             self._last_n = n
 
@@ -375,7 +375,7 @@ class EvdevMultiTouchTracker:
             mx, my = (p0['x'] + p1['x']) * 0.5, (p0['y'] + p1['y']) * 0.5
             mid_n = self._norm(mx, my)
             dist = math.hypot(p1['x'] - p0['x'], p1['y'] - p0['y'])
-            angle = math.atan2(p1['y'] - p0['y'], p1['x'] - p0['x'])   # y is down => clockwise-positive
+            angle = math.atan2(p1['y'] - p0['y'], p1['x'] - p0['x'])
             with self.lock:
                 self.mid_n = mid_n
 
@@ -386,6 +386,7 @@ class EvdevMultiTouchTracker:
                 return
 
             if self.prev_mid_n is not None and self.prev_dist and dist > 1.0:
+                is_pen = bool(getattr(S, 'pen_mode', False))
                 dmx, dmy = mid_n[0] - self.prev_mid_n[0], mid_n[1] - self.prev_mid_n[1]
                 dlog = math.log(dist / self.prev_dist)
                 dang = _wrap_angle(angle - self.prev_angle)
@@ -416,7 +417,7 @@ class EvdevMultiTouchTracker:
             self.prev_dist = dist
             self.prev_angle = angle
 
-        else:   # 3+ fingers: no navigation (3-finger tap = redo)
+        else:
             self.prev_single = None
             self.prev_mid_n = None
             self.prev_dist = None
@@ -445,13 +446,13 @@ class _TouchNavigator:
     def _clear_motion(self):
         self.v_yaw = 0.0
         self.v_pitch = 0.0
-        self.v_pan = [0.0, 0.0]       # px/s, region coords (y up)
-        self.v_zoom = 0.0             # ln-ratio per second
+        self.v_pan = [0.0, 0.0]
+        self.v_zoom = 0.0
         self.last_input_t = 0.0
         self.coasting = False
         self._last_t = 0.0
         self._serial = -1
-        self._anchor = (0.0, 0.0)     # last two-finger midpoint, px from region centre
+        self._anchor = (0.0, 0.0)
 
     def reset(self):
         self.last_tap_time = 0.0
@@ -482,14 +483,14 @@ class _TouchNavigator:
             right = rot @ Vector((1.0, 0.0, 0.0))
             eye = rv3d.view_location + (rot @ Vector((0.0, 0.0, d)))
             q_pitch = Quaternion(right, pitch)
-            if up_vec.z > 0.05:                      # turntable: keep the horizon level
+            if up_vec.z > 0.05:
                 q_yaw = Quaternion(Vector((0.0, 0.0, 1.0)), yaw)
                 test_rot = (q_pitch @ rot).normalized()
                 if (test_rot @ Vector((0.0, 1.0, 0.0))).z > 0.02:
                     new_rot = (q_yaw @ test_rot).normalized()
                 else:
                     new_rot = (q_yaw @ rot).normalized()
-            else:                                    # rolled / upside-down: free trackball
+            else:
                 q_yaw = Quaternion(up_vec, yaw)
                 new_rot = (q_yaw @ q_pitch @ rot).normalized()
             rv3d.view_rotation = new_rot
@@ -499,18 +500,18 @@ class _TouchNavigator:
             changed = True
 
         if dpx or dpy or zlog:
-            f = max(0.2, min(5.0, math.exp(-zlog)))      # fingers spread => view_distance shrinks
+            f = max(0.2, min(5.0, math.exp(-zlog)))
             d_new = max(d * f, 0.001)
             f = d_new / d
             lens = max(getattr(space, 'lens', 50.0), 1.0)
-            # world units per screen pixel on the focus plane (same for persp and ortho)
+
             u = d * VIEW_SENSOR_MM / (lens * max(reg.width, reg.height, 1))
             right = rot @ Vector((1.0, 0.0, 0.0))
             up = rot @ Vector((0.0, 1.0, 0.0))
             sx, sy = anchor
             s_cur = (right * sx + up * sy) * u
             s_prev = (right * (sx - dpx) + up * (sy - dpy)) * u
-            # keeps the world point that was under the fingers under the fingers
+
             rv3d.view_location = rv3d.view_location + s_prev - s_cur * f
             rv3d.view_distance = d_new
             changed = True
@@ -572,14 +573,14 @@ class _TouchNavigator:
         dt = min(max(now - self._last_t, 0.001), 0.05) if self._last_t else 0.016
         self._last_t = now
 
-        if serial != self._serial:          # a new touch stops any momentum
+        if serial != self._serial:
             self._serial = serial
             self._stop_inertia()
 
         sens = SENS_LEVELS[S.sens_idx]
         changed = False
 
-        # direct object transform (raw device units, unchanged behaviour)
+
         if abs(tdx) > 0.05 or abs(tdy) > 0.05:
             if apply_touch_transform(context, area, tdx, tdy, sens):
                 changed = True
@@ -591,11 +592,11 @@ class _TouchNavigator:
         W = max(float(win.width), 1.0)
         H = max(float(win.height), 1.0)
 
-        # normalized touch deltas -> radians / pixels
+
         yaw = -odx * ORBIT_RAD_PER_WIDTH * sens
         pitch = -ody * (H / W) * ORBIT_RAD_PER_WIDTH * sens
         dpx = pdx * W * sens
-        dpy = -pdy * H * sens                # evdev y is down, Blender y is up
+        dpy = -pdy * H * sens
         effective_zlog = zlog * 1.5 * sens
         roll = twist if str(load_vimender_config().get('touch_twist', 'ROLL')).upper() != 'OFF' else 0.0
 
@@ -607,16 +608,16 @@ class _TouchNavigator:
         if live:
             self.last_input_t = now
             self.coasting = False
-            k = 0.5   # smooth the release velocity
+            k = 0.5
             self.v_yaw = self.v_yaw * (1 - k) + (yaw / dt) * k
             self.v_pitch = self.v_pitch * (1 - k) + (pitch / dt) * k
             self.v_pan[0] = self.v_pan[0] * (1 - k) + (dpx / dt) * k
             self.v_pan[1] = self.v_pan[1] * (1 - k) + (dpy / dt) * k
-            self.v_zoom = 0.0  # zero zoom inertia on release to match Pen Mode's rock-solid feel
+            self.v_zoom = 0.0
         elif fingers == 0:
             if not self.coasting:
                 if now - self.last_input_t > INERTIA_RELEASE_WINDOW:
-                    self._stop_inertia()         # finger rested before lifting: no flick
+                    self._stop_inertia()
                 else:
                     self.coasting = True
             if self.coasting:
@@ -860,7 +861,7 @@ class _StylusNavigator:
         W = max(float(win.width), 1.0)
         H = max(float(win.height), 1.0)
         dpx = pdx * W
-        dpy = -pdy * H  # evdev y is down, Blender y is up
+        dpy = -pdy * H
 
         rot = rv3d.view_rotation
         d = rv3d.view_distance
@@ -959,7 +960,7 @@ def apply_touch_transform(context, area, tdx, tdy, sens, is_blender_coords=False
             changed = True
 
     else:
-        # Free / View-Plane transform (No specific axis locked)
+
         if mode == 'G':
             speed = 0.00030 * sens * max(0.4, dist * 0.25)
             delta_vec = (cam_right * screen_dx + cam_up * screen_dy) * speed
@@ -1013,11 +1014,11 @@ def start_tablet_transform(mode_id, context=None, area=None, report_fn=None):
             act.select_set(True)
             targets = [act]
 
-    # Save backup of object matrices for 100% accurate Cancel (ESC)
+
     S.tablet_transform_backup = {o: o.matrix_world.copy() for o in targets}
     S.tablet_in_transform = mode_id
     S.tablet_active_transform = mode_id
-    S.tablet_active_axis = None  # Free view-plane by default until an axis is tapped
+    S.tablet_active_axis = None
 
     set_tablet_transform_mode(mode_id, context, area)
     tag_all()
@@ -1198,7 +1199,7 @@ def apply_tablet_view_settings(context=None, target_area=None):
             sp = area.spaces.active
             if hasattr(sp, 'show_region_toolbar'):
                 S.tablet_prev_show_toolbar[area.as_pointer()] = sp.show_region_toolbar
-                sp.show_region_toolbar = False  # Hide default T toolbar
+                sp.show_region_toolbar = False
             if hasattr(sp, 'show_gizmo'):
                 S.tablet_prev_gizmos[area.as_pointer()] = {
                     'show_gizmo': sp.show_gizmo,
@@ -1355,7 +1356,7 @@ def get_tablet_axis_buttons(region, ui):
     gap = int(5 * ui)
     sep_h = int(10 * ui)
 
-    # Compute mode badge bounds
+
     inset = 0
     win = getattr(bpy.context, 'window', None)
     if win and win.screen:
@@ -1382,13 +1383,13 @@ def get_tablet_axis_buttons(region, ui):
     x0 = x1 - tw - 2 * pad
     mode_y1 = 12 * ui + th + 2 * pad
 
-    # Center buttons above mode badge
+
     badge_cx = (x0 + x1) * 0.5
     bx0 = int(badge_cx - bw * 0.5)
     bx1 = bx0 + bw
 
-    # Stack vertically above mode badge:
-    # TWEAK (closest to badge) -> BOX -> [sep -> Z -> Y -> X -> sep -> ESC -> OK (when in transform)]
+
+
     gap_above = int(8 * ui)
     specs = [
         ('TWEAK', 'TWEAK', 'DIRECT', (0.14, 0.20, 0.16, 0.88), (0.22, 0.82, 0.40, 0.96), False),
@@ -1528,7 +1529,7 @@ def handle_tablet_event(op, context, event, win, area):
     t, v = event.type, event.value
     mx, my = event.mouse_x, event.mouse_y
 
-    # Robust area resolution
+
     if not area or not window_region(area):
         area = (
             area_by_ptr(win, S.tablet_ptr) or
@@ -1541,7 +1542,7 @@ def handle_tablet_event(op, context, event, win, area):
 
     prefs = get_preferences(context)
 
-    # 1. Exit Tablet Mode on Ctrl+W, Esc, Enter (when not transforming)
+
     if getattr(S, 'tablet_in_transform', None):
         if check_shortcut(prefs, 'tablet', event, 'W', fallback_ctrl=True) or ((t == 'W' or getattr(event, 'unicode', '') in {'w', 'W'}) and event.ctrl and not (event.alt or event.oskey or event.shift)):
             if v == 'PRESS':
@@ -1561,7 +1562,7 @@ def handle_tablet_event(op, context, event, win, area):
                 set_active_mode('PREVIEW', context, op.report)
                 return {'RUNNING_MODAL'}
 
-    # Direct transition to Walk Mode on Alt+Q
+
     is_walk_shortcut = (
         check_shortcut(prefs, 'walk', event, 'Q', fallback_alt=True) or
         ((t == 'Q' or getattr(event, 'unicode', '') in {'q', 'Q'}) and event.alt and not (event.ctrl or event.oskey or event.shift))
@@ -1577,7 +1578,7 @@ def handle_tablet_event(op, context, event, win, area):
                 op.report({'INFO'}, "Vimender: Walk Mode only available in 3D Viewport")
             return {'RUNNING_MODAL'}
 
-    # Direct transition to Navigation Mode on Ctrl+B
+
     is_nav_shortcut = (
         check_shortcut(prefs, 'nav', event, 'B', fallback_ctrl=True) or
         ((t == 'B' or getattr(event, 'unicode', '') in {'b', 'B'}) and event.ctrl and not (event.alt or event.oskey or event.shift))
@@ -1590,7 +1591,7 @@ def handle_tablet_event(op, context, event, win, area):
             set_active_mode('NAV', context, op.report, target_area=target_a)
             return {'RUNNING_MODAL'}
 
-    # Direct transition to Preview / Orbit-Pan Mode on Ctrl+Y
+
     is_preview_shortcut = (
         check_shortcut(prefs, 'preview', event, 'Y', fallback_ctrl=True) or
         ((t == 'Y' or getattr(event, 'unicode', '') in {'y', 'Y'}) and event.ctrl and not (event.alt or event.oskey or event.shift))
@@ -1602,7 +1603,7 @@ def handle_tablet_event(op, context, event, win, area):
             set_active_mode('ORBIT_PAN', context, op.report)
             return {'RUNNING_MODAL'}
 
-    # Direct transition to Cursor Mode on Ctrl+Numpad5
+
     is_cursor_shortcut = (
         check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) or
         (t == 'NUMPAD_5' and event.ctrl and not (event.alt or event.oskey or event.shift))
@@ -1614,9 +1615,36 @@ def handle_tablet_event(op, context, event, win, area):
             set_active_mode('CURSOR', context, op.report)
             return {'RUNNING_MODAL'}
 
+    is_pen_shortcut = (
+        check_shortcut(prefs, 'pen', event, 'P', fallback_ctrl=True, fallback_alt=True) or
+        ((t == 'P' or getattr(event, 'unicode', '') in {'p', 'P'}) and event.ctrl and event.alt and not (getattr(event, 'oskey', False) or event.shift))
+    )
+    if is_pen_shortcut:
+        if v == 'RELEASE':
+            return {'RUNNING_MODAL'}
+        if v == 'PRESS':
+            target_a = area or area_by_ptr(win, S.hover_ptr) or area_at(win, mx, my) or context.area
+            set_active_mode('PEN', context, op.report, target_area=target_a)
+            return {'RUNNING_MODAL'}
+
+    is_orbit_pan = (
+        check_shortcut(prefs, 'orbit_pan', event, 'U', fallback_ctrl=False) or
+        ((t in {'U', 'P'} or (getattr(event, 'unicode', '') or '').upper() in {'U', 'P'}) and not (event.ctrl or event.alt or getattr(event, 'oskey', False) or event.shift))
+    )
+    if is_orbit_pan and not getattr(S, 'tablet_in_transform', None):
+        if v == 'RELEASE':
+            return {'RUNNING_MODAL'}
+        if v == 'PRESS':
+            key_upper = (getattr(event, 'unicode', '') or t or '').upper()
+            if key_upper == 'P':
+                set_active_mode('PAN', context, op.report)
+            else:
+                set_active_mode('ORBIT_PAN', context, op.report)
+            return {'RUNNING_MODAL'}
+
     ui = ui_scale()
 
-    # 2. Transform keyboard shortcuts (Esc, Enter, X, Y, Z, G, R, S)
+
     if v == 'PRESS':
         if getattr(S, 'tablet_in_transform', None):
             if t in {'ESC'}:
@@ -1658,7 +1686,7 @@ def handle_tablet_event(op, context, event, win, area):
                     set_tablet_select_tool('TWEAK', context, area, op.report)
                     return {'RUNNING_MODAL'}
 
-    # 3. Keep default T toolbar hidden if T is pressed in Tablet Mode
+
     if v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
         key_str = (getattr(event, 'unicode', '') or t or '').upper()
         if key_str == 'T':
@@ -1668,7 +1696,7 @@ def handle_tablet_event(op, context, event, win, area):
             tag_all()
             return {'RUNNING_MODAL'}
 
-    # 4. Sensitivity / Recenter View shortcuts
+
     if v == 'PRESS':
         if (t in {'NUMPAD_PERIOD', 'PERIOD'} or getattr(event, 'unicode', '') == '.') and not (event.ctrl or event.alt or event.oskey):
             if area and reg:
@@ -1689,7 +1717,7 @@ def handle_tablet_event(op, context, event, win, area):
             tag_all()
             return {'RUNNING_MODAL'}
 
-    # 5. Two-finger tap / Right-click -> Cancel Transform or Undo
+
     if t == 'RIGHTMOUSE' and v == 'PRESS':
         if getattr(S, 'tablet_in_transform', None):
             cancel_tablet_transform(context, area, op.report)
@@ -1702,7 +1730,7 @@ def handle_tablet_event(op, context, event, win, area):
         tag_all()
         return {'RUNNING_MODAL'}
 
-    # 5. Multi-touch trackpad gestures (Pan / Zoom)
+
     if t in {'TRACKPADPAN'} and area and reg:
         with context.temp_override(window=win, screen=win.screen, area=area, region=reg):
             try:
@@ -1719,13 +1747,13 @@ def handle_tablet_event(op, context, event, win, area):
                 pass
         return {'RUNNING_MODAL'}
 
-    # 6. Touch in 3D Viewport & Left Tablet GUI
+
     if area and area.type == 'VIEW_3D' and reg:
         rx = mx - reg.x
         ry = my - reg.y
         in_region = (0 <= rx <= reg.width) and (0 <= ry <= reg.height)
         if in_region:
-            # Check GUI button hit across all docks
+
             gui_items = get_tablet_gui_buttons(reg, ui)
             sel_buttons = get_tablet_selection_buttons(reg, ui)
             axis_buttons = get_tablet_axis_buttons(reg, ui)
@@ -1757,7 +1785,7 @@ def handle_tablet_event(op, context, event, win, area):
                 if not b.get('is_sep'):
                     dock_x1 = max(dock_x1, b['x1'] + int(8 * ui))
 
-            # Hit on Bottom-Left Selection Modifier Dock
+
             if hit_sel:
                 if t == 'LEFTMOUSE':
                     if v == 'PRESS':
@@ -1782,7 +1810,7 @@ def handle_tablet_event(op, context, event, win, area):
                 elif t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
                     return {'RUNNING_MODAL'}
 
-            # Hit on Bottom-Right Tools & Axis Selection GUI (vertically above mode badge)
+
             if hit_axis:
                 if t == 'LEFTMOUSE':
                     if v == 'PRESS':
@@ -1809,7 +1837,7 @@ def handle_tablet_event(op, context, event, win, area):
                 elif t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
                     return {'RUNNING_MODAL'}
 
-            # Hit on Upper-Left Transform GUI (acts directly as pressing the key on keyboard!)
+
             if hit_gui:
                 if t == 'LEFTMOUSE':
                     if v == 'PRESS':
@@ -1845,12 +1873,12 @@ def handle_tablet_event(op, context, event, win, area):
                 elif t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
                     return {'RUNNING_MODAL'}
 
-            # Swallow clicks and moves inside the left dock strip
+
             if rx <= dock_x1:
                 if t == 'LEFTMOUSE' or t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
                     return {'RUNNING_MODAL'}
 
-            # Swallow clicks and moves inside the right axis dock
+
             ax_real = [b for b in axis_buttons if not b.get('is_sep')]
             if ax_real:
                 ax_x0 = min(b['x0'] for b in ax_real) - int(6 * ui)
@@ -1861,23 +1889,23 @@ def handle_tablet_event(op, context, event, win, area):
                     if t == 'LEFTMOUSE' or t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
                         return {'RUNNING_MODAL'}
 
-            # Swallow clicks on bottom-right mode badge area
+
             if rx >= (reg.width - int(240 * ui)) and ry <= int(48 * ui):
                 if t == 'LEFTMOUSE' or t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
                     return {'RUNNING_MODAL'}
 
-            # Stylus / Wacom Pen separation in sculpt or paint modes
+
             if getattr(event, 'is_tablet', False) and context.mode in {'SCULPT', 'PAINT_TEXTURE', 'PAINT_WEIGHT', 'PAINT_VERTEX', 'PAINT_GPENCIL'}:
                 return {'PASS_THROUGH'}
 
-            # Blender Native Box Select Mode:
-            # Pass clicks and drags straight through to Blender's native select_box tool!
-            # (Prevents C segfaults, lets Blender draw the dashed box and select elements natively)
+
+
+
             if getattr(S, 'tablet_select_tool', None) == 'BOX' and not getattr(S, 'tablet_in_transform', None):
                 if t in {'LEFTMOUSE', 'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
                     return {'PASS_THROUGH'}
 
-            # Tap selection and drag handling in 3D Viewport
+
             if t == 'LEFTMOUSE':
                 if v == 'PRESS':
                     S.tablet_touch_start = (time.perf_counter(), mx, my)
@@ -1896,7 +1924,7 @@ def handle_tablet_event(op, context, event, win, area):
                                 tag_all()
                                 return {'RUNNING_MODAL'}
 
-                            # CLICK / TAP DETECTED: Select object under tap with active modifier
+
                             rv3d = area.spaces.active.region_3d if area.spaces else None
                             if rv3d and reg:
                                 try:
@@ -1916,7 +1944,7 @@ def handle_tablet_event(op, context, event, win, area):
                                     if hit and hit_obj:
                                         target_obj = hit_obj.original
                                     else:
-                                        # Screen distance fallback for non-mesh objects (Camera, Light, Empty, Curves)
+
                                         best_d = 36.0 * ui
                                         for o in context.visible_objects:
                                             p2d = location_3d_to_region_2d(reg, rv3d, o.matrix_world.translation)
@@ -1967,7 +1995,7 @@ def handle_tablet_event(op, context, event, win, area):
                                                 except Exception:
                                                     pass
                                     else:
-                                        # Normal direct select
+
                                         if target_obj:
                                             for o in context.selected_objects:
                                                 if o != target_obj:
@@ -1993,7 +2021,7 @@ def handle_tablet_event(op, context, event, win, area):
                         S.tablet_touch_dragged = True
 
 
-                # Direct touch/mouse drag object transform
+
                 if S.tablet_touch_dragged and getattr(S, 'tablet_in_transform', None):
                     dx = event.mouse_x - event.mouse_prev_x
                     dy = event.mouse_y - event.mouse_prev_y
@@ -2006,7 +2034,7 @@ def handle_tablet_event(op, context, event, win, area):
                 if _tracker.active or getattr(S, 'tablet_select_tool', None) == 'BOX':
                     return {'RUNNING_MODAL'}
 
-            # Fallback when evdev device permissions are not yet configured:
+
             if not _tracker.active and S.tablet_touch_dragged and not getattr(S, 'tablet_in_transform', None) and getattr(S, 'tablet_select_tool', None) != 'BOX':
                 if (mx >= reg.x + reg.width - 75) or event.ctrl:
                     with context.temp_override(window=win, screen=win.screen, area=area, region=reg):

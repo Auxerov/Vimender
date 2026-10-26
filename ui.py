@@ -150,7 +150,7 @@ def draw_tablet_gui(area, region, ui):
     if not buttons:
         return
 
-    # 1. Left Dock Background Container
+
     pad_x = 4 * ui
     pad_y = 6 * ui
     dock_x0 = min(b['x0'] for b in buttons) - pad_x
@@ -161,11 +161,11 @@ def draw_tablet_gui(area, region, ui):
     _fill(_rect(dock_x0, dock_y0, dock_x1, dock_y1), (0.09, 0.09, 0.11, 0.88))
     _fill(_rect_border(dock_x0, dock_y0, dock_x1, dock_y1, 1.5 * ui), (0.28, 0.28, 0.32, 0.90))
 
-    # 2. Dividers
+
     for d in dividers:
         _fill(_line(d['x0'], d['y'], d['x1'], d['y'], 1.2 * ui), (0.35, 0.35, 0.38, 0.65))
 
-    # 3. Buttons
+
     for b in buttons:
         btn_id = b['id']
         is_act = b['is_active']
@@ -204,7 +204,7 @@ def draw_tablet_gui(area, region, ui):
             tw, th = blf.dimensions(0, b['label'])
             _text(cx - tw * 0.5, cy - th * 0.5, b['label'], (1.0, 1.0, 1.0, 1.0))
 
-    # 4. Top Transform HUD Banner
+
     if getattr(S, 'tablet_in_transform', None):
         tr_id = S.tablet_in_transform
         tr_name = 'MOVE' if tr_id == 'G' else ('ROTATE' if tr_id == 'R' else 'SCALE')
@@ -228,7 +228,7 @@ def draw_tablet_gui(area, region, ui):
         _fill(_rect_border(bx0, by0, bx1, by1, 1.8 * ui), axis_col)
         _text(bcx - btw * 0.5, bcy - bth * 0.5, banner_text, axis_col)
 
-    # 5. Bottom-Left Selection Modifier GUI (Dikeylemesine: SEL, +SHIFT, +CTRL, +ALT)
+
     try:
         from .mode_tablet import get_tablet_selection_buttons
         sel_buttons = get_tablet_selection_buttons(region, ui)
@@ -266,7 +266,7 @@ def draw_tablet_gui(area, region, ui):
             sub_col = (0.15, 0.15, 0.15, 0.95) if is_act else (0.75, 0.75, 0.75, 0.85)
             _text(cx - stw * 0.5, b['y0'] + 6 * ui, b['subtext'], sub_col)
 
-    # 6. Bottom-Right Axis Selection GUI (Vertical layout: X, Y, Z above mode badge)
+
     try:
         from .mode_tablet import get_tablet_axis_buttons
         axis_buttons = get_tablet_axis_buttons(region, ui)
@@ -311,12 +311,12 @@ def draw_tablet_gui(area, region, ui):
                 _text(cx - stw * 0.5, b['y0'] + 5 * ui, b['subtext'], (0.90, 0.90, 0.90, 0.90))
 
             elif btn_id in {'X', 'Y', 'Z'}:
-                # Main Letter
+
                 _font_size(int(13 * ui))
                 tw, th = blf.dimensions(0, b['label'])
                 _text(cx - tw * 0.5, b['y0'] + 19 * ui, b['label'], (1.0, 1.0, 1.0, 1.0))
 
-                # Directional Axis Arrows
+
                 arrow_col = (1.0, 1.0, 1.0, 0.95) if is_act else (
                     (0.95, 0.25, 0.25, 0.95) if btn_id == 'X' else (
                         (0.25, 0.88, 0.35, 0.95) if btn_id == 'Y' else (0.30, 0.60, 1.0, 0.95)
@@ -325,13 +325,13 @@ def draw_tablet_gui(area, region, ui):
                 ay = b['y0'] + 9 * ui
                 alw = 1.6 * ui
                 if btn_id == 'X':
-                    # Red horizontal axis arrow pointing right
+
                     ax0 = cx - 11 * ui
                     ax1 = cx + 11 * ui
                     _fill(_line(ax0, ay, ax1, ay, alw), arrow_col)
                     _fill([(ax1, ay), (ax1 - 5 * ui, ay + 3.5 * ui), (ax1 - 5 * ui, ay - 3.5 * ui)], arrow_col)
                 elif btn_id == 'Y':
-                    # Green diagonal axis arrow pointing up-right
+
                     ax0 = cx - 9 * ui
                     ay0 = ay - 4 * ui
                     ax1 = cx + 9 * ui
@@ -339,7 +339,7 @@ def draw_tablet_gui(area, region, ui):
                     _fill(_line(ax0, ay0, ax1, ay1, alw), arrow_col)
                     _fill([(ax1, ay1), (ax1 - 6 * ui, ay1), (ax1, ay1 - 6 * ui)], arrow_col)
                 elif btn_id == 'Z':
-                    # Blue vertical axis arrow pointing up
+
                     ay0 = ay - 5 * ui
                     ay1 = ay + 6 * ui
                     _fill(_line(cx, ay0, cx, ay1, alw), arrow_col)
@@ -540,7 +540,7 @@ _CONFLICT_PROPS = {
     'PROPORTIONAL_SIZE_UP', 'PROPORTIONAL_SIZE_DOWN',
     'SEGMENTS_UP', 'SEGMENTS_DOWN',
 }
-# Signatures of keymap items WE deactivated (so we only ever re-enable our own).
+
 _DISABLED_KMIS = set()
 
 
@@ -631,6 +631,12 @@ def shutdown():
             pass
         S.tablet_mode = False
         S.tablet_ptr = 0
+    if getattr(S, 'tablet_prev_emulate_3_button', None) is not None:
+        try:
+            bpy.context.preferences.inputs.use_mouse_emulate_3_button = S.tablet_prev_emulate_3_button
+            S.tablet_prev_emulate_3_button = None
+        except Exception:
+            pass
     S.active = False
     S.prefix = False
     S.navigation_mode = False
@@ -695,16 +701,15 @@ class VIM_MT_editor_more(bpy.types.Menu):
 def draw_vim_view_pie(self, context):
     pie = self.layout.menu_pie()
     pie.operator("view3d.view_axis", text="Left (4)", icon='AXIS_SIDE').type = 'LEFT'
-    pie.operator("view3d.view_axis", text="Right (6)", icon='AXIS_SIDE').type = 'RIGHT'
+    pie.operator("view3d.view_axis", text="Right (6 / 3)", icon='AXIS_SIDE').type = 'RIGHT'
     pie.operator("view3d.view_axis", text="Bottom (2)", icon='AXIS_SIDE').type = 'BOTTOM'
-    pie.operator("view3d.view_axis", text="Back (8)", icon='AXIS_SIDE').type = 'BACK'
     pie.operator("view3d.view_axis", text="Top (7)", icon='AXIS_TOP').type = 'TOP'
+    pie.operator("view3d.view_axis", text="Back (8)", icon='AXIS_SIDE').type = 'BACK'
     pie.operator("view3d.view_orbit", text="Opposite (9)").type = 'ORBITRIGHT'
     pie.operator("view3d.view_axis", text="Front (1)", icon='AXIS_FRONT').type = 'FRONT'
-    pie.operator("view3d.view_axis", text="Right (3)", icon='AXIS_SIDE').type = 'RIGHT'
+    pie.operator("view3d.view_camera", text="Camera (0)", icon='CAMERA_DATA')
 
     col = pie.column()
-    col.operator("view3d.view_camera", text="Camera (0)", icon='CAMERA_DATA')
     col.operator("view3d.view_persportho", text="Persp/Ortho (5)")
     col.operator("view3d.view_selected", text="Selected (.)", icon='ZOOM_SELECTED')
     col.operator("view3d.localview", text="Local View (/)")
@@ -728,7 +733,7 @@ def patch_view_pie():
         if hasattr(sv, 'VIEW3D_MT_view_pie'):
             current = getattr(sv.VIEW3D_MT_view_pie, 'draw', None)
             if current is draw_vim_view_pie or getattr(current, '__name__', '') == 'draw_vim_view_pie':
-                return  # already patched (reload); keep the true original
+                return
             _ORIGINAL_VIEW_PIE_DRAW = current
             sv.VIEW3D_MT_view_pie.draw = draw_vim_view_pie
     except Exception:

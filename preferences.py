@@ -38,7 +38,7 @@ def get_installed_git_commit(addon_dir=None):
     if addon_dir is None:
         addon_dir = get_addon_directory()
 
-    # 1. Check version.json (pure python, instant, no git dependency)
+
     try:
         vfile = os.path.join(addon_dir, "version.json")
         if os.path.exists(vfile):
@@ -51,7 +51,7 @@ def get_installed_git_commit(addon_dir=None):
     except Exception:
         pass
 
-    # 2. Check git rev-parse if .git directory exists
+
     try:
         git_dir = os.path.join(addon_dir, ".git")
         if os.path.exists(git_dir):
@@ -77,7 +77,7 @@ def get_remote_git_commit():
     Queries GitHub for the latest commit SHA and description on the main branch.
     First tries 'git ls-remote' (fast and rate-limit free), then falls back to GitHub REST API.
     """
-    # 1. Try git ls-remote first
+
     try:
         res = subprocess.run(
             ["git", "ls-remote", "https://github.com/Auxerov/Vimender.git", "HEAD"],
@@ -92,7 +92,7 @@ def get_remote_git_commit():
     except Exception:
         pass
 
-    # 2. Fallback to GitHub REST API
+
     try:
         req = urllib.request.Request(
             "https://api.github.com/repos/Auxerov/Vimender/commits/main",
@@ -117,7 +117,7 @@ def perform_addon_update():
     global _cached_installed_commit
     addon_dir = get_addon_directory()
 
-    # 1. Direct ZIP download from GitHub
+
     try:
         req = urllib.request.Request(
             "https://github.com/Auxerov/Vimender/archive/refs/heads/main.zip",
@@ -143,7 +143,7 @@ def perform_addon_update():
 
             source_dir = extracted_subdirs[0]
 
-            # Copy all files into addon_dir (skipping touchview or git if any)
+
             for item in os.listdir(source_dir):
                 if item in ("touchview", ".git"):
                     continue
@@ -154,7 +154,7 @@ def perform_addon_update():
                 else:
                     shutil.copy2(s, d)
 
-            # Query GitHub for latest commit hash to write to version.json
+
             remote_sha, msg = get_remote_git_commit()
             if remote_sha:
                 _cached_installed_commit = remote_sha
@@ -169,7 +169,7 @@ def perform_addon_update():
     except Exception as e:
         print(f"[Vimender] Zip download failed, checking git fallback: {e}")
 
-    # 2. Git fallback if git repo exists
+
     git_dir = os.path.join(addon_dir, ".git")
     if os.path.exists(git_dir):
         try:
@@ -577,6 +577,20 @@ class VimenderPreferences(bpy.types.AddonPreferences):
         set=_set_stylus_pan_button,
     )
 
+    def _get_stylus_pen(self):
+        return bool(load_vimender_config().get('stylus_pen', False))
+
+    def _set_stylus_pen(self, val):
+        save_vimender_config({'stylus_pen': bool(val)})
+
+    stylus_pen: bpy.props.BoolProperty(
+        name="Stylus Pen",
+        description="Enable Stylus Pen mode support (automatically enables Emulate 3 Button Mouse in Tablet Mode)",
+        default=False,
+        get=_get_stylus_pen,
+        set=_set_stylus_pen,
+    )
+
     update_status: bpy.props.StringProperty(
         name="Update Status",
         default="Ready to check",
@@ -618,14 +632,14 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             layout = getattr(self, "layout", None)
         if layout is None:
             return
-        # 1. Prominent Addon Updates Section (Top of Preferences)
+
         try:
             ensure_updater_classes_registered()
             box_up = layout.box()
             header_row = box_up.row(align=True)
             header_row.label(text="Vimender Updates (GitHub)", icon='URL')
 
-            # Prominent Action Buttons
+
             btn_row = box_up.row(align=True)
             btn_row.scale_y = 1.35
             btn_row.operator("wm.vim_check_update", text="Check for Updates", icon='FILE_REFRESH')
@@ -652,20 +666,21 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             box_up.label(text=f"Updater note: {e}", icon='INFO')
 
         try:
-            # 2. Keymap Export / Import
+
             top_box = layout.box()
             top_row = top_box.row(align=True)
             top_row.operator("wm.vim_export_keymap", text="Export Keymap", icon='EXPORT')
             top_row.operator("wm.vim_import_keymap", text="Import Keymap", icon='IMPORT')
             top_row.operator("wm.vim_reset_keymap", text="Reset Defaults", icon='LOOP_BACK')
 
-            # 3. Input Devices & Layout
+
             box0 = layout.box()
             box0.label(text="Input Devices & Layout", icon='KEYBOARD')
             box0.prop(self, "arrow_keys_layout", text="Arrow Keys Layout (Laptop / No Numpad)")
+            box0.prop(self, "stylus_pen", text="Stylus Pen (Emulate 3 Button Mouse in Tablet Mode)")
             box0.prop(self, "stylus_pan_button", text="Stylus Pan Button")
 
-            # 4. Mode Switching Shortcuts
+
             box = layout.box()
             box.label(text="Mode Switching Shortcuts", icon='ARROW_LEFTRIGHT')
             self._draw_shortcut(box, "Mode Search (AltGr+Space)", "search_mode")
@@ -677,7 +692,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             self._draw_shortcut(box, "Tablet Mode Toggle (Ctrl+W)", "tablet")
             self._draw_shortcut(box, "Orbit / Pan Mode Toggle (U)", "orbit_pan")
 
-            # 5. Tool & General Shortcuts
+
             box2 = layout.box()
             box2.label(text="Tool & General Shortcuts", icon='EVENT_F')
             self._draw_shortcut(box2, "General Search (Space)", "search_menu")
@@ -689,7 +704,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             self._draw_shortcut(box2, "Persp / Ortho View (Y / Asterisk)", "persp_ortho")
             self._draw_shortcut(box2, "Focus Selected View (Numpad . / I)", "view_selected")
 
-            # 6. General Settings
+
             box3 = layout.box()
             box3.label(text="General Settings", icon='PREFERENCES')
             box3.prop(self, "auto_start", text="Auto-Start Vimender on Launch")
@@ -726,6 +741,7 @@ class WM_OT_vim_export_keymap(bpy.types.Operator, ExportHelper):
             "version": (1, 3, 0),
             "keymaps": {},
             "arrow_keys_layout": bool(getattr(prefs, 'arrow_keys_layout', False)),
+            "stylus_pen": bool(getattr(prefs, 'stylus_pen', False)),
             "auto_start": bool(getattr(prefs, 'auto_start', False)),
         }
         for prefix, label, def_k, def_c, def_s, def_a in KEY_PREFIXES:
@@ -790,6 +806,8 @@ class WM_OT_vim_import_keymap(bpy.types.Operator, ImportHelper):
                         setattr(prefs, f"alt_{prefix}", bool(entry["alt"]))
             if "arrow_keys_layout" in data:
                 prefs.arrow_keys_layout = bool(data["arrow_keys_layout"])
+            if "stylus_pen" in data:
+                prefs.stylus_pen = bool(data["stylus_pen"])
             if "auto_start" in data:
                 prefs.auto_start = bool(data["auto_start"])
             save_keymaps_to_config(prefs)

@@ -673,9 +673,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             elif S.cursor_mode:
                 txt = f"Vimender: CURSOR MODE [{S.cursor_plane}] | HJKL: Move | TAB: Plane | 0: Origin | S: Snap | Esc: Exit"
             elif S.preview_mode:
-                txt = "Vimender: PREVIEW MODE"
+                txt = "Vimender: PREVIEW MODE | F: Hint | C: Box | U: Orbit | P: Pan | Ctrl+Y: Orbit/Pan"
             elif S.navigation_mode or S.workspace_nav:
-                txt = "Vimender: NAVIGATION MODE"
+                txt = "Vimender: NAVIGATION MODE | HJKL: Move focus | Alt+HJKL: Workspace | Tab: Maximize | Esc: Exit"
             elif S.mode == 'HINT':
                 txt = "Vimender: HINT MODE"
             elif S.mode in {'BOX1', 'BOX2'}:
@@ -683,9 +683,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             elif S.prefix:
                 txt = "Vimender: PREFIX"
             elif S.nav_mode == 'PAN':
-                txt = "Vimender: PAN MODE"
+                txt = "Vimender: PAN MODE | HJKL: Pan (Shift: Fast) | N/M: Zoom | U: Orbit | F: Hint | C: Box | Esc/Ctrl+Y: Preview"
             else:
-                txt = "Vimender: ORBIT MODE"
+                txt = "Vimender: ORBIT MODE | HJKL: Orbit (Shift: Pan) | N/M: Zoom | U/P: Pan | F: Hint | C: Box | Esc/Ctrl+Y: Preview"
             context.workspace.status_text_set(txt)
         except Exception:
             pass
@@ -909,7 +909,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         t, v = event.type, event.value
 
         if t == 'WINDOW_DEACTIVATE':
-            # Focus lost: RELEASE events will never arrive, so drop held-key state.
+
             release_all_held()
             return {'PASS_THROUGH'}
 
@@ -1067,6 +1067,15 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     if getattr(context, 'region_popup', None) is not None:
                         send_fake_escape()
                     _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_axis, type='LEFT')
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+
+                if (t in {'SIX', 'NUMPAD_6'} or event.unicode == '6') and not (event.ctrl or event.alt or event.oskey or event.shift):
+                    S.view_pie_active = False
+                    S.pie_active = False
+                    if getattr(context, 'region_popup', None) is not None:
+                        send_fake_escape()
+                    _exec_view3d_op(context, win, v3d, bpy.ops.view3d.view_axis, type='RIGHT')
                     tag_all()
                     return {'RUNNING_MODAL'}
 
@@ -1283,6 +1292,28 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 else:
                     target_a = area or area_by_ptr(win, S.hover_ptr) or area_at(win, mx, my) or context.area
                     set_active_mode('PEN', context, self.report, target_area=target_a)
+                return {'RUNNING_MODAL'}
+
+        is_plain_orbit_pan = (
+            check_shortcut(prefs, 'orbit_pan', event, 'U', fallback_ctrl=False) or
+            ((t in {'U', 'P'} or (event.unicode or '').upper() in {'U', 'P'}) and not (event.ctrl or event.alt or event.oskey or event.shift))
+        )
+        if is_plain_orbit_pan and not (area and area.type in PASS_KEYS_IN) and not transform_active(win) and not is_blender_modal_active(win):
+            if v == 'RELEASE':
+                return {'RUNNING_MODAL'}
+            if v == 'PRESS':
+                key_upper = (event.unicode or t or '').upper()
+                if key_upper == 'P':
+                    if S.nav_mode == 'PAN' and not S.preview_mode and not S.walk_mode and not S.tablet_mode and not S.cursor_mode and not S.navigation_mode:
+                        set_active_mode('ORBIT', context, self.report)
+                    else:
+                        set_active_mode('PAN', context, self.report)
+                else:
+                    if S.preview_mode or S.walk_mode or S.tablet_mode or S.cursor_mode or S.navigation_mode or getattr(S, 'pen_mode', False):
+                        set_active_mode('ORBIT_PAN', context, self.report)
+                    else:
+                        new_m = 'PAN' if S.nav_mode == 'ORBIT' else 'ORBIT'
+                        set_active_mode(new_m, context, self.report)
                 return {'RUNNING_MODAL'}
 
         if ((t == 'SPACE' and is_altgr_pressed(event) and event.shift) or
@@ -2365,7 +2396,7 @@ class WM_OT_vim_close_search(bpy.types.Operator):
 
 
 def register_search_key():
-    unregister_search_key()  # avoid stacking duplicate items on every file load
+    unregister_search_key()
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.addon
     if kc is None:

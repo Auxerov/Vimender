@@ -112,7 +112,7 @@ class _SmoothNavigator:
             if rv3d is None:
                 return False
 
-            if rv3d.view_perspective == 'CAMERA' and (math.hypot(self.vx, self.vy) > 0.015 or abs(self.vz) > 0.01):
+            if rv3d.view_perspective == 'CAMERA' and not getattr(area.spaces.active, 'lock_camera', False) and (math.hypot(self.vx, self.vy) > 0.015 or abs(self.vz) > 0.01):
                 rv3d.view_perspective = 'PERSP'
 
             is_pan = (S.nav_mode == 'PAN') or self.shift
@@ -120,6 +120,8 @@ class _SmoothNavigator:
             if is_pan and (self.vx != 0.0 or self.vy != 0.0):
                 dist = max(rv3d.view_distance, 0.05)
                 spd = PAN_MAX_SPEED * sens * dist
+                if self.shift and S.nav_mode == 'PAN':
+                    spd *= 2.5
                 right = rv3d.view_rotation @ Vector((1.0, 0.0, 0.0))
                 up = rv3d.view_rotation @ Vector((0.0, 1.0, 0.0))
                 rv3d.view_location = rv3d.view_location + (right * (self.vx * spd * dt) + up * (self.vy * spd * dt))
@@ -131,7 +133,12 @@ class _SmoothNavigator:
                 q_yaw = Quaternion(Vector((0.0, 0.0, 1.0)), yaw)
                 right_axis = rv3d.view_rotation @ Vector((1.0, 0.0, 0.0))
                 q_pitch = Quaternion(right_axis, pitch)
-                rv3d.view_rotation = (q_yaw @ q_pitch @ rv3d.view_rotation).normalized()
+                test_pitch_rot = (q_pitch @ rv3d.view_rotation).normalized()
+                up_z = (test_pitch_rot @ Vector((0.0, 1.0, 0.0))).z
+                if up_z > 0.01:
+                    rv3d.view_rotation = (q_yaw @ test_pitch_rot).normalized()
+                else:
+                    rv3d.view_rotation = (q_yaw @ rv3d.view_rotation).normalized()
                 moved = True
 
             if abs(self.vz) > 0.001:
@@ -523,12 +530,14 @@ def handle_orbit_pan_event(op, context, event, win, area):
     prefs = get_preferences(context)
     use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
 
+    if t in {'ESC', 'RET', 'NUMPAD_ENTER'} and v == 'PRESS':
+        set_active_mode('PREVIEW', context, op.report)
+        return {'RUNNING_MODAL'}
+
     if not S.navigation_mode and not S.cursor_mode and not S.mode:
         is_pie_trigger = False
         if v == 'PRESS':
             if t in {'Z', 'ACCENT_GRAVE', 'TILDE', 'Q'} and not (event.ctrl or event.alt or event.oskey):
-                is_pie_trigger = True
-            elif t == 'W' and event.ctrl and not (event.alt or event.oskey):
                 is_pie_trigger = True
             elif t == 'TAB' and event.ctrl and not (event.alt or event.oskey):
                 is_pie_trigger = True
@@ -666,9 +675,13 @@ def handle_orbit_pan_event(op, context, event, win, area):
     if S.prefix:
         return op._modal_prefix(context, event, win, area)
 
-    if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS'} or (use_arrow_layout and (t in {'PLUS', 'MINUS', 'EQUAL'} or event.unicode in {'+', '-'}))) and event.ctrl and not (area and area.type in PASS_KEYS_IN):
+    if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL'} or event.unicode in {'+', '-'}) and event.ctrl and not (area and area.type in PASS_KEYS_IN):
         if v == 'PRESS':
             change_sens(1 if (t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL'} or event.unicode == '+') else -1)
+            sens_val = SENS_LEVELS[S.sens_idx]
+            op.report({'INFO'}, f"Vimender: Sensitivity {sens_val:.2f}x")
+            op._set_status(context)
+            tag_all()
         return {'RUNNING_MODAL'}
 
     if area and area.type == 'OUTLINER' and not (event.ctrl or event.alt or event.oskey):
@@ -729,11 +742,13 @@ def handle_orbit_pan_event(op, context, event, win, area):
     if t in {'NUMPAD_8', 'NUMPAD_2', 'NUMPAD_4', 'NUMPAD_6', 'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW'}:
         if not (event.ctrl or event.alt or event.oskey):
             nav_key = t
+        elif v == 'RELEASE' and t in S.nav.held:
+            nav_key = t
     elif t in {'K', 'J', 'H', 'L'} or ((event.unicode or "").upper() in {'K', 'J', 'H', 'L'}):
         mapped = t if t in {'K', 'J', 'H', 'L'} else (event.unicode or "").upper()
         if not (event.ctrl or event.alt or event.oskey):
             nav_key = mapped
-        elif v == 'RELEASE' and mapped in S.nav.held:
+        elif v == 'RELEASE' and (mapped in S.nav.held or t in S.nav.held):
             nav_key = mapped
 
     if nav_key and not (area and area.type in PASS_KEYS_IN) and not transform_active(win):

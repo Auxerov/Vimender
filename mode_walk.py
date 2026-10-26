@@ -167,8 +167,8 @@ class _SmoothWalker:
 
 S.smooth_walker = _SmoothWalker()
 
-# event.unicode is empty on RELEASE, so remember which logical key a physical key
-# was mapped to on PRESS; otherwise unicode-matched keys would never be released.
+
+
 _PRESS_ALIAS = {}
 
 def enter_walk_mode(context, area, report_fn=None):
@@ -188,12 +188,14 @@ def handle_walk_event(op, context, event, win, area):
         exit_walk_mode(context, op.report)
         return {'RUNNING_MODAL'}
 
-    if t in MOUSE_CANCEL and v == 'PRESS':
+    if t in {'LEFTMOUSE', 'RIGHTMOUSE'} and v == 'PRESS':
         exit_walk_mode(context, op.report)
         return {'RUNNING_MODAL'}
 
-    # Allow global mode transition shortcuts (Alt+Q, Ctrl+B, Ctrl+Y, Ctrl+W, Ctrl+Num5, etc.) to pass through
     if event.ctrl or event.alt or getattr(event, 'oskey', False):
+        return {'PASS_THROUGH'}
+
+    if t in {'U', 'P', 'NUMPAD_5'} or (event.unicode or '').upper() in {'U', 'P'}:
         return {'PASS_THROUGH'}
 
     WALK_MOVE_KEYS = {'W', 'S', 'A', 'D', 'Q', 'E'}
@@ -223,14 +225,14 @@ def handle_walk_event(op, context, event, win, area):
         return {'RUNNING_MODAL'}
 
     is_sens_key = (
-        t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL', 'PAGE_UP', 'PAGE_DOWN'} or
+        t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL', 'PAGE_UP', 'PAGE_DOWN', 'WHEELUPMOUSE', 'WHEELDOWNMOUSE'} or
         (t in {'N', 'M'} or (event.unicode or '').upper() in {'N', 'M'}) or
         (event.unicode in {'+', '-'} and not (event.alt or event.oskey))
     ) and not (event.ctrl or event.alt or event.oskey)
 
     if is_sens_key and v == 'PRESS':
         is_up = (
-            t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL', 'PAGE_UP', 'N'} or
+            t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL', 'PAGE_UP', 'N', 'WHEELUPMOUSE'} or
             (event.unicode or '').upper() in {'+', 'N'}
         )
         delta = 1 if is_up else -1

@@ -1,4 +1,4 @@
 {
-  "commit": "0b6f76f7f6fbc393ba0818c7ba2818c0e666a7b7",
-  "message": "feat(nav,tablet): rebind search mode to AltGr+Space and port instant pinch zoom to tablet mode"
+  "commit": "HEAD",
+  "message": "fix(core): resolve mode transitions, preview/orbit/pan navigation, and tablet stylus settings"
 }

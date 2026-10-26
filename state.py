@@ -199,6 +199,7 @@ class _State:
         self.tablet_select_tool = 'TWEAK'
         self.tablet_prev_show_toolbar = {}
         self.tablet_prev_gizmos = {}
+        self.tablet_prev_emulate_3_button = None
         self.preview_mode = True
         self.pen_mode = False
         self.pen_ptr = 0
@@ -938,6 +939,12 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         if getattr(S, 'touch_nav', None):
             S.touch_nav.reset()
         try:
+            if getattr(S, 'tablet_prev_emulate_3_button', None) is not None:
+                context.preferences.inputs.use_mouse_emulate_3_button = S.tablet_prev_emulate_3_button
+                S.tablet_prev_emulate_3_button = None
+        except Exception:
+            pass
+        try:
             from .mode_tablet import disable_touchview_integration, _tracker, restore_tablet_view_settings
             disable_touchview_integration(context)
             restore_tablet_view_settings(context)
@@ -1001,6 +1008,17 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
             S.tablet_ptr = target_area.as_pointer()
         if getattr(S, 'touch_nav', None):
             S.touch_nav.reset()
+        try:
+            prefs = get_preferences(context)
+            cfg = load_vimender_config()
+            use_stylus = bool(getattr(prefs, 'stylus_pen', False)) or bool(cfg.get('stylus_pen', False))
+            if use_stylus:
+                inputs = context.preferences.inputs
+                if getattr(S, 'tablet_prev_emulate_3_button', None) is None:
+                    S.tablet_prev_emulate_3_button = inputs.use_mouse_emulate_3_button
+                inputs.use_mouse_emulate_3_button = True
+        except Exception:
+            pass
         try:
             from .mode_tablet import enable_touchview_integration, _tracker, apply_tablet_view_settings
             enable_touchview_integration(context)
@@ -1074,7 +1092,10 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         if report_fn:
             report_fn({'INFO'}, f"Vimender: {S.nav_mode} MODE")
         try:
-            context.workspace.status_text_set(f"Vimender: {S.nav_mode} MODE | U/P/Num5: Toggle | F: Hint | C: Box | Ctrl+Y: Preview")
+            if S.nav_mode == 'PAN':
+                context.workspace.status_text_set("Vimender: PAN MODE | HJKL: Pan (Shift: Fast) | N/M: Zoom | U: Orbit | F: Hint | C: Box | Esc/Ctrl+Y: Preview")
+            else:
+                context.workspace.status_text_set("Vimender: ORBIT MODE | HJKL: Orbit (Shift: Pan) | N/M: Zoom | U/P: Pan | F: Hint | C: Box | Esc/Ctrl+Y: Preview")
         except Exception:
             pass
 
@@ -1083,7 +1104,7 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         if report_fn:
             report_fn({'INFO'}, "Vimender: PREVIEW MODE")
         try:
-            context.workspace.status_text_set("Vimender: PREVIEW MODE")
+            context.workspace.status_text_set("Vimender: PREVIEW MODE | F: Hint | C: Box | U: Orbit | P: Pan | Ctrl+Y: Orbit/Pan")
         except Exception:
             pass
 
