@@ -1,4 +1,4 @@
 {
-  "commit": "HEAD",
+  "commit": "4694c206a5eb2a8c228b253982d0ac44fbba7708",
   "message": "fix(core): resolve mode transitions, preview/orbit/pan navigation, and tablet stylus settings"
 }
