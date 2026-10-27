@@ -763,12 +763,16 @@ def save_vimender_config(data: dict):
     try:
         p = get_config_path()
         existing = {}
-        if os.path.exists(p):
+        if os.path.exists(p) and os.path.getsize(p) > 0:
             with open(p, 'r', encoding='utf-8') as f:
-                existing = json.load(f)
+                content = f.read().strip()
+                if content:
+                    existing = json.loads(content)
         existing.update(data)
-        with open(p, 'w', encoding='utf-8') as f:
+        tmp_p = p + '.tmp'
+        with open(tmp_p, 'w', encoding='utf-8') as f:
             json.dump(existing, f, indent=2)
+        os.replace(tmp_p, p)
     except Exception as e:
         print(f"[Vimender] Config save error: {e}")
 
@@ -776,9 +780,11 @@ def save_vimender_config(data: dict):
 def load_vimender_config() -> dict:
     try:
         p = get_config_path()
-        if os.path.exists(p):
+        if os.path.exists(p) and os.path.getsize(p) > 0:
             with open(p, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                content = f.read().strip()
+                if content:
+                    return json.loads(content)
     except Exception as e:
         print(f"[Vimender] Config read error: {e}")
     return {}
