@@ -1095,7 +1095,7 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
             if S.nav_mode == 'PAN':
                 context.workspace.status_text_set("Vimender: PAN MODE | HJKL: Pan (Shift: Fast) | N/M: Zoom | U: Orbit | F: Hint | C: Box | Esc/Ctrl+Y: Preview")
             else:
-                context.workspace.status_text_set("Vimender: ORBIT MODE | HJKL: Orbit (Shift: Pan) | N/M: Zoom | U/P: Pan | F: Hint | C: Box | Esc/Ctrl+Y: Preview")
+                context.workspace.status_text_set("Vimender: ORBIT MODE | HJKL: Orbit (Shift: Pan) | N/M: Zoom | P: Pan | F: Hint | C: Box | Esc/Ctrl+Y: Preview")
         except Exception:
             pass
 
@@ -1104,7 +1104,7 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         if report_fn:
             report_fn({'INFO'}, "Vimender: PREVIEW MODE")
         try:
-            context.workspace.status_text_set("Vimender: PREVIEW MODE | F: Hint | C: Box | U: Orbit | P: Pan | Ctrl+Y: Orbit/Pan")
+            context.workspace.status_text_set("Vimender: PREVIEW MODE | F: Hint | C: Box | Ctrl+Y: Orbit/Pan")
         except Exception:
             pass
 

@@ -1629,17 +1629,13 @@ def handle_tablet_event(op, context, event, win, area):
 
     is_orbit_pan = (
         check_shortcut(prefs, 'orbit_pan', event, 'U', fallback_ctrl=False) or
-        ((t in {'U', 'P'} or (getattr(event, 'unicode', '') or '').upper() in {'U', 'P'}) and not (event.ctrl or event.alt or getattr(event, 'oskey', False) or event.shift))
+        ((t == 'U' or (getattr(event, 'unicode', '') or '').upper() == 'U') and not (event.ctrl or event.alt or getattr(event, 'oskey', False) or event.shift))
     )
     if is_orbit_pan and not getattr(S, 'tablet_in_transform', None):
         if v == 'RELEASE':
             return {'RUNNING_MODAL'}
         if v == 'PRESS':
-            key_upper = (getattr(event, 'unicode', '') or t or '').upper()
-            if key_upper == 'P':
-                set_active_mode('PAN', context, op.report)
-            else:
-                set_active_mode('ORBIT_PAN', context, op.report)
+            set_active_mode('ORBIT_PAN', context, op.report)
             return {'RUNNING_MODAL'}
 
     ui = ui_scale()

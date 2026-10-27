@@ -238,7 +238,7 @@ def handle_cursor_event(op, context, event, win, area):
             print(f"[Vimender] search_mode error: {e}")
         return {'RUNNING_MODAL'}
 
-    if (t in {'TAB', 'NUMPAD_5'} or (t == 'P' and not (event.ctrl or event.alt or event.oskey))) and v == 'PRESS':
+    if t in {'TAB', 'NUMPAD_5'} and v == 'PRESS':
         planes = ('XY', 'VIEW', 'XZ', 'YZ')
         idx = (planes.index(S.cursor_plane) + 1) % len(planes) if S.cursor_plane in planes else 0
         S.cursor_plane = planes[idx]

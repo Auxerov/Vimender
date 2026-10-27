@@ -710,7 +710,13 @@ def handle_orbit_pan_event(op, context, event, win, area):
     )
     if is_orbit_pan_toggle and not (area and area.type in PASS_KEYS_IN):
         if v == 'PRESS':
-            S.nav_mode = 'PAN' if S.nav_mode == 'ORBIT' else 'ORBIT'
+            key_upper = (event.unicode or t or '').upper()
+            if key_upper == 'P':
+                S.nav_mode = 'PAN' if S.nav_mode == 'ORBIT' else 'ORBIT'
+            elif key_upper == 'U':
+                S.nav_mode = 'ORBIT' if S.nav_mode == 'PAN' else 'PAN'
+            else:
+                S.nav_mode = 'PAN' if S.nav_mode == 'ORBIT' else 'ORBIT'
             op.report({'INFO'}, f"Vimender: {S.nav_mode} MODE")
             op._set_status(context)
             if area:
