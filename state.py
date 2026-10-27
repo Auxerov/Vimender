@@ -357,7 +357,11 @@ def focusable_areas(win):
 
 
 def area_at(win, mx, my):
+    if not win or not getattr(win, 'screen', None):
+        return None
     for a in win.screen.areas:
+        if a.type in {'TOPBAR', 'STATUSBAR'}:
+            continue
         if a.x <= mx < a.x + a.width and a.y <= my < a.y + a.height:
             return a
     return None
@@ -1101,10 +1105,19 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
 
     else:
         S.preview_mode = True
+        win = getattr(context, 'window', None)
+        if target_area:
+            S.hover_ptr = target_area.as_pointer()
+        elif win and getattr(win, 'screen', None):
+            cur_a = area_by_ptr(win, S.hover_ptr)
+            if not cur_a or cur_a.type not in {'VIEW_3D', 'IMAGE_EDITOR', 'NODE_EDITOR'}:
+                v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None)
+                if v3d:
+                    S.hover_ptr = v3d.as_pointer()
         if report_fn:
             report_fn({'INFO'}, "Vimender: PREVIEW MODE")
         try:
-            context.workspace.status_text_set("Vimender: PREVIEW MODE | F: Hint | C: Box | Ctrl+Y: Orbit/Pan")
+            context.workspace.status_text_set("Vimender: PREVIEW MODE | Ctrl+Y: Orbit/Pan")
         except Exception:
             pass
 

@@ -16,29 +16,6 @@ def handle_preview_event(op, context, event, win, area):
     t, v = event.type, event.value
     prefs = get_preferences(context)
 
-    if check_shortcut(prefs, 'hint_select', event, 'F', fallback_ctrl=False, allow_shift_alt_extend=True) and v == 'PRESS':
-        target_area = area or area_at(win, event.mouse_x, event.mouse_y) or area_by_ptr(win, S.hover_ptr) or context.area
-        if not target_area or target_area.type != 'VIEW_3D':
-            target_area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), context.area) if (win and win.screen) else context.area
-        if target_area and target_area.type == 'VIEW_3D':
-            if event.alt:
-                action = 'ALT'
-            elif event.shift:
-                action = 'EXTEND'
-            else:
-                action = 'NORMAL'
-            op._start_hint(context, win, target_area, False, action, event.mouse_x, event.mouse_y)
-            return {'RUNNING_MODAL'}
-
-    if check_shortcut(prefs, 'box_select', event, 'C', fallback_ctrl=False, allow_shift_alt_extend=True) and v == 'PRESS':
-        target_area = area or area_at(win, event.mouse_x, event.mouse_y) or area_by_ptr(win, S.hover_ptr) or context.area
-        if not target_area or target_area.type != 'VIEW_3D':
-            target_area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), context.area) if (win and win.screen) else context.area
-        if target_area and target_area.type == 'VIEW_3D':
-            action = 'EXTEND' if event.shift else 'NORMAL'
-            op._start_hint(context, win, target_area, True, action, event.mouse_x, event.mouse_y)
-            return {'RUNNING_MODAL'}
-
     use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
     if use_arrow_layout and not is_edit_mode(context):
         target_v3d = area or area_at(win, event.mouse_x, event.mouse_y) or area_by_ptr(win, S.hover_ptr) or context.area

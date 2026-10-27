@@ -360,7 +360,7 @@ def draw_tablet_gui(area, region, ui):
 def draw_cb():
     ctx = bpy.context
     area, region = ctx.area, ctx.region
-    if not S.active or area is None or region is None:
+    if not S.active or area is None or region is None or area.type in {'TOPBAR', 'STATUSBAR'}:
         return
     ptr = area.as_pointer()
     active_ptr = S.hint_ptr if S.mode else (
@@ -373,7 +373,9 @@ def draw_cb():
     if not active_ptr:
         win = ctx.window
         if win and win.screen:
-            v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), win.screen.areas[0] if win.screen.areas else None)
+            v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None)
+            if not v3d:
+                v3d = next((a for a in win.screen.areas if a.type not in {'TOPBAR', 'STATUSBAR'}), None)
             if v3d:
                 S.hover_ptr = v3d.as_pointer()
                 active_ptr = S.hover_ptr

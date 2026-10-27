@@ -596,16 +596,12 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         win = context.window
         v3d = None
         if win and win.screen:
-            if context.area and context.area.type == 'VIEW_3D':
-                v3d = context.area
-            else:
-                v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), win.screen.areas[0] if win.screen.areas else None)
-        if S.hover_ptr:
-            old_a = area_by_ptr(win, S.hover_ptr)
-            if not old_a:
-                S.hover_ptr = v3d.as_pointer() if v3d else 0
-        else:
-            S.hover_ptr = v3d.as_pointer() if v3d else 0
+            v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None)
+            if not v3d:
+                v3d = next((a for a in win.screen.areas if a.type not in {'TOPBAR', 'STATUSBAR'}), None)
+            if not v3d and win.screen.areas:
+                v3d = win.screen.areas[0]
+        S.hover_ptr = v3d.as_pointer() if v3d else 0
         S.prefix = False
         S.nudge_on = False
         S.navigation_mode = False
@@ -670,7 +666,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             elif S.cursor_mode:
                 txt = f"Vimender: CURSOR MODE [{S.cursor_plane}] | HJKL: Move | TAB: Plane | 0: Origin | S: Snap | Esc: Exit"
             elif S.preview_mode:
-                txt = "Vimender: PREVIEW MODE | F: Hint | C: Box | Ctrl+Y: Orbit/Pan"
+                txt = "Vimender: PREVIEW MODE | Ctrl+Y: Orbit/Pan"
             elif S.navigation_mode or S.workspace_nav:
                 txt = "Vimender: NAVIGATION MODE | HJKL: Move focus | Alt+HJKL: Workspace | Tab: Maximize | Esc: Exit"
             elif S.mode == 'HINT':
@@ -946,8 +942,10 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
         mx, my = event.mouse_x, event.mouse_y
         area = area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
+        if area and area.type in {'TOPBAR', 'STATUSBAR'}:
+            area = area_by_ptr(win, S.hover_ptr) or (next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None) if win and win.screen else None)
         ptr = area.as_pointer() if area else 0
-        if ptr != S.hover_ptr and not S.mode:
+        if ptr and ptr != S.hover_ptr and not S.mode:
             old = area_by_ptr(win, S.hover_ptr)
             S.hover_ptr = ptr
             if S.nav:
@@ -1321,26 +1319,43 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             return {'RUNNING_MODAL'}
 
         anim_editors = {'DOPESHEET_EDITOR', 'NLA_EDITOR', 'GRAPH_EDITOR', 'SEQUENCE_EDITOR', 'CLIP_EDITOR'}
-        if t == 'SPACE' and not event.ctrl and area and (area.type in anim_editors or area.type in PASS_KEYS_IN):
-            return {'PASS_THROUGH'}
+        is_playing = False
+        try:
+            if context.screen and getattr(context.screen, 'is_animation_playing', False):
+                is_playing = True
+        except Exception:
+            pass
 
-        if check_shortcut(prefs, 'search_menu', event, 'SPACE', fallback_ctrl=False) and v == 'PRESS':
-            if not S.mode and not (area and (area.type in PASS_KEYS_IN or area.type in anim_editors)) and not transform_active(win):
-                target_area = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
-                if not target_area or target_area.type != 'VIEW_3D':
-                    target_area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), target_area or context.area)
-                target_region = window_region(target_area) if target_area else None
-                try:
-                    if target_area and target_region:
-                        with context.temp_override(window=win, area=target_area, region=target_region):
-                            bpy.ops.wm.search_menu('INVOKE_DEFAULT')
-                    else:
-                        bpy.ops.wm.search_menu('INVOKE_DEFAULT')
-                    S.search_active = True
-                    S.search_open_time = time.time()
-                except Exception as e:
-                    print(f"[Vimender] search_menu error: {e}")
-                return {'RUNNING_MODAL'}
+        cur_area = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
+        is_plain_space = (t == 'SPACE') and not (event.ctrl or event.alt or event.shift or getattr(event, 'oskey', False))
+
+        if is_plain_space:
+            if is_playing:
+                return {'PASS_THROUGH'}
+            if not cur_area or cur_area.type in anim_editors or cur_area.type in PASS_KEYS_IN or cur_area.type != 'VIEW_3D':
+                return {'PASS_THROUGH'}
+
+        if check_shortcut(prefs, 'search_menu', event, 'SPACE', fallback_ctrl=False):
+            if is_playing:
+                return {'PASS_THROUGH'}
+            if cur_area and cur_area.type == 'VIEW_3D':
+                if v == 'PRESS':
+                    if not S.mode and not transform_active(win):
+                        target_region = window_region(cur_area)
+                        try:
+                            if target_region:
+                                with context.temp_override(window=win, area=cur_area, region=target_region):
+                                    bpy.ops.wm.search_menu('INVOKE_DEFAULT')
+                            else:
+                                bpy.ops.wm.search_menu('INVOKE_DEFAULT')
+                            S.search_active = True
+                            S.search_open_time = time.time()
+                        except Exception as e:
+                            print(f"[Vimender] search_menu error: {e}")
+                    return {'RUNNING_MODAL'}
+                elif v == 'RELEASE':
+                    return {'RUNNING_MODAL'}
+            return {'PASS_THROUGH'}
 
         is_bevel_key = (
             check_shortcut(prefs, 'bevel', event, 'B', fallback_ctrl=False) or
