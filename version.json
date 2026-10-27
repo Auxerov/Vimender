@@ -1,4 +1,4 @@
 {
-  "commit": "25db5aa87e1611cc6c9238e7bca765318151a1be",
-  "message": "fix(focus): restore dynamic mouse hover area tracking across all editors"
+  "commit": "3907534535ed4adb90a1cee037400ab80cdd86d2",
+  "message": "fix(hint): cancel hint selection mode on ESC and right click"
 }
