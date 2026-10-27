@@ -953,10 +953,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         area = area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
         if area and area.type in {'TOPBAR', 'STATUSBAR'}:
             area = area_by_ptr(win, S.hover_ptr) or (next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None) if win and win.screen else None)
-        if S.preview_mode:
-            v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None) if win and win.screen else None
-            if not area or area.type != 'VIEW_3D':
-                area = v3d or area
         ptr = area.as_pointer() if area else 0
         if ptr and ptr != S.hover_ptr and not S.mode:
             old = area_by_ptr(win, S.hover_ptr)
