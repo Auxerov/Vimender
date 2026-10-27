@@ -1000,7 +1000,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                         S.search_active = False
                         tag_all()
                     return {'PASS_THROUGH'}
-                if t == 'SPACE' and v == 'PRESS' and not popup_active:
+                if (t == 'GRLESS' or getattr(event, 'unicode', '') in {'<', '>'}) and v == 'PRESS' and not popup_active:
                     S.search_active = False
                     tag_all()
                 else:
@@ -1318,8 +1318,10 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     set_active_mode('PEN', context, self.report, target_area=target_a)
                 return {'RUNNING_MODAL'}
 
-        if ((t == 'SPACE' and is_altgr_pressed(event) and event.shift) or
-            check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_shift=True, fallback_alt=True)) and v == 'PRESS':
+        is_less_key = (t == 'GRLESS' or getattr(event, 'unicode', '') in {'<', '>', '|'})
+
+        if ((is_less_key and (is_altgr_pressed(event) or event.alt) and (event.shift or getattr(event, 'unicode', '') == '>')) or
+            check_shortcut(prefs, 'fuzzy_search', event, 'GRLESS', fallback_ctrl=True, fallback_shift=True, fallback_alt=True)) and v == 'PRESS':
             try:
                 with context.temp_override(window=win):
                     bpy.ops.wm.vim_fuzzy_search('INVOKE_DEFAULT')
@@ -1327,8 +1329,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 print(f"[Vimender] fuzzy_search error: {e}")
             return {'RUNNING_MODAL'}
 
-        if ((t == 'SPACE' and is_altgr_pressed(event) and not event.shift) or
-            check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
+        if ((is_less_key and (is_altgr_pressed(event) or event.alt) and not (event.shift or getattr(event, 'unicode', '') == '>')) or
+            check_shortcut(prefs, 'search_mode', event, 'GRLESS', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
             try:
                 with context.temp_override(window=win):
                     bpy.ops.wm.vim_search_mode('INVOKE_DEFAULT')
@@ -1336,38 +1338,17 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 print(f"[Vimender] search_mode error: {e}")
             return {'RUNNING_MODAL'}
 
-        if (check_shortcut(prefs, 'search_object', event, 'SPACE', fallback_ctrl=True) or
+        if ((is_less_key and event.ctrl and not (event.alt or event.shift or getattr(event, 'oskey', False))) or
+            check_shortcut(prefs, 'search_object', event, 'GRLESS', fallback_ctrl=True) or
             (t == 'F3' and event.ctrl and not (event.alt or event.shift or event.oskey))) and v == 'PRESS':
             bpy.ops.wm.vim_search_object('INVOKE_DEFAULT')
             return {'RUNNING_MODAL'}
 
-        anim_editors = {'DOPESHEET_EDITOR', 'TIMELINE', 'NLA_EDITOR', 'GRAPH_EDITOR', 'SEQUENCE_EDITOR', 'CLIP_EDITOR'}
-        is_playing = False
-        try:
-            if context.screen and getattr(context.screen, 'is_animation_playing', False):
-                is_playing = True
-        except Exception:
-            pass
-
         mouse_area = area_at(win, mx, my)
         cur_area = area or mouse_area or area_by_ptr(win, S.hover_ptr) or context.area
-        is_plain_space = (t == 'SPACE') and not (event.ctrl or event.alt or event.shift or getattr(event, 'oskey', False))
+        is_plain_less = is_less_key and not (event.ctrl or event.alt or event.shift or getattr(event, 'oskey', False) or getattr(event, 'unicode', '') in {'>', '|'})
 
-        if is_plain_space:
-            if is_playing:
-                return {'PASS_THROUGH'}
-            if mouse_area and (mouse_area.type in anim_editors or mouse_area.type in PASS_KEYS_IN):
-                return {'PASS_THROUGH'}
-            if getattr(context, 'region_popup', None) is None:
-                S.search_active = False
-            else:
-                return {'PASS_THROUGH'}
-
-        if not S.search_active and (check_shortcut(prefs, 'search_menu', event, 'SPACE', fallback_ctrl=False) or is_plain_space):
-            if is_playing:
-                return {'PASS_THROUGH'}
-            if mouse_area and mouse_area.type in anim_editors:
-                return {'PASS_THROUGH'}
+        if not S.search_active and (check_shortcut(prefs, 'search_menu', event, 'GRLESS', fallback_ctrl=False) or is_plain_less):
             v3d = cur_area if (cur_area and cur_area.type == 'VIEW_3D') else next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None)
             if v3d:
                 if v == 'PRESS':
@@ -1457,8 +1438,9 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         prefs = get_preferences(context)
 
         use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
-        if ((t == 'SPACE' and is_altgr_pressed(event) and event.shift) or
-            check_shortcut(prefs, 'fuzzy_search', event, 'SPACE', fallback_ctrl=True, fallback_shift=True, fallback_alt=True)) and v == 'PRESS':
+        is_hint_less = (t == 'GRLESS' or getattr(event, 'unicode', '') in {'<', '>', '|'})
+        if ((is_hint_less and (is_altgr_pressed(event) or event.alt) and (event.shift or getattr(event, 'unicode', '') == '>')) or
+            check_shortcut(prefs, 'fuzzy_search', event, 'GRLESS', fallback_ctrl=True, fallback_shift=True, fallback_alt=True)) and v == 'PRESS':
             self._cancel_hint(context, win)
             try:
                 with context.temp_override(window=win):
@@ -1467,8 +1449,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 print(f"[Vimender] fuzzy_search error: {e}")
             return {'RUNNING_MODAL'}
 
-        if ((t == 'SPACE' and is_altgr_pressed(event) and not event.shift) or
-            check_shortcut(prefs, 'search_mode', event, 'SPACE', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
+        if ((is_hint_less and (is_altgr_pressed(event) or event.alt) and not (event.shift or getattr(event, 'unicode', '') == '>')) or
+            check_shortcut(prefs, 'search_mode', event, 'GRLESS', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
             self._cancel_hint(context, win)
             try:
                 with context.temp_override(window=win):
@@ -2441,10 +2423,10 @@ def register_search_key():
     if kc is None:
         return
     km = kc.keymaps.new('Window', space_type='EMPTY', region_type='WINDOW')
-    kmi1 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'SPACE', 'PRESS', ctrl=True)
+    kmi1 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'GRLESS', 'PRESS', ctrl=True)
     kmi2 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'F3', 'PRESS', ctrl=True)
-    kmi3 = km.keymap_items.new(WM_OT_vim_search_mode.bl_idname, 'SPACE', 'PRESS', alt=True, ctrl=True)
-    kmi4 = km.keymap_items.new(WM_OT_vim_fuzzy_search.bl_idname, 'SPACE', 'PRESS', alt=True, ctrl=True, shift=True)
+    kmi3 = km.keymap_items.new(WM_OT_vim_search_mode.bl_idname, 'GRLESS', 'PRESS', alt=True, ctrl=True)
+    kmi4 = km.keymap_items.new(WM_OT_vim_fuzzy_search.bl_idname, 'GRLESS', 'PRESS', alt=True, ctrl=True, shift=True)
     kmi_close = km.keymap_items.new(WM_OT_vim_close_search.bl_idname, 'TAB', 'PRESS')
     kmi_quit = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'Q', 'PRESS', ctrl=True)
     kmi_quit.properties.action = 'QUIT'

@@ -83,7 +83,7 @@ MODIFIER_KEYS = {
     'LEFT_ALT', 'RIGHT_ALT', 'OSKEY',
 }
 CONSUME_KEYS = {
-    'SPACE', 'RET', 'NUMPAD_ENTER', 'TAB', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE',
+    'RET', 'NUMPAD_ENTER', 'TAB', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE',
     'SIX', 'SEVEN', 'EIGHT', 'NINE', 'ZERO',
 }
 NUM_TO_PAD = {
@@ -819,6 +819,7 @@ KEY_ITEMS = [
 ] + [
     (f'F{i}', f'F{i}', '') for i in range(1, 13)
 ] + [
+    ('GRLESS', 'Less Than (<)', ''),
     ('SPACE', 'Space', ''), ('TAB', 'Tab', ''), ('RET', 'Enter', ''),
     ('ESC', 'Escape', ''), ('BACK_SPACE', 'Backspace', ''), ('DELETE', 'Delete', ''),
     ('PAGE_UP', 'Page Up', ''), ('PAGE_DOWN', 'Page Down', ''),
@@ -899,16 +900,28 @@ def check_shortcut(prefs, prefix, event, fallback_key, fallback_ctrl=False, fall
     if not matches_ctrl:
         return False
 
-    if not allow_shift_alt_extend:
-        if bool(event.shift) != bool(target_shift):
-            return False
-        if bool(event.alt) != bool(target_alt):
-            return False
+    is_altgr = is_altgr_pressed(event)
+    if is_altgr and target_alt:
+        matches_alt = True
     else:
-        if target_shift and not event.shift:
-            return False
-        if target_alt and not event.alt:
-            return False
+        matches_alt = (bool(event.alt) == bool(target_alt))
+    if not matches_alt:
+        return False
+
+    is_less = target_key in {'GRLESS', '<'}
+    uni = getattr(event, 'unicode', '')
+    if is_less and target_shift and uni == '>':
+        matches_shift = True
+    elif not allow_shift_alt_extend:
+        matches_shift = (bool(event.shift) == bool(target_shift))
+    else:
+        matches_shift = not (target_shift and not (event.shift or uni == '>'))
+    if not matches_shift:
+        return False
+
+    if is_less:
+        if event.type == 'GRLESS' or uni in {'<', '>', '|'}:
+            return True
 
     if event.type == target_key:
         return True
@@ -918,6 +931,9 @@ def check_shortcut(prefs, prefix, event, fallback_key, fallback_ctrl=False, fall
             return True
 
     if target_key == fallback_key:
+        if fallback_key in {'GRLESS', '<'}:
+            if event.type == 'GRLESS' or uni in {'<', '>', '|'}:
+                return True
         if event.type == fallback_key:
             return True
         if len(fallback_key) == 1 and fallback_key.isalpha():

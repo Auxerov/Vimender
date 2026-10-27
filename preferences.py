@@ -343,6 +343,7 @@ KEY_ITEMS = [
 ] + [
     (f'F{i}', f'F{i}', '') for i in range(1, 13)
 ] + [
+    ('GRLESS', 'Less Than (<)', ''),
     ('SPACE', 'Space', ''), ('TAB', 'Tab', ''), ('RET', 'Enter', ''),
     ('ESC', 'Escape', ''), ('BACK_SPACE', 'Backspace', ''), ('DELETE', 'Delete', ''),
     ('PAGE_UP', 'Page Up', ''), ('PAGE_DOWN', 'Page Down', ''),
@@ -362,7 +363,7 @@ KEY_ITEMS = [
 
 
 KEY_PREFIXES = (
-    ("search_mode", "Mode Search (AltGr+Space)", "SPACE", True, False, True),
+    ("search_mode", "Mode Search (AltGr+<)", "GRLESS", True, False, True),
     ("preview", "Preview Mode Toggle (Ctrl+Y)", "Y", True, False, False),
     ("pen", "Pen Mode Toggle (Ctrl+Alt+P)", "P", True, False, True),
     ("nav", "Navigation Mode Toggle (Ctrl+B)", "B", True, False, False),
@@ -371,9 +372,9 @@ KEY_PREFIXES = (
     ("tablet", "Tablet Mode Toggle (Ctrl+W)", "W", True, False, False),
     ("orbit_pan", "Orbit / Pan Mode Toggle (U)", "U", False, False, False),
     ("editor_pie", "Editor Pie Menu", "NONE", False, False, False),
-    ("search_menu", "General Search (Space)", "SPACE", False, False, False),
-    ("search_object", "Search Objects / Cursor (Ctrl+Space)", "SPACE", True, False, False),
-    ("fuzzy_search", "Data Search (Shift+AltGr+Space)", "SPACE", True, True, True),
+    ("search_menu", "General Search (<)", "GRLESS", False, False, False),
+    ("search_object", "Search Objects / Cursor (Ctrl+<)", "GRLESS", True, False, False),
+    ("fuzzy_search", "Data Search (Shift+AltGr+<)", "GRLESS", True, True, True),
     ("hint_select", "Hint Click Select (F)", "F", False, False, False),
     ("box_select", "Box Hint Select (C)", "C", False, False, False),
     ("bevel", "Bevel Tool (B)", "B", False, False, False),
@@ -432,6 +433,9 @@ def load_keymaps_from_config(prefs):
                 setattr(prefs, f"shift_{prefix}", bool(entry["shift"]))
             if "alt" in entry:
                 setattr(prefs, f"alt_{prefix}", bool(entry["alt"]))
+    for prefix in ("search_menu", "search_object", "search_mode", "fuzzy_search"):
+        if getattr(prefs, f"key_{prefix}", "") == "SPACE":
+            setattr(prefs, f"key_{prefix}", "GRLESS")
     repair_corrupted_keymaps(prefs)
 
 
@@ -485,22 +489,22 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     shift_editor_pie: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
     alt_editor_pie: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
-    key_search_mode: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE', update=_on_keymap_change)
+    key_search_mode: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='GRLESS', update=_on_keymap_change)
     ctrl_search_mode: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
     shift_search_mode: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
     alt_search_mode: bpy.props.BoolProperty(name="Alt", default=True, update=_on_keymap_change)
 
-    key_search_menu: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE', update=_on_keymap_change)
+    key_search_menu: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='GRLESS', update=_on_keymap_change)
     ctrl_search_menu: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
     shift_search_menu: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
     alt_search_menu: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
-    key_search_object: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE', update=_on_keymap_change)
+    key_search_object: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='GRLESS', update=_on_keymap_change)
     ctrl_search_object: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
     shift_search_object: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
     alt_search_object: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
-    key_fuzzy_search: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='SPACE', update=_on_keymap_change)
+    key_fuzzy_search: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='GRLESS', update=_on_keymap_change)
     ctrl_fuzzy_search: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
     shift_fuzzy_search: bpy.props.BoolProperty(name="Shift", default=True, update=_on_keymap_change)
     alt_fuzzy_search: bpy.props.BoolProperty(name="Alt", default=True, update=_on_keymap_change)
@@ -683,7 +687,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
 
             box = layout.box()
             box.label(text="Mode Switching Shortcuts", icon='ARROW_LEFTRIGHT')
-            self._draw_shortcut(box, "Mode Search (AltGr+Space)", "search_mode")
+            self._draw_shortcut(box, "Mode Search (AltGr+<)", "search_mode")
             self._draw_shortcut(box, "Preview Mode Toggle (Ctrl+Y)", "preview")
             self._draw_shortcut(box, "Pen Mode Toggle (Ctrl+Alt+P)", "pen")
             self._draw_shortcut(box, "Navigation Mode Toggle (Ctrl+B)", "nav")
@@ -695,9 +699,9 @@ class VimenderPreferences(bpy.types.AddonPreferences):
 
             box2 = layout.box()
             box2.label(text="Tool & General Shortcuts", icon='EVENT_F')
-            self._draw_shortcut(box2, "General Search (Space)", "search_menu")
-            self._draw_shortcut(box2, "Search Objects / Cursor (Ctrl+Space)", "search_object")
-            self._draw_shortcut(box2, "Data Search (Shift+AltGr+Space)", "fuzzy_search")
+            self._draw_shortcut(box2, "General Search (<)", "search_menu")
+            self._draw_shortcut(box2, "Search Objects / Cursor (Ctrl+<)", "search_object")
+            self._draw_shortcut(box2, "Data Search (Shift+AltGr+<)", "fuzzy_search")
             self._draw_shortcut(box2, "Hint Click Select (F)", "hint_select")
             self._draw_shortcut(box2, "Box Hint Select (C)", "box_select")
             self._draw_shortcut(box2, "Bevel Tool (B)", "bevel")
