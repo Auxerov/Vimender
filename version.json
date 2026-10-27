@@ -1,4 +1,4 @@
 {
-  "commit": "b2e3308e2f57fa7eb803c6f8decce21b7ed9dfeb",
-  "message": "fix(search): support multi-monitor focus and clamp mouse to viewport on space"
+  "commit": "b5344bc06a8b6701885c8cf79ad29d79d2196085",
+  "message": "fix(search): prevent stale search_active state and animation playback after adding objects"
 }
