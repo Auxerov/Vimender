@@ -898,11 +898,16 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if not S.active:
             return self._finish(context)
 
-        win = context.window
+        win = context.window or (context.window_manager.windows[0] if (context.window_manager and context.window_manager.windows) else None)
+        if not win:
+            return {'PASS_THROUGH'}
+
         t, v = event.type, event.value
 
         if t == 'WINDOW_DEACTIVATE':
-
+            if S.search_active:
+                S.search_active = False
+                tag_all()
             release_all_held()
             return {'PASS_THROUGH'}
 
@@ -1341,8 +1346,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 return {'PASS_THROUGH'}
             if mouse_area and (mouse_area.type in anim_editors or mouse_area.type in PASS_KEYS_IN):
                 return {'PASS_THROUGH'}
-            if not mouse_area and cur_area and (cur_area.type in anim_editors or cur_area.type in PASS_KEYS_IN):
-                return {'PASS_THROUGH'}
 
         if not S.search_active and check_shortcut(prefs, 'search_menu', event, 'SPACE', fallback_ctrl=False):
             if is_playing:
@@ -1354,14 +1357,24 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if v == 'PRESS':
                     if not S.mode and not transform_active(win):
                         target_region = window_region(v3d)
+                        if target_region:
+                            if mx < target_region.x or mx >= target_region.x + target_region.width or my < target_region.y or my >= target_region.y + target_region.height:
+                                center_x = target_region.x + target_region.width // 2
+                                center_y = target_region.y + target_region.height // 2
+                                try:
+                                    win.cursor_warp(center_x, center_y)
+                                except Exception:
+                                    pass
                         try:
+                            res = None
                             if target_region:
                                 with context.temp_override(window=win, area=v3d, region=target_region):
-                                    bpy.ops.wm.search_menu('INVOKE_DEFAULT')
+                                    res = bpy.ops.wm.search_menu('INVOKE_DEFAULT')
                             else:
-                                bpy.ops.wm.search_menu('INVOKE_DEFAULT')
-                            S.search_active = True
-                            S.search_open_time = time.time()
+                                res = bpy.ops.wm.search_menu('INVOKE_DEFAULT')
+                            if res in ({'FINISHED'}, {'INTERFACE'}, {'RUNNING_MODAL'}):
+                                S.search_active = True
+                                S.search_open_time = time.time()
                         except Exception as e:
                             print(f"[Vimender] search_menu error: {e}")
                     return {'RUNNING_MODAL'}
