@@ -1431,6 +1431,11 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         return handle_orbit_pan_event(self, context, event, win, area)
     def _modal_hint(self, context, event, win, mx, my, area=None):
         t, v = event.type, event.value
+        if t in {'ESC', 'RIGHTMOUSE'}:
+            if v == 'PRESS':
+                self._cancel_hint(context, win)
+            return {'RUNNING_MODAL'}
+
         prefs = get_preferences(context)
 
         use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
