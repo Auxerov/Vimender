@@ -19,6 +19,7 @@ if "state" in locals():
     importlib.reload(mode_preview)
     importlib.reload(mode_pen)
     importlib.reload(mode_hint)
+    importlib.reload(bool_tool)
     importlib.reload(ui)
     importlib.reload(preferences)
     importlib.reload(operators)
@@ -31,6 +32,7 @@ else:
     from . import mode_preview
     from . import mode_pen
     from . import mode_hint
+    from . import bool_tool
     from . import ui
     from . import preferences
     from . import operators

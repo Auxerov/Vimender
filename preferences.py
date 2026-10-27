@@ -200,7 +200,7 @@ def reload_vimender_submodules():
     submodules = [
         "state", "preferences", "mode_walk", "mode_tablet",
         "mode_cursor", "mode_nav", "mode_preview", "mode_pen", "mode_hint",
-        "ui", "operators"
+        "bool_tool", "ui", "operators"
     ]
     reloaded = []
     for mod_name in submodules:

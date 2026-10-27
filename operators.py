@@ -21,6 +21,7 @@ from .mode_nav import neighbor_area, enter_nav_mode, exit_nav_mode, handle_nav_e
 from .mode_preview import enter_preview_mode, exit_preview_mode, handle_preview_event
 from .mode_pen import enter_pen_mode, exit_pen_mode, handle_pen_event
 from .mode_hint import start_hint_global, apply_single, apply_box
+from .bool_tool import get_bool_tool_search_items, execute_bool_tool_action
 from .ui import clean_modal_keymaps, install_draw_handlers, remove_draw_handlers, shutdown, draw_editor_pie, draw_vim_view_pie
 
 class WM_OT_vim_set_editor(bpy.types.Operator):
@@ -169,13 +170,9 @@ class WM_OT_vim_nudge(bpy.types.Operator):
             if tr_type == 'ROTATE':
                 self.sub_x = self.pivot_2d.x + self.rot_radius
                 self.sub_y = self.pivot_2d.y
-                if win:
-                    win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
             elif tr_type == 'RESIZE':
                 self.sub_x = self.pivot_2d.x + self.scale_dir.x * self.scale_dist
                 self.sub_y = self.pivot_2d.y + self.scale_dir.y * self.scale_dist
-                if win:
-                    win.cursor_warp(int(round(self.sub_x)), int(round(self.sub_y)))
         else:
             dx_abs = abs(dx_p) if abs(dx_p) > 0.01 else 0.7071
             dy_abs = abs(dy_p) if abs(dy_p) > 0.01 else 0.7071
@@ -1205,23 +1202,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             else:
                 S.last_transform_type = 'TRANSLATE'
 
-            target_v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
-            if target_v3d and target_v3d.type == 'VIEW_3D':
-                center_info = get_selection_center_2d(context, target_v3d)
-                if center_info and center_info[0] is not None and center_info[1] is not None:
-                    cx, cy = center_info[0], center_info[1]
-                    reg = window_region(target_v3d)
-                    if reg:
-                        margin = 40
-                        if reg.x + margin < cx < reg.x + reg.width - margin and reg.y + margin < cy < reg.y + reg.height - margin:
-                            if t in {'G', 'E'}:
-                                win.cursor_warp(int(cx), int(cy))
-                            elif t in {'R', 'S'}:
-                                warp_x = cx + 120
-                                if warp_x > reg.x + reg.width - margin:
-                                    warp_x = cx - 120
-                                win.cursor_warp(int(warp_x), int(cy))
-
         if t in {'RIGHT_ALT', 'LINEFEED'}:
             if v == 'PRESS':
                 S.right_alt_down = True
@@ -1374,10 +1354,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 target_region = window_region(target_area) if target_area else None
                 try:
                     if target_area and target_region:
-                        if not (target_region.x <= mx <= target_region.x + target_region.width and
-                                target_region.y <= my <= target_region.y + target_region.height):
-                            win.cursor_warp(int(target_region.x + target_region.width / 2),
-                                            int(target_region.y + target_region.height / 2))
                         with context.temp_override(window=win, area=target_area, region=target_region):
                             bpy.ops.wm.search_menu('INVOKE_DEFAULT')
                     else:
@@ -1802,6 +1778,8 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
             ("ED_SPREADSHEET", "Editor: Spreadsheet", "Switch area to Spreadsheet", 'SPREADSHEET', 50),
             ("ED_PREFERENCES", "Editor: Preferences", "Switch area to Preferences", 'PREFERENCES', 51),
         ]
+        bool_items = get_bool_tool_search_items(start_idx=60)
+        items.extend(bool_items)
         return items
 
     target: bpy.props.EnumProperty(
@@ -1904,6 +1882,12 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
                 except Exception as e:
                     self.report({'WARNING'}, f"Cannot switch editor to {ui_type}: {e}")
                     return {'CANCELLED'}
+
+        if tgt.startswith("BOOL_"):
+            if execute_bool_tool_action(context, tgt, self.report):
+                tag_all()
+                return {'FINISHED'}
+            return {'CANCELLED'}
 
         return {'CANCELLED'}
 
@@ -2307,8 +2291,6 @@ class WM_OT_vim_general_search(bpy.types.Operator):
         target_region = window_region(target_area) if target_area else None
         try:
             if target_area and target_region:
-                win.cursor_warp(int(target_region.x + target_region.width / 2),
-                                int(target_region.y + target_region.height / 2))
                 with context.temp_override(window=win, area=target_area, region=target_region):
                     bpy.ops.wm.search_menu('INVOKE_DEFAULT')
             else:

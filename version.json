@@ -1,4 +1,4 @@
 {
-  "commit": "619045294b7d792b2f7270a3236ca5e06c66af3e",
-  "message": "fix(viewport): support Ctrl+Alt+0 camera alignment and resolve walk/viewport navigation bugs"
+  "commit": "",
+  "message": "feat(bool-tool): integrate Bool Tool into search menu and fix preview mouse warping"
 }

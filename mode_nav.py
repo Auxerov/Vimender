@@ -266,7 +266,6 @@ def cycle_workspace(context, direction='NEXT'):
         if win.screen and win.screen.areas:
             first_area = win.screen.areas[0]
             S.hover_ptr = first_area.as_pointer()
-            win.cursor_warp(int(first_area.x + first_area.width / 2), int(first_area.y + first_area.height / 2))
         tag_all()
         return target
     except Exception as e:

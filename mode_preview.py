@@ -1,3 +1,4 @@
+import math
 import bpy
 from .state import S, YELLOW, tag_all, get_preferences, check_shortcut, set_active_mode, area_at, area_by_ptr, is_edit_mode, _exec_view3d_op, window_region
 
