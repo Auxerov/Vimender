@@ -1,4 +1,4 @@
 {
-  "commit": "",
+  "commit": "c286cb02693f07bda044c4d0883237ff979c4afb",
   "message": "feat(keymap): support 4 as plus and top-row minus in modifier shortcuts for numpadless keyboards"
 }
