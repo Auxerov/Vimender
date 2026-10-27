@@ -1,6 +1,7 @@
 import math
 import bpy
 from .state import S, YELLOW, tag_all, get_preferences, check_shortcut, set_active_mode, area_at, area_by_ptr, is_edit_mode, _exec_view3d_op, window_region
+from .bool_tool import handle_numpad_replacement
 
 
 def enter_preview_mode(context, report_fn=None):
@@ -118,5 +119,10 @@ def handle_preview_event(op, context, event, win, area):
             if is_asterisk_persp and v == 'PRESS':
                 _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_persportho)
                 return {'RUNNING_MODAL'}
+
+    res = handle_numpad_replacement(context, event, op.report)
+    if res is not None:
+        tag_all()
+        return res
 
     return {'PASS_THROUGH'}

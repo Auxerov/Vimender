@@ -108,3 +108,141 @@ def execute_bool_tool_action(context, target_ident, report_fn=None):
     if report_fn:
         report_fn({'WARNING'}, "Bool Tool operator not found or requires valid mesh selection")
     return False
+
+
+def handle_numpad_replacement(context, event, report_fn=None):
+    if not getattr(event, 'ctrl', False) or getattr(event, 'alt', False) or getattr(event, 'oskey', False):
+        return None
+
+    if context.area and context.area.type in {'TEXT_EDITOR', 'CONSOLE'}:
+        return None
+
+    t = event.type
+    v = event.value
+    uni = getattr(event, 'unicode', '') or ''
+    is_shift = bool(event.shift)
+
+    is_plus = (t in {'FOUR', 'NUMPAD_4', 'PLUS', 'NUMPAD_PLUS', 'EQUAL'} or uni in {'4', '+', '='})
+    is_minus = (t in {'MINUS', 'NUMPAD_MINUS'} or uni in {'-', '_'})
+    is_asterisk = (t in {'ASTERISK', 'NUMPAD_ASTERIX'} or uni == '*')
+    is_slash = (t in {'SLASH', 'NUMPAD_SLASH'} or uni == '/')
+
+    if not (is_plus or is_minus or is_asterisk or is_slash):
+        return None
+
+    if v == 'RELEASE':
+        return {'RUNNING_MODAL'}
+
+    if v != 'PRESS':
+        return None
+
+    mode = context.mode
+
+    if mode == 'OBJECT':
+        sel_meshes = [o for o in context.selected_objects if o.type == 'MESH']
+        if len(sel_meshes) >= 2:
+            if is_plus:
+                action = "BOOL_AUTO_UNION" if is_shift else "BOOL_BRUSH_UNION"
+            elif is_minus:
+                action = "BOOL_AUTO_DIFF" if is_shift else "BOOL_BRUSH_DIFF"
+            elif is_asterisk:
+                action = "BOOL_AUTO_INTERSECT" if is_shift else "BOOL_BRUSH_INTERSECT"
+            elif is_slash:
+                action = "BOOL_AUTO_SLICE" if is_shift else "BOOL_BRUSH_SLICE"
+            else:
+                action = None
+
+            if action and execute_bool_tool_action(context, action, report_fn):
+                labels = {
+                    "BOOL_AUTO_UNION": "Auto Union",
+                    "BOOL_BRUSH_UNION": "Brush Union",
+                    "BOOL_AUTO_DIFF": "Auto Difference",
+                    "BOOL_BRUSH_DIFF": "Brush Difference",
+                    "BOOL_AUTO_INTERSECT": "Auto Intersect",
+                    "BOOL_BRUSH_INTERSECT": "Brush Intersect",
+                    "BOOL_AUTO_SLICE": "Auto Slice",
+                    "BOOL_BRUSH_SLICE": "Brush Slice",
+                }
+                lbl = labels.get(action, "Boolean")
+                if report_fn:
+                    report_fn({'INFO'}, f"Bool Tool: {lbl}")
+                return {'RUNNING_MODAL'}
+
+    elif mode == 'EDIT_MESH':
+        win = context.window
+        target_v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), context.area) if win and win.screen else context.area
+        reg = window_region(target_v3d) if target_v3d else None
+        kw = {'window': win}
+        if target_v3d:
+            kw['area'] = target_v3d
+        if reg:
+            kw['region'] = reg
+
+        if is_plus:
+            try:
+                with context.temp_override(**kw):
+                    if is_shift:
+                        bpy.ops.mesh.select_next_item()
+                    else:
+                        bpy.ops.mesh.select_more()
+                if target_v3d:
+                    target_v3d.tag_redraw()
+                return {'RUNNING_MODAL'}
+            except Exception:
+                pass
+        elif is_minus:
+            try:
+                with context.temp_override(**kw):
+                    if is_shift:
+                        bpy.ops.mesh.select_prev_item()
+                    else:
+                        bpy.ops.mesh.select_less()
+                if target_v3d:
+                    target_v3d.tag_redraw()
+                return {'RUNNING_MODAL'}
+            except Exception:
+                pass
+
+    elif mode == 'EDIT_CURVE':
+        if is_plus:
+            try:
+                bpy.ops.curve.select_more()
+                return {'RUNNING_MODAL'}
+            except Exception:
+                pass
+        elif is_minus:
+            try:
+                bpy.ops.curve.select_less()
+                return {'RUNNING_MODAL'}
+            except Exception:
+                pass
+
+    elif mode == 'EDIT_ARMATURE':
+        if is_plus:
+            try:
+                bpy.ops.armature.select_more()
+                return {'RUNNING_MODAL'}
+            except Exception:
+                pass
+        elif is_minus:
+            try:
+                bpy.ops.armature.select_less()
+                return {'RUNNING_MODAL'}
+            except Exception:
+                pass
+
+    elif mode == 'POSE':
+        if is_plus:
+            try:
+                bpy.ops.pose.select_more()
+                return {'RUNNING_MODAL'}
+            except Exception:
+                pass
+        elif is_minus:
+            try:
+                bpy.ops.pose.select_less()
+                return {'RUNNING_MODAL'}
+            except Exception:
+                pass
+
+    return None

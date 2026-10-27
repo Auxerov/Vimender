@@ -13,6 +13,7 @@ from .state import (
     send_fake_numpad, adjust_active_modal_or_modifier, send_modal_plus_minus,
     transform_active, is_blender_modal_active, PASS_KEYS_IN, set_active_mode
 )
+from .bool_tool import handle_numpad_replacement
 
 class _SmoothNavigator:
     """
@@ -685,6 +686,11 @@ def handle_orbit_pan_event(op, context, event, win, area):
 
     if S.prefix:
         return op._modal_prefix(context, event, win, area)
+
+    res = handle_numpad_replacement(context, event, op.report)
+    if res is not None:
+        tag_all()
+        return res
 
     if (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL'} or event.unicode in {'+', '-'}) and event.ctrl and not (area and area.type in PASS_KEYS_IN):
         if v == 'PRESS':

@@ -1,4 +1,4 @@
 {
-  "commit": "6b7ac7af722ec4042989d043beb7dc315f5efef7",
-  "message": "fix(mode): restrict P key pan switch strictly to orbit mode and pass through in preview"
+  "commit": "",
+  "message": "feat(keymap): support 4 as plus and top-row minus in modifier shortcuts for numpadless keyboards"
 }
