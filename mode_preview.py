@@ -43,6 +43,51 @@ def handle_preview_event(op, context, event, win, area):
         if not target_v3d or target_v3d.type != 'VIEW_3D':
             target_v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None) if (win and win.screen) else None
         if target_v3d:
+            if (t in {'NUMPAD_0', 'ZERO'} or getattr(event, 'unicode', '') == '0') and event.ctrl and event.alt and not (event.shift or getattr(event, 'oskey', False)):
+                if v == 'PRESS':
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.camera_to_view)
+                    op.report({'INFO'}, "Vimender: Align Camera to View")
+                    tag_all()
+                return {'RUNNING_MODAL'}
+
+            if (t in {'NUMPAD_0', 'ZERO'} or getattr(event, 'unicode', '') == '0') and not (event.ctrl or event.alt or getattr(event, 'oskey', False) or event.shift):
+                if v == 'PRESS':
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_camera)
+                return {'RUNNING_MODAL'}
+
+            if (t in {'NUMPAD_1', 'ONE'} or getattr(event, 'unicode', '') == '1') and not (event.alt or getattr(event, 'oskey', False)):
+                if v == 'PRESS':
+                    axis = 'BACK' if event.ctrl else 'FRONT'
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
+                return {'RUNNING_MODAL'}
+
+            if (t in {'NUMPAD_3', 'THREE'} or getattr(event, 'unicode', '') == '3') and not (event.alt or getattr(event, 'oskey', False)):
+                if v == 'PRESS':
+                    axis = 'LEFT' if event.ctrl else 'RIGHT'
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
+                return {'RUNNING_MODAL'}
+
+            if (t in {'NUMPAD_7', 'SEVEN'} or getattr(event, 'unicode', '') == '7') and not (event.alt or getattr(event, 'oskey', False)):
+                if v == 'PRESS':
+                    axis = 'BOTTOM' if event.ctrl else 'TOP'
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
+                return {'RUNNING_MODAL'}
+
+            if (t in {'NUMPAD_9', 'NINE'} or getattr(event, 'unicode', '') == '9') and not (event.ctrl or event.alt or getattr(event, 'oskey', False) or event.shift):
+                if v == 'PRESS':
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_orbit, angle=math.pi, type='ORBITRIGHT')
+                return {'RUNNING_MODAL'}
+
+            if (t in {'NUMPAD_5', 'FIVE'} or getattr(event, 'unicode', '') == '5') and not (event.ctrl or event.alt or getattr(event, 'oskey', False) or event.shift):
+                if v == 'PRESS':
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_persportho)
+                return {'RUNNING_MODAL'}
+
+            if (t in {'NUMPAD_SLASH', 'SLASH'} or getattr(event, 'unicode', '') == '/') and not (event.ctrl or event.alt or getattr(event, 'oskey', False) or event.shift):
+                if v == 'PRESS':
+                    _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.localview)
+                return {'RUNNING_MODAL'}
+
             is_i_selected = (t == 'I' or getattr(event, 'unicode', '') in {'i', 'I'}) and not (event.ctrl or event.alt or getattr(event, 'oskey', False) or event.shift)
             is_key_period = (
                 check_shortcut(prefs, 'view_selected', event, 'NUMPAD_PERIOD', fallback_ctrl=False) or

@@ -928,7 +928,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             elif S.cursor_mode:
                 S.smooth_cursor.tick(context, win)
             elif S.walk_mode:
-                S.smooth_walker.tick(context, win)
+                if S.smooth_walker.tick(context, win):
+                    tag_all()
             elif S.tablet_mode:
                 if getattr(S, 'touch_nav', None) and S.touch_nav.tick(context, win):
                     tag_all()
@@ -986,6 +987,28 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if time.time() - S.search_open_time > 0.4:
                     S.search_active = False
                     tag_all()
+
+        is_cam_to_view_shortcut = (
+            (t in {'ZERO', 'NUMPAD_0'} or getattr(event, 'unicode', '') == '0') and
+            event.ctrl and event.alt and not (event.shift or getattr(event, 'oskey', False))
+        )
+        if is_cam_to_view_shortcut and not (area and area.type in PASS_KEYS_IN):
+            if v == 'PRESS':
+                if S.view_pie_active or S.pie_active:
+                    S.view_pie_active = False
+                    S.pie_active = False
+                    send_fake_escape()
+                v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
+                if not v3d or v3d.type != 'VIEW_3D':
+                    v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), v3d or context.area)
+                if v3d and v3d.type == 'VIEW_3D':
+                    _exec_view3d_op(context, win, v3d, bpy.ops.view3d.camera_to_view)
+                    self.report({'INFO'}, "Vimender: Align Camera to View")
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+            elif v == 'RELEASE':
+                return {'RUNNING_MODAL'}
+
         if S.view_pie_active and (time.time() - S.pie_open_time > 4.0):
             S.view_pie_active = False
             S.pie_active = False

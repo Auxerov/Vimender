@@ -4,7 +4,7 @@ import bpy
 from mathutils import Vector, Quaternion
 from .state import (
     S, ORANGE, WALK_MOVE_SPEED, WALK_LOOK_SPEED, NAV_ACCEL_RATE, NAV_FRICTION,
-    SENS_LEVELS, tag_all, MOUSE_CANCEL, change_sens, area_by_ptr, set_active_mode
+    SENS_LEVELS, tag_all, MOUSE_CANCEL, change_sens, area_by_ptr, set_active_mode, _exec_view3d_op
 )
 
 class _SmoothWalker:
@@ -32,7 +32,7 @@ class _SmoothWalker:
 
     def on_key(self, key, val, shift=False):
         self.shift = shift
-        move_keys = {'W', 'S', 'A', 'D', 'Q', 'E'}
+        move_keys = {'W', 'S', 'A', 'D', 'Q', 'E', 'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW'}
         look_keys = {'H', 'J', 'K', 'L'}
         if key in move_keys:
             if val == 'PRESS':
@@ -77,8 +77,8 @@ class _SmoothWalker:
             if abs(self.pitch_v) < 0.015:
                 self.pitch_v = 0.0
 
-        target_fwd = (+1.0 if 'W' in self.held_move else 0.0) + (-1.0 if 'S' in self.held_move else 0.0)
-        target_strafe = (+1.0 if 'D' in self.held_move else 0.0) + (-1.0 if 'A' in self.held_move else 0.0)
+        target_fwd = (+1.0 if ('W' in self.held_move or 'UP_ARROW' in self.held_move) else 0.0) + (-1.0 if ('S' in self.held_move or 'DOWN_ARROW' in self.held_move) else 0.0)
+        target_strafe = (+1.0 if ('D' in self.held_move or 'RIGHT_ARROW' in self.held_move) else 0.0) + (-1.0 if ('A' in self.held_move or 'LEFT_ARROW' in self.held_move) else 0.0)
         target_up = (+1.0 if 'E' in self.held_move else 0.0) + (-1.0 if 'Q' in self.held_move else 0.0)
 
         if target_fwd != 0.0 or target_strafe != 0.0:
@@ -118,7 +118,7 @@ class _SmoothWalker:
         if not rv3d:
             return False
 
-        if rv3d.view_perspective == 'CAMERA' and not getattr(area.spaces.active, 'lock_camera', False):
+        if rv3d.view_perspective != 'PERSP' and not (rv3d.view_perspective == 'CAMERA' and getattr(area.spaces.active, 'lock_camera', False)):
             rv3d.view_perspective = 'PERSP'
 
         sens = SENS_LEVELS[S.sens_idx]
@@ -147,12 +147,17 @@ class _SmoothWalker:
             moved = True
 
         if active_moving:
-            dist = max(rv3d.view_distance, 0.2)
-            move_spd = WALK_MOVE_SPEED * sens * dist
+            move_spd = WALK_MOVE_SPEED * sens * 2.0
             if self.shift:
                 move_spd *= 2.5
 
-            fwd = (rv3d.view_rotation @ Vector((0.0, 0.0, -1.0)))
+            fwd_raw = (rv3d.view_rotation @ Vector((0.0, 0.0, -1.0)))
+            fwd_xy = Vector((fwd_raw.x, fwd_raw.y, 0.0))
+            if fwd_xy.length > 0.05:
+                fwd = fwd_xy.normalized()
+            else:
+                fwd = fwd_raw
+
             right = (rv3d.view_rotation @ Vector((1.0, 0.0, 0.0)))
             up = Vector((0.0, 0.0, 1.0))
 
@@ -192,13 +197,49 @@ def handle_walk_event(op, context, event, win, area):
         exit_walk_mode(context, op.report)
         return {'RUNNING_MODAL'}
 
+    if (t in {'ZERO', 'NUMPAD_0'} or getattr(event, 'unicode', '') == '0') and event.ctrl and event.alt and not (event.shift or getattr(event, 'oskey', False)):
+        if v == 'PRESS':
+            target_v3d = area or area_by_ptr(win, S.walk_ptr or S.hover_ptr) or context.area
+            _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.camera_to_view)
+            op.report({'INFO'}, "Vimender: Align Camera to View")
+            tag_all()
+            return {'RUNNING_MODAL'}
+        elif v == 'RELEASE':
+            return {'RUNNING_MODAL'}
+
+    is_ctrl_sens = (t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL'} or event.unicode in {'+', '-'}) and event.ctrl and not (event.alt or event.oskey)
+    is_plain_sens = (
+        t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL', 'PAGE_UP', 'PAGE_DOWN', 'WHEELUPMOUSE', 'WHEELDOWNMOUSE'} or
+        (t in {'N', 'M'} or (event.unicode or '').upper() in {'N', 'M'}) or
+        (event.unicode in {'+', '-'} and not (event.alt or event.oskey))
+    ) and not (event.ctrl or event.alt or event.oskey)
+    is_sens_key = is_ctrl_sens or is_plain_sens
+
+    if is_sens_key and v == 'PRESS':
+        is_up = (
+            t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL', 'PAGE_UP', 'N', 'WHEELUPMOUSE'} or
+            (event.unicode or '').upper() in {'+', 'N'}
+        )
+        delta = 1 if is_up else -1
+        change_sens(delta)
+        sens_val = SENS_LEVELS[S.sens_idx]
+        op.report({'INFO'}, f"Vimender: Walk Sensitivity {sens_val:.2f}x")
+        try:
+            context.workspace.status_text_set(
+                f"Vimender: WALK MODE [{sens_val:.2f}x] | WASD/Arrows: Move | HJKL: Look | N/M: Sens (+/-) | Q/E: Down/Up | Alt+Q/Esc: Exit"
+            )
+        except Exception:
+            pass
+        tag_all()
+        return {'RUNNING_MODAL'}
+
     if event.ctrl or event.alt or getattr(event, 'oskey', False):
         return {'PASS_THROUGH'}
 
     if t in {'U', 'P', 'NUMPAD_5'} or (event.unicode or '').upper() in {'U', 'P'}:
         return {'PASS_THROUGH'}
 
-    WALK_MOVE_KEYS = {'W', 'S', 'A', 'D', 'Q', 'E'}
+    WALK_MOVE_KEYS = {'W', 'S', 'A', 'D', 'Q', 'E', 'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW'}
     WALK_LOOK_KEYS = {'H', 'J', 'K', 'L'}
     UNICODE_WALK_MAP = {
         'w': 'W', 'W': 'W', 's': 'S', 'S': 'S',
@@ -222,30 +263,6 @@ def handle_walk_event(op, context, event, win, area):
 
     if t in {'LEFT_SHIFT', 'RIGHT_SHIFT'}:
         S.smooth_walker.shift = (v == 'PRESS')
-        return {'RUNNING_MODAL'}
-
-    is_sens_key = (
-        t in {'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL', 'PAGE_UP', 'PAGE_DOWN', 'WHEELUPMOUSE', 'WHEELDOWNMOUSE'} or
-        (t in {'N', 'M'} or (event.unicode or '').upper() in {'N', 'M'}) or
-        (event.unicode in {'+', '-'} and not (event.alt or event.oskey))
-    ) and not (event.ctrl or event.alt or event.oskey)
-
-    if is_sens_key and v == 'PRESS':
-        is_up = (
-            t in {'NUMPAD_PLUS', 'PLUS', 'EQUAL', 'PAGE_UP', 'N', 'WHEELUPMOUSE'} or
-            (event.unicode or '').upper() in {'+', 'N'}
-        )
-        delta = 1 if is_up else -1
-        change_sens(delta)
-        sens_val = SENS_LEVELS[S.sens_idx]
-        op.report({'INFO'}, f"Vimender: Walk Sensitivity {sens_val:.2f}x")
-        try:
-            context.workspace.status_text_set(
-                f"Vimender: WALK MODE [{sens_val:.2f}x] | WASD: Move | HJKL: Look | N/M: Sens (+/-) | Q/E: Down/Up | Alt+Q/Esc: Exit"
-            )
-        except Exception:
-            pass
-        tag_all()
         return {'RUNNING_MODAL'}
 
     if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:

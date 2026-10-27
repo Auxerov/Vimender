@@ -989,7 +989,7 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
             report_fn({'INFO'}, f"Vimender: WALK MODE [{sens_val:.2f}x]")
         try:
             context.workspace.status_text_set(
-                f"Vimender: WALK MODE [{sens_val:.2f}x] | WASD: Move | HJKL: Look | N/M: Sens (+/-) | Q/E: Down/Up | Alt+Q/Esc: Exit"
+                f"Vimender: WALK MODE [{sens_val:.2f}x] | WASD/Arrows: Move | HJKL: Look | N/M: Sens (+/-) | Q/E: Down/Up | Alt+Q/Esc: Exit"
             )
         except Exception:
             pass

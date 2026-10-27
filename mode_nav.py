@@ -598,35 +598,47 @@ def handle_orbit_pan_event(op, context, event, win, area):
 
         allow_view_switch = not S.preview_mode or (use_arrow_layout and not is_edit_mode(context))
 
-        if t == 'NUMPAD_1' and allow_view_switch and not (event.alt or event.oskey):
+        if (t in {'NUMPAD_0', 'ZERO'} or event.unicode == '0') and event.ctrl and event.alt and not (event.shift or getattr(event, 'oskey', False)):
+            if v == 'PRESS':
+                _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.camera_to_view)
+                op.report({'INFO'}, "Vimender: Align Camera to View")
+                tag_all()
+            return {'RUNNING_MODAL'}
+
+        if (t in {'NUMPAD_1', 'ONE'} or event.unicode == '1') and allow_view_switch and not (event.alt or event.oskey):
             if v == 'PRESS':
                 axis = 'BACK' if event.ctrl else 'FRONT'
                 _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
             return {'RUNNING_MODAL'}
 
-        if t == 'NUMPAD_3' and allow_view_switch and not (event.alt or event.oskey):
+        if (t in {'NUMPAD_3', 'THREE'} or event.unicode == '3') and allow_view_switch and not (event.alt or event.oskey):
             if v == 'PRESS':
                 axis = 'LEFT' if event.ctrl else 'RIGHT'
                 _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
             return {'RUNNING_MODAL'}
 
-        if t == 'NUMPAD_7' and allow_view_switch and not (event.alt or event.oskey):
+        if (t in {'NUMPAD_7', 'SEVEN'} or event.unicode == '7') and allow_view_switch and not (event.alt or event.oskey):
             if v == 'PRESS':
                 axis = 'BOTTOM' if event.ctrl else 'TOP'
                 _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_axis, type=axis, align_active=bool(event.shift))
             return {'RUNNING_MODAL'}
 
-        if t == 'NUMPAD_9' and (allow_view_switch or use_arrow_layout) and not (event.ctrl or event.alt or event.oskey or event.shift):
+        if (t in {'NUMPAD_9', 'NINE'} or event.unicode == '9') and (allow_view_switch or use_arrow_layout) and not (event.ctrl or event.alt or event.oskey or event.shift):
             if v == 'PRESS':
                 _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_orbit, angle=math.pi, type='ORBITRIGHT')
             return {'RUNNING_MODAL'}
 
-        if t == 'NUMPAD_0' and (allow_view_switch or use_arrow_layout) and not (event.ctrl or event.alt or event.oskey or event.shift):
+        if (t in {'NUMPAD_0', 'ZERO'} or event.unicode == '0') and (allow_view_switch or use_arrow_layout) and not (event.ctrl or event.alt or event.oskey or event.shift):
             if v == 'PRESS':
                 _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_camera)
             return {'RUNNING_MODAL'}
 
-        if t == 'NUMPAD_SLASH' and (allow_view_switch or use_arrow_layout) and not (event.ctrl or event.alt or event.oskey or event.shift):
+        if (t in {'NUMPAD_5', 'FIVE'} or event.unicode == '5') and (allow_view_switch or use_arrow_layout) and not (event.ctrl or event.alt or event.oskey or event.shift):
+            if v == 'PRESS':
+                _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.view_persportho)
+            return {'RUNNING_MODAL'}
+
+        if (t in {'NUMPAD_SLASH', 'SLASH'} or event.unicode == '/') and (allow_view_switch or use_arrow_layout) and not (event.ctrl or event.alt or event.oskey or event.shift):
             if v == 'PRESS':
                 _exec_view3d_op(context, win, target_v3d, bpy.ops.view3d.localview)
             return {'RUNNING_MODAL'}
