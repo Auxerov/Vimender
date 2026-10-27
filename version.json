@@ -1,4 +1,4 @@
 {
-  "commit": "d398ba467f064e7a549e1b70604335f2831cc559",
-  "message": "fix(modes): restrict F/C hints to Orbit/Pan, fix startup View3D focus and Space timeline playback"
+  "commit": "22b41fa0de060fbe82a747bab458656f7b5e4997",
+  "message": "fix(search): fix startup space handling, search text entry, and preview focus"
 }
