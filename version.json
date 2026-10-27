@@ -1,4 +1,4 @@
 {
-  "commit": "c8cc6d397476c2d2e75f68587306125d15e9f136",
-  "message": "fix(keys): replace Space with < (GRLESS) for all searches and restore native Space"
+  "commit": "25db5aa87e1611cc6c9238e7bca765318151a1be",
+  "message": "fix(focus): restore dynamic mouse hover area tracking across all editors"
 }
