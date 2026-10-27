@@ -1,4 +1,4 @@
 {
-  "commit": "22b41fa0de060fbe82a747bab458656f7b5e4997",
-  "message": "fix(search): fix startup space handling, search text entry, and preview focus"
+  "commit": "b2e3308e2f57fa7eb803c6f8decce21b7ed9dfeb",
+  "message": "fix(search): support multi-monitor focus and clamp mouse to viewport on space"
 }
