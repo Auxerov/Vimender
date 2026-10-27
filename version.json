@@ -1,4 +1,4 @@
 {
-  "commit": "",
+  "commit": "917e61bac482b4352fffb4c057492f2d386cd602",
   "message": "feat(bool-tool): integrate Bool Tool into search menu and fix preview mouse warping"
 }
