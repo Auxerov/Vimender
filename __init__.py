@@ -109,6 +109,18 @@ def _on_load_post(dummy):
         bpy.app.timers.register(_auto_start, first_interval=0.1)
 
 
+@bpy.app.handlers.persistent
+def _on_depsgraph_update(scene, depsgraph=None):
+    if getattr(S, 'search_active', False):
+        S.search_active = False
+
+
+@bpy.app.handlers.persistent
+def _on_undo_post(scene):
+    if getattr(S, 'search_active', False):
+        S.search_active = False
+
+
 def _window_menu_draw(self, context):
     self.layout.separator()
     self.layout.operator(WM_OT_vim_mode_toggle.bl_idname, text="Vimender Mode",
@@ -142,6 +154,10 @@ def register():
         bpy.app.handlers.load_pre.append(_on_load_pre)
     if _on_load_post not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(_on_load_post)
+    if _on_depsgraph_update not in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.append(_on_depsgraph_update)
+    if _on_undo_post not in bpy.app.handlers.undo_post:
+        bpy.app.handlers.undo_post.append(_on_undo_post)
     if not bpy.app.background and load_vimender_state():
         bpy.app.timers.register(_auto_start, first_interval=0.1)
 
@@ -164,6 +180,10 @@ def unregister():
         bpy.app.handlers.load_pre.remove(_on_load_pre)
     if _on_load_post in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(_on_load_post)
+    if _on_depsgraph_update in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.remove(_on_depsgraph_update)
+    if _on_undo_post in bpy.app.handlers.undo_post:
+        bpy.app.handlers.undo_post.remove(_on_undo_post)
     for c in reversed(classes):
         try:
             bpy.utils.unregister_class(c)

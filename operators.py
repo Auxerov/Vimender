@@ -917,6 +917,10 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             if S.pie_active and time.time() - S.pie_open_time > 5.0:
                 S.pie_active = False
                 S.view_pie_active = False
+            if S.search_active and time.time() - S.search_open_time > 0.12:
+                if getattr(context, 'region_popup', None) is None:
+                    S.search_active = False
+                    tag_all()
             if S.mode in {'BOX1', 'BOX2'}:
                 a = area_by_ptr(win, S.hint_ptr)
                 r = window_region(a) if a else None
@@ -977,22 +981,30 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     return {'RUNNING_MODAL'}
 
         if S.search_active:
-            if t == 'TAB' and v == 'PRESS':
-                S.search_active = False
-                send_fake_escape()
-                tag_all()
-                return {'RUNNING_MODAL'}
-            if t in {'ESC', 'RET', 'NUMPAD_ENTER'} and v == 'PRESS':
+            popup_active = (getattr(context, 'region_popup', None) is not None)
+            if not popup_active and (time.time() - S.search_open_time > 0.08):
                 S.search_active = False
                 tag_all()
-                return {'PASS_THROUGH'}
-            if t in MOUSE_CANCEL and v == 'PRESS':
-                if time.time() - S.search_open_time > 0.2:
+            else:
+                if t == 'TAB' and v == 'PRESS':
+                    S.search_active = False
+                    send_fake_escape()
+                    tag_all()
+                    return {'RUNNING_MODAL'}
+                if t in {'ESC', 'RET', 'NUMPAD_ENTER'} and v == 'PRESS':
                     S.search_active = False
                     tag_all()
-                return {'PASS_THROUGH'}
-            S.search_open_time = time.time()
-            return {'PASS_THROUGH'}
+                    return {'PASS_THROUGH'}
+                if t in MOUSE_CANCEL and v == 'PRESS':
+                    if time.time() - S.search_open_time > 0.08:
+                        S.search_active = False
+                        tag_all()
+                    return {'PASS_THROUGH'}
+                if t == 'SPACE' and v == 'PRESS' and not popup_active:
+                    S.search_active = False
+                    tag_all()
+                else:
+                    return {'PASS_THROUGH'}
 
         is_cam_to_view_shortcut = (
             (t in {'ZERO', 'NUMPAD_0'} or getattr(event, 'unicode', '') == '0') and
@@ -1346,8 +1358,12 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 return {'PASS_THROUGH'}
             if mouse_area and (mouse_area.type in anim_editors or mouse_area.type in PASS_KEYS_IN):
                 return {'PASS_THROUGH'}
+            if getattr(context, 'region_popup', None) is None:
+                S.search_active = False
+            else:
+                return {'PASS_THROUGH'}
 
-        if not S.search_active and check_shortcut(prefs, 'search_menu', event, 'SPACE', fallback_ctrl=False):
+        if not S.search_active and (check_shortcut(prefs, 'search_menu', event, 'SPACE', fallback_ctrl=False) or is_plain_space):
             if is_playing:
                 return {'PASS_THROUGH'}
             if mouse_area and mouse_area.type in anim_editors:
