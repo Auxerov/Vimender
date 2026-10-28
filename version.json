@@ -1,4 +1,5 @@
 {
-  "commit": "3907534535ed4adb90a1cee037400ab80cdd86d2",
-  "message": "fix(hint): cancel hint selection mode on ESC and right click"
+  "version": "1.0.0",
+  "commit": "0f80d23ad85cbc478ba40b7fbe33ca26c8e70cd1",
+  "message": "Release v1.0 - Full modal keyboard navigation, hints, and tools"
 }
