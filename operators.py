@@ -1186,8 +1186,13 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             if res != {'PASS_THROUGH'}:
                 return res
 
+        if getattr(S, 'pen_mode', False):
+            res = handle_pen_event(self, context, event, win, area)
+            if res != {'PASS_THROUGH'}:
+                return res
+
         if transform_active(win) or is_blender_modal_active(win):
-            if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not S.mode:
+            if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not getattr(S, 'pen_mode', False) and not S.mode:
                 if (t in {'N', 'M'} or event.unicode in {'n', 'N', 'm', 'M'}) and not (event.ctrl or event.alt or event.oskey):
                     if v == 'PRESS':
                         is_up = (t == 'N' or event.unicode in {'n', 'N'})
@@ -1423,7 +1428,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             return handle_nav_event(self, context, event, win, area)
 
         if getattr(S, 'pen_mode', False):
-            return handle_pen_event(self, context, event, win, area)
+            return {'PASS_THROUGH'}
 
         if S.preview_mode:
             return handle_preview_event(self, context, event, win, area)

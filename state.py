@@ -993,9 +993,10 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         if getattr(S, 'pen_nav', None):
             S.pen_nav.reset()
         try:
-            from .mode_tablet import _tracker
+            from .mode_tablet import _tracker, _stylus_tracker
             if not S.tablet_mode:
                 _tracker.stop()
+                _stylus_tracker.stop()
         except Exception:
             pass
 
@@ -1098,8 +1099,9 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         else:
             S.pen_nav.reset()
         try:
-            from .mode_tablet import _tracker
+            from .mode_tablet import _tracker, _stylus_tracker
             _tracker.start()
+            _stylus_tracker.start()
         except Exception:
             pass
         if report_fn:

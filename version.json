@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
-  "commit": "0f80d23ad85cbc478ba40b7fbe33ca26c8e70cd1",
-  "message": "Release v1.0 - Full modal keyboard navigation, hints, and tools"
+  "version": "1.0.1",
+  "commit": "50f6347",
+  "message": "fix(pen): hardware evdev touch swallowing and increased stylus pan sensitivity"
 }

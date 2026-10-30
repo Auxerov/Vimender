@@ -29,11 +29,18 @@ class _PenNavigator:
 
     def tick(self, context=None, win=None):
         try:
-            from .mode_tablet import _tracker
+            from .mode_tablet import _tracker, _stylus_tracker
         except Exception:
             return False
 
         if not getattr(_tracker, 'active', False):
+            return False
+
+        # Inhibit pinch-zoom and pan if pen is actively touching the glass
+        if getattr(_stylus_tracker, 'is_pen_touching', None) and _stylus_tracker.is_pen_touching():
+            with _tracker.lock:
+                _tracker.pan_delta[0] = _tracker.pan_delta[1] = 0.0
+                _tracker.zoom_log = 0.0
             return False
 
         if context is None:
@@ -56,9 +63,6 @@ class _PenNavigator:
             return False
 
         with _tracker.lock:
-
-
-
             _tracker.orbit_delta[0] = _tracker.orbit_delta[1] = 0.0
             _tracker.transform_delta[0] = _tracker.transform_delta[1] = 0.0
             _tracker.twist = 0.0
@@ -72,6 +76,11 @@ class _PenNavigator:
             _tracker.zoom_log = 0.0
             mid_n = _tracker.mid_n
 
+        # If not 2 fingers, discard any gesture motion to prevent single-finger / palm drift
+        if fingers != 2:
+            self._anchor = (0.0, 0.0)
+            return False
+
         now = time.perf_counter()
         dt = min(max(now - self._last_t, 0.001), 0.05) if self._last_t else 0.016
         self._last_t = now
@@ -79,11 +88,10 @@ class _PenNavigator:
         W = max(float(win.width), 1.0)
         H = max(float(win.height), 1.0)
 
-
         dpx = pdx * W
         dpy = -pdy * H
 
-        if fingers != 2 and not (dpx or dpy or zlog):
+        if not (dpx or dpy or zlog):
             return False
 
         if mid_n is not None:
@@ -134,6 +142,15 @@ def exit_pen_mode(context, report_fn=None):
     set_active_mode('PREVIEW', context, report_fn)
 
 
+MOUSE_TOUCH_SWALLOW_EVENTS = {
+    'LEFTMOUSE', 'RIGHTMOUSE', 'MIDDLEMOUSE',
+    'BUTTON4MOUSE', 'BUTTON5MOUSE', 'BUTTON6MOUSE', 'BUTTON7MOUSE',
+    'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE',
+    'TRACKPADPAN', 'TRACKPADZOOM', 'MOUSEROTATE', 'MOUSESMARTZOOM',
+    'WHEELUPMOUSE', 'WHEELDOWNMOUSE', 'WHEELINMOUSE', 'WHEELOUTMOUSE',
+}
+
+
 def handle_pen_event(op, context, event, win, area):
     t, v = event.type, event.value
     prefs = get_preferences(context)
@@ -141,5 +158,44 @@ def handle_pen_event(op, context, event, win, area):
     if t == 'ESC' and v == 'PRESS':
         exit_pen_mode(context, op.report)
         return {'RUNNING_MODAL'}
+
+    try:
+        from .mode_tablet import _tracker, _stylus_tracker
+    except Exception:
+        return {'PASS_THROUGH'}
+
+    # 1. Stylus Pen hardware check:
+    # Does the physical Wacom Pen have its tip touching the glass?
+    # (Reads directly from /dev/input/event6 via evdev - 100% reliable)
+    is_stylus_touching = False
+    if getattr(_stylus_tracker, 'active', False):
+        is_stylus_touching = _stylus_tracker.is_pen_touching(window_seconds=0.10)
+    else:
+        is_stylus_touching = getattr(event, 'is_tablet', False)
+
+    # 2. Touch hardware check:
+    # Are touchscreen fingers or palm contacts touching the glass?
+    # (Reads directly from /dev/input/event7 via evdev)
+    touch_active = False
+    if getattr(_tracker, 'active', False):
+        touch_active = _tracker.is_touch_active(cooldown=0.30)
+
+    # 3. Swallow touch-synthesized mouse events in Pen Mode:
+    # When fingers/palm are touching the screen and the physical pen is NOT on the glass:
+    # ANY mouse button / move event is synthesized touch input from Mutter/Wayland.
+    # We swallow it completely so Blender NEVER starts a sculpt or paint stroke!
+    if touch_active and not is_stylus_touching:
+        if t in MOUSE_TOUCH_SWALLOW_EVENTS:
+            # Synchronously update pinch-to-zoom/pan on touch motion for immediate responsiveness
+            if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
+                if getattr(S, 'pen_nav', None):
+                    if S.pen_nav.tick(context, win):
+                        if area:
+                            area.tag_redraw()
+                        elif win and win.screen:
+                            for a in win.screen.areas:
+                                if a.type == 'VIEW_3D':
+                                    a.tag_redraw()
+            return {'RUNNING_MODAL'}
 
     return {'PASS_THROUGH'}

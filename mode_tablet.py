@@ -140,6 +140,9 @@ class EvdevMultiTouchTracker:
         self.touch_serial = 0
         self.pending_undo = False
         self.pending_redo = False
+        self.touch_active = False
+        self.last_touch_time = 0.0
+        self.last_lift_time = 0.0
 
 
     @staticmethod
@@ -315,7 +318,19 @@ class EvdevMultiTouchTracker:
     def _norm(self, x, y):
         return (x - self.x_min) / self.x_rng, (y - self.y_min) / self.y_rng
 
+    def is_touch_active(self, cooldown=0.35):
+        """
+        Returns True if fingers are currently touching the screen or were lifted within `cooldown` seconds.
+        """
+        with self.lock:
+            if self.finger_count > 0 or self.touch_active:
+                return True
+            if self.last_lift_time <= 0.0:
+                return False
+            return (time.perf_counter() - self.last_lift_time) < cooldown
+
     def _process_frame(self):
+        any_down = any(s.get('down', False) for s in self.slots.values())
         active = [s for s in self.slots.values() if s.get('down', False) and not s.get('palm', False)]
         n = len(active)
         now = time.perf_counter()
@@ -324,8 +339,14 @@ class EvdevMultiTouchTracker:
             if n > 0 and self.finger_count == 0:
                 self.touch_serial += 1
             self.finger_count = n
+            self.touch_active = any_down
+            if any_down:
+                self.last_touch_time = now
 
-        if n == 0:
+        if not any_down:
+            with self.lock:
+                self.touch_active = False
+                self.last_lift_time = now
             if not self.touch_moved and (now - self.touch_start_time) < 0.32:
                 with self.lock:
                     if self.touch_max_fingers == 2:
@@ -669,6 +690,11 @@ class EvdevStylusTracker:
         self.lock = threading.Lock()
 
         self.btn_pan_down = False
+        self.pen_touch_down = False
+        self.pen_in_proximity = False
+        self.pen_pressure = 0
+        self.last_pen_touch_time = 0.0
+        self.last_pen_prox_time = 0.0
         self.last_x = None
         self.last_y = None
         self.pan_delta = [0.0, 0.0]
@@ -720,6 +746,24 @@ class EvdevStylusTracker:
             self.x_min, self.x_rng = 0.0, 30182.0
             self.y_min, self.y_rng = 0.0, 18864.0
 
+    def is_pen_touching(self, window_seconds=0.10):
+        """Returns True if the pen tip is currently touching the screen or was touching within window_seconds."""
+        with self.lock:
+            if self.pen_touch_down or self.pen_pressure > 0:
+                return True
+            if self.last_pen_touch_time <= 0.0:
+                return False
+            return (time.perf_counter() - self.last_pen_touch_time) < window_seconds
+
+    def is_pen_in_proximity(self, window_seconds=0.20):
+        """Returns True if the pen is currently in hover proximity or was within window_seconds."""
+        with self.lock:
+            if self.pen_in_proximity:
+                return True
+            if self.last_pen_prox_time <= 0.0:
+                return False
+            return (time.perf_counter() - self.last_pen_prox_time) < window_seconds
+
     def start(self):
         if self.running and self.dev:
             return True
@@ -734,6 +778,11 @@ class EvdevStylusTracker:
         self.active = True
         with self.lock:
             self.btn_pan_down = False
+            self.pen_touch_down = False
+            self.pen_in_proximity = False
+            self.pen_pressure = 0
+            self.last_pen_touch_time = 0.0
+            self.last_pen_prox_time = 0.0
             self.last_x = None
             self.last_y = None
             self.pan_delta = [0.0, 0.0]
@@ -762,25 +811,42 @@ class EvdevStylusTracker:
         curr_x = None
         curr_y = None
         btn_pan = False
+        pan_btn_mode = str(load_vimender_config().get('stylus_pan_button', 'BTN_STYLUS')).upper()
+        cfg_check_t = 0.0
 
         while not stop_evt.is_set():
             try:
                 ready, _, _ = select.select([dev.fd], [], [], 0.02)
                 if not ready:
                     continue
-                pan_btn_mode = str(load_vimender_config().get('stylus_pan_button', 'BTN_STYLUS')).upper()
+                now = time.perf_counter()
+                if now - cfg_check_t > 2.0:
+                    cfg_check_t = now
+                    pan_btn_mode = str(load_vimender_config().get('stylus_pan_button', 'BTN_STYLUS')).upper()
                 for ev in dev.read():
                     if ev.type == ecodes.EV_KEY:
+                        c, val = ev.code, ev.value
+                        if c in (getattr(ecodes, 'BTN_TOOL_PEN', 320), getattr(ecodes, 'BTN_TOOL_RUBBER', 321)):
+                            with self.lock:
+                                self.pen_in_proximity = bool(val)
+                                if val:
+                                    self.last_pen_prox_time = time.perf_counter()
+                        elif c == getattr(ecodes, 'BTN_TOUCH', 330):
+                            with self.lock:
+                                self.pen_touch_down = bool(val)
+                                if val:
+                                    self.last_pen_touch_time = time.perf_counter()
+
                         is_pan_btn = False
                         if pan_btn_mode == 'BTN_STYLUS2':
-                            is_pan_btn = (ev.code == ecodes.BTN_STYLUS2)
+                            is_pan_btn = (c == ecodes.BTN_STYLUS2)
                         elif pan_btn_mode == 'BOTH':
-                            is_pan_btn = (ev.code in (ecodes.BTN_STYLUS, ecodes.BTN_STYLUS2))
+                            is_pan_btn = (c in (ecodes.BTN_STYLUS, ecodes.BTN_STYLUS2))
                         else:
-                            is_pan_btn = (ev.code == ecodes.BTN_STYLUS)
+                            is_pan_btn = (c == ecodes.BTN_STYLUS)
 
                         if is_pan_btn:
-                            btn_pan = bool(ev.value)
+                            btn_pan = bool(val)
                             with self.lock:
                                 self.btn_pan_down = btn_pan
                                 if not btn_pan:
@@ -791,7 +857,15 @@ class EvdevStylusTracker:
                             curr_x = float(ev.value)
                         elif ev.code == ecodes.ABS_Y:
                             curr_y = float(ev.value)
+                        elif ev.code == getattr(ecodes, 'ABS_PRESSURE', 24):
+                            with self.lock:
+                                self.pen_pressure = ev.value
+                                if ev.value > 0:
+                                    self.last_pen_touch_time = time.perf_counter()
                     elif ev.type == ecodes.EV_SYN and ev.code == ecodes.SYN_REPORT:
+                        if self.pen_touch_down or self.pen_pressure > 0:
+                            with self.lock:
+                                self.last_pen_touch_time = time.perf_counter()
                         if btn_pan and curr_x is not None and curr_y is not None:
                             with self.lock:
                                 if self.last_x is not None and self.last_y is not None:
@@ -821,6 +895,10 @@ class _StylusNavigator:
     Consumes stylus tracker pan deltas on Blender's main thread and pans
     the active 3D viewport smoothly when the upper barrel button is held.
     """
+    def __init__(self):
+        self._last_cfg_t = 0.0
+        self._cfg_sens = 1.75
+
     def reset(self):
         with _stylus_tracker.lock:
             _stylus_tracker.pan_delta[0] = _stylus_tracker.pan_delta[1] = 0.0
@@ -858,6 +936,14 @@ class _StylusNavigator:
         if not rv3d or not reg:
             return False
 
+        now = time.perf_counter()
+        if now - self._last_cfg_t > 2.0:
+            self._last_cfg_t = now
+            try:
+                self._cfg_sens = float(load_vimender_config().get('stylus_pan_sensitivity', 1.75))
+            except Exception:
+                self._cfg_sens = 1.75
+
         W = max(float(win.width), 1.0)
         H = max(float(win.height), 1.0)
         dpx = pdx * W
@@ -867,7 +953,7 @@ class _StylusNavigator:
         d = rv3d.view_distance
         sens = SENS_LEVELS[S.sens_idx] if hasattr(S, 'sens_idx') else 1.0
         lens = max(getattr(space, 'lens', 50.0), 1.0)
-        u = d * VIEW_SENSOR_MM / (lens * max(reg.width, reg.height, 1)) * sens
+        u = d * VIEW_SENSOR_MM / (lens * max(reg.width, reg.height, 1)) * sens * self._cfg_sens
         right = rot @ Vector((1.0, 0.0, 0.0))
         up = rot @ Vector((0.0, 1.0, 0.0))
 

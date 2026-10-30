@@ -595,6 +595,24 @@ class VimenderPreferences(bpy.types.AddonPreferences):
         set=_set_stylus_pen,
     )
 
+    def _get_stylus_pan_sensitivity(self):
+        return float(load_vimender_config().get('stylus_pan_sensitivity', 1.75))
+
+    def _set_stylus_pan_sensitivity(self, val):
+        save_vimender_config({'stylus_pan_sensitivity': round(float(val), 2)})
+
+    stylus_pan_sensitivity: bpy.props.FloatProperty(
+        name="Stylus Pan Sensitivity",
+        description="Speed / sensitivity multiplier for Stylus barrel button viewport pan",
+        default=1.75,
+        min=0.2,
+        max=5.0,
+        step=10,
+        precision=2,
+        get=_get_stylus_pan_sensitivity,
+        set=_set_stylus_pan_sensitivity,
+    )
+
     update_status: bpy.props.StringProperty(
         name="Update Status",
         default="Ready to check",
@@ -683,6 +701,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             box0.prop(self, "arrow_keys_layout", text="Arrow Keys Layout (Laptop / No Numpad)")
             box0.prop(self, "stylus_pen", text="Stylus Pen (Emulate 3 Button Mouse in Tablet Mode)")
             box0.prop(self, "stylus_pan_button", text="Stylus Pan Button")
+            box0.prop(self, "stylus_pan_sensitivity", text="Stylus Pan Sensitivity")
 
 
             box = layout.box()
@@ -746,6 +765,7 @@ class WM_OT_vim_export_keymap(bpy.types.Operator, ExportHelper):
             "keymaps": {},
             "arrow_keys_layout": bool(getattr(prefs, 'arrow_keys_layout', False)),
             "stylus_pen": bool(getattr(prefs, 'stylus_pen', False)),
+            "stylus_pan_sensitivity": float(getattr(prefs, 'stylus_pan_sensitivity', 1.75)),
             "auto_start": bool(getattr(prefs, 'auto_start', False)),
         }
         for prefix, label, def_k, def_c, def_s, def_a in KEY_PREFIXES:
@@ -812,6 +832,8 @@ class WM_OT_vim_import_keymap(bpy.types.Operator, ImportHelper):
                 prefs.arrow_keys_layout = bool(data["arrow_keys_layout"])
             if "stylus_pen" in data:
                 prefs.stylus_pen = bool(data["stylus_pen"])
+            if "stylus_pan_sensitivity" in data:
+                prefs.stylus_pan_sensitivity = float(data["stylus_pan_sensitivity"])
             if "auto_start" in data:
                 prefs.auto_start = bool(data["auto_start"])
             save_keymaps_to_config(prefs)
