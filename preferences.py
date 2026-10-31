@@ -614,24 +614,32 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     )
 
     def _get_pen_ui_scale(self):
-        return float(load_vimender_config().get('pen_ui_scale', 1.25))
+        return float(load_vimender_config().get('pen_ui_scale', 1.15))
 
     def _set_pen_ui_scale(self, val):
         val = round(float(val), 2)
         save_vimender_config({'pen_ui_scale': val})
-        if getattr(S, 'pen_mode', False) and getattr(S, 'pen_prev_ui_scale', None) is not None:
+        if getattr(S, 'pen_mode', False) or getattr(S, 'tablet_mode', False):
             try:
-                base = S.pen_prev_ui_scale
+                base = float(getattr(S, 'base_ui_scale', 1.0))
                 bpy.context.preferences.view.ui_scale = round(base * max(1.0, val), 2)
+                S.ui_scale_boosted = True
+            except Exception:
+                pass
+        else:
+            try:
+                base = float(getattr(S, 'base_ui_scale', 1.0))
+                bpy.context.preferences.view.ui_scale = base
+                S.ui_scale_boosted = False
             except Exception:
                 pass
 
     pen_ui_scale: bpy.props.FloatProperty(
-        name="Pen Mode UI Button Scale",
-        description="Scale multiplier applied to UI buttons and Properties panel when entering Pen Mode (e.g. 1.25 = 25% bigger)",
-        default=1.25,
-        min=1.05,
-        max=2.0,
+        name="Tablet & Pen UI Scale",
+        description="Slight scale multiplier for buttons while in Tablet or Pen Mode (normal mode stays 1.0)",
+        default=1.15,
+        min=1.0,
+        max=1.4,
         step=5,
         precision=2,
         get=_get_pen_ui_scale,
@@ -780,7 +788,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             box0.prop(self, "stylus_pan_button", text="Stylus Pan Button")
             box0.prop(self, "pen_orbit_sensitivity", text="Pen Middle-Click Sensitivity (Orbit)", slider=True)
             box0.prop(self, "pen_pan_sensitivity", text="Pen Shift+Middle-Click Sensitivity (Pan)", slider=True)
-            box0.prop(self, "pen_ui_scale", text="Pen Mode UI Scale (Properties & Buttons)", slider=True)
+            box0.prop(self, "pen_ui_scale", text="Tablet & Pen Mode UI Scale (Normal: 1.0)", slider=True)
 
 
             box = layout.box()

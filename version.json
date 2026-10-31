@@ -1,5 +1,5 @@
 {
-  "version": "1.0.5",
-  "commit": "75438d8",
-  "message": "fix(pen): restore native turntable orbit axis for Middle Click while maintaining Pen Mode orbit sensitivity scaling"
+  "version": "1.0.6",
+  "commit": "8e6731a",
+  "message": "fix(ui): ensure normal Blender scale is strictly 1.0 without compounding, slightly boosting only in tablet/pen mode"
 }

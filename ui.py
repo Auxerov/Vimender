@@ -7,6 +7,7 @@ from gpu_extras.batch import batch_for_shader
 from .state import (
     S, GREEN, CYAN, RED, PURPLE, YELLOW, ORANGE, GREY, WHITE, BORDER_PX, HINT_BG,
     HINT_TEXT, HINT_TYPED, LEADER, SPACE_NAMES, window_region, area_by_ptr, ui_scale,
+    restore_base_ui_scale,
     tag_all, _handlers, _shader, _ORIGINAL_VIEW_PIE_DRAW, get_preferences, SENS_LEVELS,
     load_vimender_config, save_vimender_config
 )
@@ -634,12 +635,7 @@ def shutdown():
         S.pen_mmb_area_ptr = 0
         if getattr(S, 'pen_nav', None):
             S.pen_nav.reset()
-        if getattr(S, 'pen_prev_ui_scale', None) is not None:
-            try:
-                bpy.context.preferences.view.ui_scale = S.pen_prev_ui_scale
-            except Exception:
-                pass
-            S.pen_prev_ui_scale = None
+        restore_base_ui_scale()
         try:
             inputs = bpy.context.preferences.inputs
             if getattr(S, 'pen_saved_turntable_sens', None) is not None:

@@ -204,6 +204,8 @@ class _State:
         self.pen_mode = False
         self.pen_ptr = 0
         self.pen_nav = None
+        self.base_ui_scale = 1.0
+        self.ui_scale_boosted = False
         self.pen_prev_ui_scale = None
         self.pen_saved_turntable_sens = None
         self.pen_saved_trackball_sens = None
@@ -393,6 +395,38 @@ def tag_all():
 
 def ui_scale():
     return bpy.context.preferences.system.ui_scale
+
+
+def restore_base_ui_scale(context=None):
+    """Restore Blender UI scale to unboosted normal scale (1.0)."""
+    ctx = context or getattr(bpy, 'context', None)
+    if ctx and hasattr(ctx, 'preferences'):
+        try:
+            base = float(getattr(S, 'base_ui_scale', 1.0))
+            cur = float(ctx.preferences.view.ui_scale)
+            if abs(cur - base) > 0.005:
+                ctx.preferences.view.ui_scale = base
+        except Exception:
+            pass
+    S.ui_scale_boosted = False
+    S.pen_prev_ui_scale = None
+
+
+def apply_tablet_ui_scale(context=None):
+    """Slightly boost Blender UI scale (default 1.15x) strictly while in Tablet or Pen mode."""
+    ctx = context or getattr(bpy, 'context', None)
+    if ctx and hasattr(ctx, 'preferences'):
+        try:
+            prefs = get_preferences(ctx)
+            factor = float(getattr(prefs, 'pen_ui_scale', 1.15)) if prefs else 1.15
+            base = float(getattr(S, 'base_ui_scale', 1.0))
+            target = round(base * max(1.0, factor), 2)
+            cur = float(ctx.preferences.view.ui_scale)
+            if abs(cur - target) > 0.005:
+                ctx.preferences.view.ui_scale = target
+            S.ui_scale_boosted = True
+        except Exception as e:
+            print(f"[Vimender] tablet/pen ui_scale boost error: {e}")
 
 
 def make_labels(n):
@@ -995,7 +1029,7 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         S.navigation_mode = False
         S.workspace_nav = False
 
-    if getattr(S, 'pen_mode', False) or getattr(S, 'pen_prev_ui_scale', None) is not None:
+    if getattr(S, 'pen_mode', False):
         S.pen_mode = False
         S.pen_ptr = 0
         S.pen_mmb_active = False
@@ -1010,14 +1044,6 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
                 _stylus_tracker.stop()
         except Exception:
             pass
-        if getattr(S, 'pen_prev_ui_scale', None) is not None:
-            ctx = context or getattr(bpy, 'context', None)
-            if ctx and hasattr(ctx, 'preferences'):
-                try:
-                    ctx.preferences.view.ui_scale = S.pen_prev_ui_scale
-                except Exception:
-                    pass
-            S.pen_prev_ui_scale = None
 
         ctx = context or getattr(bpy, 'context', None)
         if ctx and hasattr(ctx, 'preferences'):
@@ -1036,6 +1062,12 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         S.clear_hint()
 
     S.preview_mode = False
+
+    # Manage UI scale: slightly boost when entering TABLET or PEN, restore to 1.0 otherwise
+    if mode_name in {'TABLET', 'PEN'}:
+        apply_tablet_ui_scale(context)
+    else:
+        restore_base_ui_scale(context)
 
     if mode_name == 'WALK':
         S.walk_mode = True
@@ -1139,17 +1171,6 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
 
         ctx = context or getattr(bpy, 'context', None)
         if ctx and hasattr(ctx, 'preferences'):
-            try:
-                prefs = get_preferences(ctx)
-                factor = float(getattr(prefs, 'pen_ui_scale', 1.25)) if prefs else 1.25
-                cur_scale = float(ctx.preferences.view.ui_scale)
-                if getattr(S, 'pen_prev_ui_scale', None) is None:
-                    S.pen_prev_ui_scale = cur_scale
-                target_scale = round(cur_scale * max(1.05, factor), 2)
-                ctx.preferences.view.ui_scale = target_scale
-            except Exception as e:
-                print(f"[Vimender] pen_mode ui_scale boost error: {e}")
-
             try:
                 prefs = get_preferences(ctx)
                 inputs = ctx.preferences.inputs

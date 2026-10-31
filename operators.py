@@ -125,8 +125,8 @@ class WM_OT_vim_pen_settings(bpy.types.Operator):
 
         layout.separator()
         box_ui = layout.box()
-        box_ui.label(text="Pen Mode UI Scale", icon='WINDOW')
-        box_ui.prop(prefs, "pen_ui_scale", text="Properties & UI Button Scale", slider=True)
+        box_ui.label(text="Tablet & Pen UI Scale", icon='WINDOW')
+        box_ui.prop(prefs, "pen_ui_scale", text="Tablet / Pen UI Scale (Normal: 1.0)", slider=True)
 
     def execute(self, context):
         tag_all()
