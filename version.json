@@ -1,5 +1,5 @@
 {
-  "version": "1.0.1",
-  "commit": "50f6347",
-  "message": "fix(pen): hardware evdev touch swallowing and increased stylus pan sensitivity"
+  "version": "1.0.2",
+  "commit": "HEAD",
+  "message": "feat(pen): strictly lock pen mode to Ctrl+Alt+P and sync with topbar Edit menu"
 }

@@ -72,6 +72,35 @@ class WM_OT_vim_tablet_select_modifier(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class WM_OT_vim_pen_mode_toggle(bpy.types.Operator):
+    bl_idname = "wm.vim_pen_mode_toggle"
+    bl_label = "Vimender: Pen Mode"
+    bl_description = "Toggle Vimender Pen Mode (Stylus drawing with 2-finger hand pinch-zoom)"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        cur = bool(getattr(S, 'pen_mode', False))
+        wm = getattr(context, 'window_manager', None)
+        if wm and hasattr(wm, 'vim_pen_mode'):
+            wm.vim_pen_mode = not cur
+        else:
+            if not S.active:
+                try:
+                    bpy.ops.wm.vim_mode_toggle('INVOKE_DEFAULT')
+                except Exception as e:
+                    print(f"[Vimender] Failed to activate Vimender: {e}")
+            if cur:
+                set_active_mode('PREVIEW', context, self.report)
+            else:
+                win = getattr(context, 'window', None)
+                target_a = getattr(context, 'area', None) or (
+                    next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None) if win and getattr(win, 'screen', None) else None
+                )
+                set_active_mode('PEN', context, self.report, target_area=target_a)
+        tag_all()
+        return {'FINISHED'}
+
+
 
 class WM_OT_vim_nudge(bpy.types.Operator):
     bl_idname = "wm.vim_nudge"
@@ -227,7 +256,7 @@ class WM_OT_vim_nudge(bpy.types.Operator):
             if S.cursor_mode:
                 txt = f"Vimender: CURSOR MODE [{S.cursor_plane}] | HJKL: Move | TAB: Plane | 0: Origin | S: Snap | Esc: Exit"
             elif getattr(S, 'pen_mode', False):
-                txt = "Vimender: PEN MODE | Pass-Through: Pen/Mouse | 2-Finger Pinch: Zoom | Ctrl+Alt+P/Esc: Exit"
+                txt = "Vimender: PEN MODE | Pass-Through: Pen/Mouse | 2-Finger Pinch: Zoom | Ctrl+Alt+P: Exit"
             elif S.navigation_mode or S.workspace_nav:
                 txt = "Vimender: NAVIGATION MODE"
             elif S.preview_mode:
@@ -1190,6 +1219,22 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             res = handle_pen_event(self, context, event, win, area)
             if res != {'PASS_THROUGH'}:
                 return res
+
+            prefs = get_preferences(context)
+            is_pen_shortcut = (
+                check_shortcut(prefs, 'pen', event, 'P', fallback_ctrl=True, fallback_alt=True) or
+                ((t == 'P' or getattr(event, 'unicode', '') in {'p', 'P'}) and event.ctrl and event.alt and not (event.oskey or event.shift))
+            )
+            if is_pen_shortcut:
+                if v == 'RELEASE':
+                    return {'RUNNING_MODAL'}
+                if v == 'PRESS':
+                    set_active_mode('PREVIEW', context, self.report)
+                    return {'RUNNING_MODAL'}
+
+            # While in Pen Mode, ONLY Ctrl+Alt+P (or the Edit menu) can exit.
+            # All other events (ESC, brush shortcuts, undo/redo, Blender tools) pass directly through.
+            return {'PASS_THROUGH'}
 
         if transform_active(win) or is_blender_modal_active(win):
             if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not getattr(S, 'pen_mode', False) and not S.mode:

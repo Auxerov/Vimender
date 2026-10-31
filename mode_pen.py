@@ -155,10 +155,6 @@ def handle_pen_event(op, context, event, win, area):
     t, v = event.type, event.value
     prefs = get_preferences(context)
 
-    if t == 'ESC' and v == 'PRESS':
-        exit_pen_mode(context, op.report)
-        return {'RUNNING_MODAL'}
-
     try:
         from .mode_tablet import _tracker, _stylus_tracker
     except Exception:

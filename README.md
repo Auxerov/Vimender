@@ -44,7 +44,7 @@ Vimender operates through a non-blocking modal event loop with dedicated modes:
 | **Cursor** | `Ctrl + Num5` | Precise 3D cursor placement, axial movements, and geometry snapping. |
 | **Walk / Fly** | `Alt + Q` | First-person WASD + HJKL camera traversal with collision and gravity. |
 | **Tablet** | `Ctrl + W` | Hardware evdev multi-touch navigation (pinch zoom, pan, orbit, gizmos). |
-| **Pen** | `Ctrl + Alt + P` | Digitizer tablet mode with palm rejection and isolated 2-finger pinch zoom. |
+| **Pen** | `Ctrl + Alt + P` / Edit Menu | Digitizer tablet mode with palm rejection, isolated 2-finger pinch zoom, and strict lock (only `Ctrl+Alt+P` or Edit menu exits). |
 | **Mode Search** | `AltGr + <` | Quick popup menu to search and jump to any Vimender or Blender mode. |
 | **Exit to Preview** | `Esc` / `Enter` | Safely leaves active navigation/cursor/hint mode back to Preview. |
 
@@ -180,7 +180,7 @@ Dedicated stylus tablet mode (`WHITE` indicator) crafted for graphics tablets, W
 | **Lower Barrel Button** | Scene Orbit | Hold & drag to rotate the 3D viewport (`view3d.rotate`). |
 | **Upper Barrel Button** | Scene Pan | Hold & drag to pan the 3D viewport (`view3d.move`). |
 | **C** | Box Hint Select | Triggers box selection without leaving pen workflow. |
-| **Esc** / `Ctrl + Alt + P` | Exit Pen Mode | Transitions cleanly directly back to **Preview** mode. |
+| `Ctrl + Alt + P` / Edit Menu | Exit Pen Mode | Strictly locked: only `Ctrl + Alt + P` or the Edit menu toggle exits Pen Mode (ESC and all tool keys pass directly through to Blender). |
 
 ---
 

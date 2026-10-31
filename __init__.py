@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Vimender",
     "author": "Auxerov",
-    "version": (1, 0, 1),
+    "version": (1, 0, 2),
     "blender": (5, 0, 0),
     "location": "F3 > Vim Mode",
     "description": "Keyboard controller for Blender with modal navigation, hints, walk mode, and tablet mode",
@@ -38,7 +38,7 @@ else:
     from . import operators
 
 import bpy
-from .state import S, load_vimender_state, get_preferences, close_x11_display
+from .state import S, load_vimender_state, get_preferences, close_x11_display, set_active_mode, tag_all
 from .ui import (
     patch_view_pie, unpatch_view_pie, restore_modal_keymaps, shutdown,
     VIM_MT_editor_more, VIEW3D_MT_vim_view_pie
@@ -50,7 +50,7 @@ from .preferences import (
     WM_OT_vim_update_dialog, repair_corrupted_keymaps
 )
 from .operators import (
-    WM_OT_vim_mode_toggle, WM_OT_vim_nudge, WM_OT_vim_set_editor,
+    WM_OT_vim_mode_toggle, WM_OT_vim_pen_mode_toggle, WM_OT_vim_nudge, WM_OT_vim_set_editor,
     WM_OT_vim_tablet_select_modifier,
     WM_OT_vim_search_object, WM_OT_vim_search_mode, WM_OT_vim_fuzzy_search,
     WM_OT_vim_general_search, WM_OT_vim_save_prompt, WM_OT_vim_save_action,
@@ -60,6 +60,7 @@ from .operators import (
 classes = (
     VimenderPreferences,
     WM_OT_vim_mode_toggle,
+    WM_OT_vim_pen_mode_toggle,
     WM_OT_vim_nudge,
     WM_OT_vim_set_editor,
     WM_OT_vim_tablet_select_modifier,
@@ -121,10 +122,45 @@ def _on_undo_post(scene):
         S.search_active = False
 
 
+def _get_vim_pen_mode(self):
+    return bool(getattr(S, 'pen_mode', False))
+
+
+def _set_vim_pen_mode(self, val):
+    cur = bool(getattr(S, 'pen_mode', False))
+    if val == cur:
+        return
+    ctx = bpy.context
+    if val:
+        if not S.active:
+            try:
+                bpy.ops.wm.vim_mode_toggle('INVOKE_DEFAULT')
+            except Exception as e:
+                print(f"[Vimender] Failed to activate Vimender: {e}")
+        win = getattr(ctx, 'window', None)
+        target_a = getattr(ctx, 'area', None) or (
+            next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None) if win and getattr(win, 'screen', None) else None
+        )
+        set_active_mode('PEN', ctx, target_area=target_a)
+    else:
+        set_active_mode('PREVIEW', ctx)
+    tag_all()
+
+
+def _edit_menu_draw(self, context):
+    wm = getattr(context, 'window_manager', None)
+    if wm and hasattr(wm, 'vim_pen_mode'):
+        self.layout.separator()
+        self.layout.prop(wm, 'vim_pen_mode', text="Vimender: Pen Mode")
+
+
 def _window_menu_draw(self, context):
     self.layout.separator()
     self.layout.operator(WM_OT_vim_mode_toggle.bl_idname, text="Vimender Mode",
                          icon='CHECKBOX_HLT' if S.active else 'CHECKBOX_DEHLT')
+    wm = getattr(context, 'window_manager', None)
+    if wm and hasattr(wm, 'vim_pen_mode'):
+        self.layout.prop(wm, 'vim_pen_mode', text="Vimender: Pen Mode")
     self.layout.operator(WM_OT_vim_check_update.bl_idname, text="Vimender: Check for Updates", icon='FILE_REFRESH')
     self.layout.operator(WM_OT_vim_update_addon.bl_idname, text="Vimender: Update Now", icon='IMPORT')
 
@@ -145,7 +181,17 @@ def register():
             repair_corrupted_keymaps(prefs)
     except Exception:
         pass
+    bpy.types.WindowManager.vim_pen_mode = bpy.props.BoolProperty(
+        name="Vimender: Pen Mode",
+        description="Toggle Vimender Pen Mode (Stylus drawing with 2-finger hand pinch-zoom)",
+        get=_get_vim_pen_mode,
+        set=_set_vim_pen_mode,
+    )
     bpy.types.TOPBAR_MT_window.append(_window_menu_draw)
+    try:
+        bpy.types.TOPBAR_MT_edit.append(_edit_menu_draw)
+    except Exception:
+        pass
     try:
         bpy.types.VIEW3D_MT_view.append(_view3d_menu_draw)
     except Exception:
@@ -168,6 +214,14 @@ def unregister():
     restore_modal_keymaps()
     close_x11_display()
     unregister_search_key()
+    try:
+        bpy.types.TOPBAR_MT_edit.remove(_edit_menu_draw)
+    except Exception:
+        pass
+    try:
+        del bpy.types.WindowManager.vim_pen_mode
+    except Exception:
+        pass
     try:
         bpy.types.TOPBAR_MT_window.remove(_window_menu_draw)
     except Exception:

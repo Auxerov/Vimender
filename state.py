@@ -1107,7 +1107,7 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         if report_fn:
             report_fn({'INFO'}, "Vimender: PEN MODE")
         try:
-            context.workspace.status_text_set("Vimender: PEN MODE | Pass-Through: Pen/Mouse | 2-Finger Pinch: Zoom | Ctrl+Alt+P/Esc: Exit")
+            context.workspace.status_text_set("Vimender: PEN MODE | Pass-Through: Pen/Mouse | 2-Finger Pinch: Zoom | Ctrl+Alt+P: Exit")
         except Exception:
             pass
 

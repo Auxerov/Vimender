@@ -621,10 +621,16 @@ def restore_modal_keymaps():
 
 def shutdown():
     try:
-        from .mode_tablet import _stylus_tracker
+        from .mode_tablet import _stylus_tracker, _tracker
         _stylus_tracker.stop()
+        _tracker.stop()
     except Exception:
         pass
+    if getattr(S, 'pen_mode', False):
+        S.pen_mode = False
+        S.pen_ptr = 0
+        if getattr(S, 'pen_nav', None):
+            S.pen_nav.reset()
     if getattr(S, 'tablet_mode', False):
         try:
             from .mode_tablet import disable_touchview_integration
