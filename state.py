@@ -204,6 +204,7 @@ class _State:
         self.pen_mode = False
         self.pen_ptr = 0
         self.pen_nav = None
+        self.pen_prev_ui_scale = None
         self.stylus_nav = None
         self.exit_walk_fn = None
         self.exit_tablet_fn = None
@@ -987,7 +988,7 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         S.navigation_mode = False
         S.workspace_nav = False
 
-    if getattr(S, 'pen_mode', False):
+    if getattr(S, 'pen_mode', False) or getattr(S, 'pen_prev_ui_scale', None) is not None:
         S.pen_mode = False
         S.pen_ptr = 0
         if getattr(S, 'pen_nav', None):
@@ -999,6 +1000,14 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
                 _stylus_tracker.stop()
         except Exception:
             pass
+        if getattr(S, 'pen_prev_ui_scale', None) is not None:
+            ctx = context or getattr(bpy, 'context', None)
+            if ctx and hasattr(ctx, 'preferences'):
+                try:
+                    ctx.preferences.view.ui_scale = S.pen_prev_ui_scale
+                except Exception:
+                    pass
+            S.pen_prev_ui_scale = None
 
     if S.mode:
         S.clear_hint()
@@ -1104,6 +1113,20 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
             _stylus_tracker.start()
         except Exception:
             pass
+
+        ctx = context or getattr(bpy, 'context', None)
+        if ctx and hasattr(ctx, 'preferences'):
+            try:
+                prefs = get_preferences(ctx)
+                factor = float(getattr(prefs, 'pen_ui_scale', 1.25)) if prefs else 1.25
+                cur_scale = float(ctx.preferences.view.ui_scale)
+                if getattr(S, 'pen_prev_ui_scale', None) is None:
+                    S.pen_prev_ui_scale = cur_scale
+                target_scale = round(cur_scale * max(1.05, factor), 2)
+                ctx.preferences.view.ui_scale = target_scale
+            except Exception as e:
+                print(f"[Vimender] pen_mode ui_scale boost error: {e}")
+
         if report_fn:
             report_fn({'INFO'}, "Vimender: PEN MODE")
         try:

@@ -180,6 +180,7 @@ Dedicated stylus tablet mode (`WHITE` indicator) crafted for graphics tablets, W
 | **Lower Barrel Button** | Scene Orbit | Hold & drag to rotate the 3D viewport (`view3d.rotate`). |
 | **Upper Barrel Button** | Scene Pan | Hold & drag to pan the 3D viewport (`view3d.move`). |
 | **C** | Box Hint Select | Triggers box selection without leaving pen workflow. |
+| **UI Button Scale** | Touch/Pen Optimized | Automatically scales Properties panel buttons & tabs up by 25% for easy stylus tapping; restores to exact normal size on exit. |
 | `Ctrl + Alt + P` / Edit Menu | Exit Pen Mode | Strictly locked: only `Ctrl + Alt + P` or the Edit menu toggle exits Pen Mode (ESC and all tool keys pass directly through to Blender). |
 
 ---

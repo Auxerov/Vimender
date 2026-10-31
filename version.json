@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2",
-  "commit": "0ad8d7c",
-  "message": "feat(pen): strictly lock pen mode to Ctrl+Alt+P and sync with topbar Edit menu"
+  "version": "1.0.3",
+  "commit": "HEAD",
+  "message": "feat(pen): dynamic UI button and properties scaling in Pen Mode with automatic restoration"
 }

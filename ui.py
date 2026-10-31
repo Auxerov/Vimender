@@ -626,11 +626,17 @@ def shutdown():
         _tracker.stop()
     except Exception:
         pass
-    if getattr(S, 'pen_mode', False):
+    if getattr(S, 'pen_mode', False) or getattr(S, 'pen_prev_ui_scale', None) is not None:
         S.pen_mode = False
         S.pen_ptr = 0
         if getattr(S, 'pen_nav', None):
             S.pen_nav.reset()
+        if getattr(S, 'pen_prev_ui_scale', None) is not None:
+            try:
+                bpy.context.preferences.view.ui_scale = S.pen_prev_ui_scale
+            except Exception:
+                pass
+            S.pen_prev_ui_scale = None
     if getattr(S, 'tablet_mode', False):
         try:
             from .mode_tablet import disable_touchview_integration

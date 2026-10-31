@@ -613,6 +613,24 @@ class VimenderPreferences(bpy.types.AddonPreferences):
         set=_set_stylus_pan_sensitivity,
     )
 
+    def _get_pen_ui_scale(self):
+        return float(load_vimender_config().get('pen_ui_scale', 1.25))
+
+    def _set_pen_ui_scale(self, val):
+        save_vimender_config({'pen_ui_scale': round(float(val), 2)})
+
+    pen_ui_scale: bpy.props.FloatProperty(
+        name="Pen Mode UI Button Scale",
+        description="Scale multiplier applied to UI buttons and Properties panel when entering Pen Mode (e.g. 1.25 = 25% bigger)",
+        default=1.25,
+        min=1.05,
+        max=2.0,
+        step=5,
+        precision=2,
+        get=_get_pen_ui_scale,
+        set=_set_pen_ui_scale,
+    )
+
     update_status: bpy.props.StringProperty(
         name="Update Status",
         default="Ready to check",
@@ -702,6 +720,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             box0.prop(self, "stylus_pen", text="Stylus Pen (Emulate 3 Button Mouse in Tablet Mode)")
             box0.prop(self, "stylus_pan_button", text="Stylus Pan Button")
             box0.prop(self, "stylus_pan_sensitivity", text="Stylus Pan Sensitivity")
+            box0.prop(self, "pen_ui_scale", text="Pen Mode UI Scale (Properties & Buttons)")
 
 
             box = layout.box()
@@ -766,6 +785,7 @@ class WM_OT_vim_export_keymap(bpy.types.Operator, ExportHelper):
             "arrow_keys_layout": bool(getattr(prefs, 'arrow_keys_layout', False)),
             "stylus_pen": bool(getattr(prefs, 'stylus_pen', False)),
             "stylus_pan_sensitivity": float(getattr(prefs, 'stylus_pan_sensitivity', 1.75)),
+            "pen_ui_scale": float(getattr(prefs, 'pen_ui_scale', 1.25)),
             "auto_start": bool(getattr(prefs, 'auto_start', False)),
         }
         for prefix, label, def_k, def_c, def_s, def_a in KEY_PREFIXES:
@@ -834,6 +854,8 @@ class WM_OT_vim_import_keymap(bpy.types.Operator, ImportHelper):
                 prefs.stylus_pen = bool(data["stylus_pen"])
             if "stylus_pan_sensitivity" in data:
                 prefs.stylus_pan_sensitivity = float(data["stylus_pan_sensitivity"])
+            if "pen_ui_scale" in data:
+                prefs.pen_ui_scale = float(data["pen_ui_scale"])
             if "auto_start" in data:
                 prefs.auto_start = bool(data["auto_start"])
             save_keymaps_to_config(prefs)
