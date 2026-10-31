@@ -1,5 +1,5 @@
 {
   "version": "1.0.4",
-  "commit": "HEAD",
+  "commit": "e04e03d",
   "message": "feat(pen): dedicated Middle-Click (Orbit) and Shift+Middle-Click (Pan) sensitivity controls and settings menu in Pen Mode"
 }
