@@ -1,5 +1,5 @@
 {
   "version": "1.0.3",
-  "commit": "HEAD",
+  "commit": "4b0883d",
   "message": "feat(pen): dynamic UI button and properties scaling in Pen Mode with automatic restoration"
 }
