@@ -1,5 +1,5 @@
 {
-  "version": "1.0.6",
-  "commit": "8e6731a",
-  "message": "fix(ui): ensure normal Blender scale is strictly 1.0 without compounding, slightly boosting only in tablet/pen mode"
+  "version": "1.0.7",
+  "commit": "c1c236e",
+  "message": "fix(search): restore all search modes (<, AltGr+<, Shift+AltGr+<, Ctrl+<) across all modes and prevent key leakage to Auxeref"
 }

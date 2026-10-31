@@ -965,6 +965,12 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
         t, v = event.type, event.value
 
+        if t in {'RIGHT_ALT', 'LINEFEED'}:
+            if v == 'PRESS':
+                S.right_alt_down = True
+            elif v == 'RELEASE':
+                S.right_alt_down = False
+
         if t == 'WINDOW_DEACTIVATE':
             if S.search_active:
                 S.search_active = False
@@ -1057,9 +1063,13 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                         S.search_active = False
                         tag_all()
                     return {'PASS_THROUGH'}
-                if (t == 'GRLESS' or getattr(event, 'unicode', '') in {'<', '>'}) and v == 'PRESS' and not popup_active:
-                    S.search_active = False
-                    tag_all()
+                if t == 'GRLESS' or getattr(event, 'unicode', '') in {'<', '>', '|'}:
+                    if not popup_active:
+                        S.search_active = False
+                        tag_all()
+                    if v == 'RELEASE' or not popup_active:
+                        return {'RUNNING_MODAL'}
+                    return {'PASS_THROUGH'}
                 else:
                     return {'PASS_THROUGH'}
 
@@ -1237,6 +1247,92 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if S.mode:
             return self._modal_hint(context, event, win, mx, my, area)
 
+        prefs = get_preferences(context)
+        is_less_key = (t == 'GRLESS' or getattr(event, 'unicode', '') in {'<', '>', '|'})
+
+        if is_less_key and not (area and area.type in PASS_KEYS_IN):
+            # 1. Data / Fuzzy Search: Shift+AltGr+< (or Shift+Alt+<)
+            is_fuzzy = (
+                check_shortcut(prefs, 'fuzzy_search', event, 'GRLESS', fallback_ctrl=False, fallback_shift=True, fallback_alt=True) or
+                ((is_altgr_pressed(event) or event.alt) and (event.shift or getattr(event, 'unicode', '') == '>'))
+            )
+            if is_fuzzy:
+                if v == 'PRESS':
+                    try:
+                        with context.temp_override(window=win):
+                            bpy.ops.wm.vim_fuzzy_search('INVOKE_DEFAULT')
+                    except Exception as e:
+                        print(f"[Vimender] fuzzy_search error: {e}")
+                return {'RUNNING_MODAL'}
+
+            # 2. Mode Search: AltGr+< (or Alt+< or unicode '|')
+            is_mode_search = (
+                check_shortcut(prefs, 'search_mode', event, 'GRLESS', fallback_ctrl=False, fallback_alt=True) or
+                ((is_altgr_pressed(event) or event.alt or getattr(event, 'unicode', '') == '|') and not (event.shift or getattr(event, 'unicode', '') == '>'))
+            )
+            if is_mode_search:
+                if v == 'PRESS':
+                    try:
+                        with context.temp_override(window=win):
+                            bpy.ops.wm.vim_search_mode('INVOKE_DEFAULT')
+                    except Exception as e:
+                        print(f"[Vimender] search_mode error: {e}")
+                return {'RUNNING_MODAL'}
+
+            # 3. Object / Cursor Search: Ctrl+<
+            is_obj_search = (
+                check_shortcut(prefs, 'search_object', event, 'GRLESS', fallback_ctrl=True) or
+                (event.ctrl and not (event.alt or is_altgr_pressed(event) or event.shift or getattr(event, 'oskey', False)))
+            )
+            if is_obj_search:
+                if v == 'PRESS':
+                    try:
+                        bpy.ops.wm.vim_search_object('INVOKE_DEFAULT')
+                    except Exception as e:
+                        print(f"[Vimender] search_object error: {e}")
+                return {'RUNNING_MODAL'}
+
+            # 4. General / Menu Search: Plain <
+            is_plain_less = not (event.ctrl or event.alt or is_altgr_pressed(event) or event.shift or getattr(event, 'oskey', False) or getattr(event, 'unicode', '') in {'>', '|'})
+            is_menu_search = check_shortcut(prefs, 'search_menu', event, 'GRLESS', fallback_ctrl=False) or is_plain_less
+            if is_menu_search:
+                if v == 'PRESS':
+                    if not S.mode and not transform_active(win):
+                        target_a = area or area_by_ptr(win, S.hover_ptr) or (next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None) if win and win.screen else None)
+                        target_region = window_region(target_a) if target_a else None
+                        if target_region:
+                            if mx < target_region.x or mx >= target_region.x + target_region.width or my < target_region.y or my >= target_region.y + target_region.height:
+                                center_x = target_region.x + target_region.width // 2
+                                center_y = target_region.y + target_region.height // 2
+                                try:
+                                    win.cursor_warp(center_x, center_y)
+                                except Exception:
+                                    pass
+                        try:
+                            res = None
+                            if target_region and target_a:
+                                with context.temp_override(window=win, area=target_a, region=target_region):
+                                    res = bpy.ops.wm.search_menu('INVOKE_DEFAULT')
+                            else:
+                                res = bpy.ops.wm.search_menu('INVOKE_DEFAULT')
+                            if res in ({'FINISHED'}, {'INTERFACE'}, {'RUNNING_MODAL'}):
+                                S.search_active = True
+                                S.search_open_time = time.time()
+                        except Exception as e:
+                            print(f"[Vimender] search_menu error: {e}")
+                return {'RUNNING_MODAL'}
+
+            # Always consume any GRLESS event so it never falls through to Auxeref!
+            return {'RUNNING_MODAL'}
+
+        if t == 'F3' and event.ctrl and not (event.alt or event.shift or getattr(event, 'oskey', False)):
+            if v == 'PRESS':
+                try:
+                    bpy.ops.wm.vim_search_object('INVOKE_DEFAULT')
+                except Exception as e:
+                    print(f"[Vimender] search_object error: {e}")
+            return {'RUNNING_MODAL'}
+
         if S.walk_mode:
             res = handle_walk_event(self, context, event, win, area)
             if res != {'PASS_THROUGH'}:
@@ -1300,12 +1396,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 S.last_transform_type = 'RESIZE'
             else:
                 S.last_transform_type = 'TRANSLATE'
-
-        if t in {'RIGHT_ALT', 'LINEFEED'}:
-            if v == 'PRESS':
-                S.right_alt_down = True
-            elif v == 'RELEASE':
-                S.right_alt_down = False
 
         is_walk_shortcut = (
             check_shortcut(prefs, 'walk', event, 'Q', fallback_alt=True) or
@@ -1395,67 +1485,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     target_a = area or area_by_ptr(win, S.hover_ptr) or area_at(win, mx, my) or context.area
                     set_active_mode('PEN', context, self.report, target_area=target_a)
                 return {'RUNNING_MODAL'}
-
-        is_less_key = (t == 'GRLESS' or getattr(event, 'unicode', '') in {'<', '>', '|'})
-
-        if ((is_less_key and (is_altgr_pressed(event) or event.alt) and (event.shift or getattr(event, 'unicode', '') == '>')) or
-            check_shortcut(prefs, 'fuzzy_search', event, 'GRLESS', fallback_ctrl=True, fallback_shift=True, fallback_alt=True)) and v == 'PRESS':
-            try:
-                with context.temp_override(window=win):
-                    bpy.ops.wm.vim_fuzzy_search('INVOKE_DEFAULT')
-            except Exception as e:
-                print(f"[Vimender] fuzzy_search error: {e}")
-            return {'RUNNING_MODAL'}
-
-        if ((is_less_key and (is_altgr_pressed(event) or event.alt) and not (event.shift or getattr(event, 'unicode', '') == '>')) or
-            check_shortcut(prefs, 'search_mode', event, 'GRLESS', fallback_ctrl=True, fallback_alt=True)) and v == 'PRESS':
-            try:
-                with context.temp_override(window=win):
-                    bpy.ops.wm.vim_search_mode('INVOKE_DEFAULT')
-            except Exception as e:
-                print(f"[Vimender] search_mode error: {e}")
-            return {'RUNNING_MODAL'}
-
-        if ((is_less_key and event.ctrl and not (event.alt or event.shift or getattr(event, 'oskey', False))) or
-            check_shortcut(prefs, 'search_object', event, 'GRLESS', fallback_ctrl=True) or
-            (t == 'F3' and event.ctrl and not (event.alt or event.shift or event.oskey))) and v == 'PRESS':
-            bpy.ops.wm.vim_search_object('INVOKE_DEFAULT')
-            return {'RUNNING_MODAL'}
-
-        mouse_area = area_at(win, mx, my)
-        cur_area = area or mouse_area or area_by_ptr(win, S.hover_ptr) or context.area
-        is_plain_less = is_less_key and not (event.ctrl or event.alt or event.shift or getattr(event, 'oskey', False) or getattr(event, 'unicode', '') in {'>', '|'})
-
-        if not S.search_active and (check_shortcut(prefs, 'search_menu', event, 'GRLESS', fallback_ctrl=False) or is_plain_less):
-            v3d = cur_area if (cur_area and cur_area.type == 'VIEW_3D') else next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None)
-            if v3d:
-                if v == 'PRESS':
-                    if not S.mode and not transform_active(win):
-                        target_region = window_region(v3d)
-                        if target_region:
-                            if mx < target_region.x or mx >= target_region.x + target_region.width or my < target_region.y or my >= target_region.y + target_region.height:
-                                center_x = target_region.x + target_region.width // 2
-                                center_y = target_region.y + target_region.height // 2
-                                try:
-                                    win.cursor_warp(center_x, center_y)
-                                except Exception:
-                                    pass
-                        try:
-                            res = None
-                            if target_region:
-                                with context.temp_override(window=win, area=v3d, region=target_region):
-                                    res = bpy.ops.wm.search_menu('INVOKE_DEFAULT')
-                            else:
-                                res = bpy.ops.wm.search_menu('INVOKE_DEFAULT')
-                            if res in ({'FINISHED'}, {'INTERFACE'}, {'RUNNING_MODAL'}):
-                                S.search_active = True
-                                S.search_open_time = time.time()
-                        except Exception as e:
-                            print(f"[Vimender] search_menu error: {e}")
-                    return {'RUNNING_MODAL'}
-                elif v == 'RELEASE':
-                    return {'RUNNING_MODAL'}
-            return {'RUNNING_MODAL'}
 
         is_bevel_key = (
             check_shortcut(prefs, 'bevel', event, 'B', fallback_ctrl=False) or
@@ -2505,26 +2534,40 @@ def register_search_key():
     kc = wm.keyconfigs.addon
     if kc is None:
         return
-    km = kc.keymaps.new('Window', space_type='EMPTY', region_type='WINDOW')
-    kmi1 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'GRLESS', 'PRESS', ctrl=True)
-    kmi2 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'F3', 'PRESS', ctrl=True)
-    kmi3 = km.keymap_items.new(WM_OT_vim_search_mode.bl_idname, 'GRLESS', 'PRESS', alt=True, ctrl=True)
-    kmi4 = km.keymap_items.new(WM_OT_vim_fuzzy_search.bl_idname, 'GRLESS', 'PRESS', alt=True, ctrl=True, shift=True)
-    kmi_close = km.keymap_items.new(WM_OT_vim_close_search.bl_idname, 'TAB', 'PRESS')
-    kmi_quit = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'Q', 'PRESS', ctrl=True)
+
+    for km_name, space in [('Window', 'EMPTY'), ('3D View', 'VIEW_3D')]:
+        try:
+            km = kc.keymaps.new(km_name, space_type=space, region_type='WINDOW')
+        except Exception:
+            continue
+        kmi_obj1 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'GRLESS', 'PRESS', ctrl=True)
+        kmi_obj2 = km.keymap_items.new(WM_OT_vim_search_object.bl_idname, 'F3', 'PRESS', ctrl=True)
+        kmi_mode_lin = km.keymap_items.new(WM_OT_vim_search_mode.bl_idname, 'GRLESS', 'PRESS', alt=True, ctrl=False)
+        kmi_mode_win = km.keymap_items.new(WM_OT_vim_search_mode.bl_idname, 'GRLESS', 'PRESS', alt=True, ctrl=True)
+        kmi_fuz_lin = km.keymap_items.new(WM_OT_vim_fuzzy_search.bl_idname, 'GRLESS', 'PRESS', alt=True, ctrl=False, shift=True)
+        kmi_fuz_win = km.keymap_items.new(WM_OT_vim_fuzzy_search.bl_idname, 'GRLESS', 'PRESS', alt=True, ctrl=True, shift=True)
+        kmi_gen = km.keymap_items.new(WM_OT_vim_general_search.bl_idname, 'GRLESS', 'PRESS')
+        kmi_close = km.keymap_items.new(WM_OT_vim_close_search.bl_idname, 'TAB', 'PRESS')
+        _addon_keymaps.extend([
+            (km, kmi_obj1), (km, kmi_obj2),
+            (km, kmi_mode_lin), (km, kmi_mode_win),
+            (km, kmi_fuz_lin), (km, kmi_fuz_win),
+            (km, kmi_gen), (km, kmi_close)
+        ])
+
+    km_win = kc.keymaps.new('Window', space_type='EMPTY', region_type='WINDOW')
+    kmi_quit = km_win.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'Q', 'PRESS', ctrl=True)
     kmi_quit.properties.action = 'QUIT'
-    kmi_new = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'N', 'PRESS', ctrl=True)
+    kmi_new = km_win.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'N', 'PRESS', ctrl=True)
     kmi_new.properties.action = 'NEW'
-    kmi_open = km.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'O', 'PRESS', ctrl=True)
+    kmi_open = km_win.keymap_items.new(WM_OT_vim_save_prompt.bl_idname, 'O', 'PRESS', ctrl=True)
     kmi_open.properties.action = 'OPEN'
     km_mesh = kc.keymaps.new('Mesh', space_type='EMPTY', region_type='WINDOW')
     kmi_bev1 = km_mesh.keymap_items.new('mesh.bevel', 'B', 'PRESS')
     kmi_bev1.properties.affect = 'EDGES'
     kmi_bev2 = km_mesh.keymap_items.new('mesh.bevel', 'B', 'PRESS', shift=True)
     kmi_bev2.properties.affect = 'VERTICES'
-    _addon_keymaps.extend([(km, kmi1), (km, kmi2), (km, kmi3), (km, kmi4),
-                           (km, kmi_close),
-                           (km, kmi_quit), (km, kmi_new), (km, kmi_open),
+    _addon_keymaps.extend([(km_win, kmi_quit), (km_win, kmi_new), (km_win, kmi_open),
                            (km_mesh, kmi_bev1), (km_mesh, kmi_bev2)])
 
 

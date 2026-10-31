@@ -640,8 +640,13 @@ def _get_altgr_keycodes():
 
 
 def is_altgr_pressed(event=None):
-    if event is not None and getattr(event, 'alt', False) and getattr(event, 'ctrl', False):
-        return True
+    if event is not None:
+        if getattr(event, 'alt', False) and getattr(event, 'ctrl', False):
+            return True
+        if getattr(event, 'unicode', '') in {'|', '@', '€', '~'}:
+            return True
+        if getattr(event, 'type', '') in {'RIGHT_ALT', 'LINEFEED'}:
+            return True
     if getattr(S, 'right_alt_down', False):
         return True
     x11, _ = _get_x11()
@@ -938,16 +943,14 @@ def check_shortcut(prefs, prefix, event, fallback_key, fallback_ctrl=False, fall
     if getattr(event, 'oskey', False):
         return False
 
-    matches_ctrl = (bool(event.ctrl) == bool(target_ctrl))
-    if not matches_ctrl:
-        return False
-
     is_altgr = is_altgr_pressed(event)
     if is_altgr and target_alt:
+        matches_ctrl = True
         matches_alt = True
     else:
+        matches_ctrl = (bool(event.ctrl) == bool(target_ctrl))
         matches_alt = (bool(event.alt) == bool(target_alt))
-    if not matches_alt:
+    if not matches_ctrl or not matches_alt:
         return False
 
     is_less = target_key in {'GRLESS', '<'}
