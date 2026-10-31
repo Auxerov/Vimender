@@ -640,6 +640,16 @@ def shutdown():
             except Exception:
                 pass
             S.pen_prev_ui_scale = None
+        try:
+            inputs = bpy.context.preferences.inputs
+            if getattr(S, 'pen_saved_turntable_sens', None) is not None:
+                inputs.view_rotate_sensitivity_turntable = S.pen_saved_turntable_sens
+                S.pen_saved_turntable_sens = None
+            if getattr(S, 'pen_saved_trackball_sens', None) is not None:
+                inputs.view_rotate_sensitivity_trackball = S.pen_saved_trackball_sens
+                S.pen_saved_trackball_sens = None
+        except Exception:
+            pass
     if getattr(S, 'tablet_mode', False):
         try:
             from .mode_tablet import disable_touchview_integration

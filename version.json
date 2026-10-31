@@ -1,5 +1,5 @@
 {
-  "version": "1.0.4",
-  "commit": "e04e03d",
-  "message": "feat(pen): dedicated Middle-Click (Orbit) and Shift+Middle-Click (Pan) sensitivity controls and settings menu in Pen Mode"
+  "version": "1.0.5",
+  "commit": "75438d8",
+  "message": "fix(pen): restore native turntable orbit axis for Middle Click while maintaining Pen Mode orbit sensitivity scaling"
 }

@@ -642,7 +642,21 @@ class VimenderPreferences(bpy.types.AddonPreferences):
         return float(load_vimender_config().get('pen_orbit_sensitivity', 1.0))
 
     def _set_pen_orbit_sens(self, val):
-        save_vimender_config({'pen_orbit_sensitivity': round(float(val), 2)})
+        val = round(float(val), 2)
+        save_vimender_config({'pen_orbit_sensitivity': val})
+        try:
+            if getattr(S, 'pen_mode', False) or getattr(S, 'active_mode', None) == 'PEN':
+                ctx = getattr(bpy, 'context', None)
+                if ctx and hasattr(ctx, 'preferences'):
+                    inputs = ctx.preferences.inputs
+                    base_tt = getattr(S, 'pen_saved_turntable_sens', None)
+                    if base_tt is not None:
+                        inputs.view_rotate_sensitivity_turntable = base_tt * val
+                    base_tb = getattr(S, 'pen_saved_trackball_sens', None)
+                    if base_tb is not None:
+                        inputs.view_rotate_sensitivity_trackball = base_tb * val
+        except Exception:
+            pass
 
     pen_orbit_sensitivity: bpy.props.FloatProperty(
         name="Pen Orbit Sensitivity",

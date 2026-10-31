@@ -205,6 +205,8 @@ class _State:
         self.pen_ptr = 0
         self.pen_nav = None
         self.pen_prev_ui_scale = None
+        self.pen_saved_turntable_sens = None
+        self.pen_saved_trackball_sens = None
         self.pen_mmb_active = False
         self.pen_mmb_is_pan = False
         self.pen_mmb_last_x = 0
@@ -1017,6 +1019,19 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
                     pass
             S.pen_prev_ui_scale = None
 
+        ctx = context or getattr(bpy, 'context', None)
+        if ctx and hasattr(ctx, 'preferences'):
+            try:
+                inputs = ctx.preferences.inputs
+                if getattr(S, 'pen_saved_turntable_sens', None) is not None:
+                    inputs.view_rotate_sensitivity_turntable = S.pen_saved_turntable_sens
+                    S.pen_saved_turntable_sens = None
+                if getattr(S, 'pen_saved_trackball_sens', None) is not None:
+                    inputs.view_rotate_sensitivity_trackball = S.pen_saved_trackball_sens
+                    S.pen_saved_trackball_sens = None
+            except Exception:
+                pass
+
     if S.mode:
         S.clear_hint()
 
@@ -1134,6 +1149,19 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
                 ctx.preferences.view.ui_scale = target_scale
             except Exception as e:
                 print(f"[Vimender] pen_mode ui_scale boost error: {e}")
+
+            try:
+                prefs = get_preferences(ctx)
+                inputs = ctx.preferences.inputs
+                orbit_sens = float(getattr(prefs, 'pen_orbit_sensitivity', 1.0)) if prefs else 1.0
+                if getattr(S, 'pen_saved_turntable_sens', None) is None:
+                    S.pen_saved_turntable_sens = float(inputs.view_rotate_sensitivity_turntable)
+                if getattr(S, 'pen_saved_trackball_sens', None) is None:
+                    S.pen_saved_trackball_sens = float(inputs.view_rotate_sensitivity_trackball)
+                inputs.view_rotate_sensitivity_turntable = S.pen_saved_turntable_sens * orbit_sens
+                inputs.view_rotate_sensitivity_trackball = S.pen_saved_trackball_sens * orbit_sens
+            except Exception as e:
+                print(f"[Vimender] pen_mode orbit sensitivity error: {e}")
 
         if report_fn:
             report_fn({'INFO'}, "Vimender: PEN MODE")
