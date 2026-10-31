@@ -205,6 +205,11 @@ class _State:
         self.pen_ptr = 0
         self.pen_nav = None
         self.pen_prev_ui_scale = None
+        self.pen_mmb_active = False
+        self.pen_mmb_is_pan = False
+        self.pen_mmb_last_x = 0
+        self.pen_mmb_last_y = 0
+        self.pen_mmb_area_ptr = 0
         self.stylus_nav = None
         self.exit_walk_fn = None
         self.exit_tablet_fn = None
@@ -991,6 +996,9 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
     if getattr(S, 'pen_mode', False) or getattr(S, 'pen_prev_ui_scale', None) is not None:
         S.pen_mode = False
         S.pen_ptr = 0
+        S.pen_mmb_active = False
+        S.pen_mmb_is_pan = False
+        S.pen_mmb_area_ptr = 0
         if getattr(S, 'pen_nav', None):
             S.pen_nav.reset()
         try:

@@ -617,7 +617,14 @@ class VimenderPreferences(bpy.types.AddonPreferences):
         return float(load_vimender_config().get('pen_ui_scale', 1.25))
 
     def _set_pen_ui_scale(self, val):
-        save_vimender_config({'pen_ui_scale': round(float(val), 2)})
+        val = round(float(val), 2)
+        save_vimender_config({'pen_ui_scale': val})
+        if getattr(S, 'pen_mode', False) and getattr(S, 'pen_prev_ui_scale', None) is not None:
+            try:
+                base = S.pen_prev_ui_scale
+                bpy.context.preferences.view.ui_scale = round(base * max(1.0, val), 2)
+            except Exception:
+                pass
 
     pen_ui_scale: bpy.props.FloatProperty(
         name="Pen Mode UI Button Scale",
@@ -629,6 +636,44 @@ class VimenderPreferences(bpy.types.AddonPreferences):
         precision=2,
         get=_get_pen_ui_scale,
         set=_set_pen_ui_scale,
+    )
+
+    def _get_pen_orbit_sens(self):
+        return float(load_vimender_config().get('pen_orbit_sensitivity', 1.0))
+
+    def _set_pen_orbit_sens(self, val):
+        save_vimender_config({'pen_orbit_sensitivity': round(float(val), 2)})
+
+    pen_orbit_sensitivity: bpy.props.FloatProperty(
+        name="Pen Orbit Sensitivity",
+        description="Speed multiplier for Middle Click Viewport Orbit in Pen Mode",
+        default=1.0,
+        min=0.2,
+        max=5.0,
+        step=10,
+        precision=2,
+        get=_get_pen_orbit_sens,
+        set=_set_pen_orbit_sens,
+    )
+
+    def _get_pen_pan_sens(self):
+        cfg = load_vimender_config()
+        return float(cfg.get('pen_pan_sensitivity', cfg.get('stylus_pan_sensitivity', 1.75)))
+
+    def _set_pen_pan_sens(self, val):
+        val = round(float(val), 2)
+        save_vimender_config({'pen_pan_sensitivity': val, 'stylus_pan_sensitivity': val})
+
+    pen_pan_sensitivity: bpy.props.FloatProperty(
+        name="Pen Pan Sensitivity",
+        description="Speed multiplier for Shift + Middle Click and Stylus Barrel Pan in Pen Mode",
+        default=1.75,
+        min=0.2,
+        max=5.0,
+        step=10,
+        precision=2,
+        get=_get_pen_pan_sens,
+        set=_set_pen_pan_sens,
     )
 
     update_status: bpy.props.StringProperty(
@@ -719,8 +764,9 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             box0.prop(self, "arrow_keys_layout", text="Arrow Keys Layout (Laptop / No Numpad)")
             box0.prop(self, "stylus_pen", text="Stylus Pen (Emulate 3 Button Mouse in Tablet Mode)")
             box0.prop(self, "stylus_pan_button", text="Stylus Pan Button")
-            box0.prop(self, "stylus_pan_sensitivity", text="Stylus Pan Sensitivity")
-            box0.prop(self, "pen_ui_scale", text="Pen Mode UI Scale (Properties & Buttons)")
+            box0.prop(self, "pen_orbit_sensitivity", text="Pen Middle-Click Sensitivity (Orbit)", slider=True)
+            box0.prop(self, "pen_pan_sensitivity", text="Pen Shift+Middle-Click Sensitivity (Pan)", slider=True)
+            box0.prop(self, "pen_ui_scale", text="Pen Mode UI Scale (Properties & Buttons)", slider=True)
 
 
             box = layout.box()
@@ -785,6 +831,8 @@ class WM_OT_vim_export_keymap(bpy.types.Operator, ExportHelper):
             "arrow_keys_layout": bool(getattr(prefs, 'arrow_keys_layout', False)),
             "stylus_pen": bool(getattr(prefs, 'stylus_pen', False)),
             "stylus_pan_sensitivity": float(getattr(prefs, 'stylus_pan_sensitivity', 1.75)),
+            "pen_orbit_sensitivity": float(getattr(prefs, 'pen_orbit_sensitivity', 1.0)),
+            "pen_pan_sensitivity": float(getattr(prefs, 'pen_pan_sensitivity', 1.75)),
             "pen_ui_scale": float(getattr(prefs, 'pen_ui_scale', 1.25)),
             "auto_start": bool(getattr(prefs, 'auto_start', False)),
         }
@@ -854,6 +902,10 @@ class WM_OT_vim_import_keymap(bpy.types.Operator, ImportHelper):
                 prefs.stylus_pen = bool(data["stylus_pen"])
             if "stylus_pan_sensitivity" in data:
                 prefs.stylus_pan_sensitivity = float(data["stylus_pan_sensitivity"])
+            if "pen_orbit_sensitivity" in data:
+                prefs.pen_orbit_sensitivity = float(data["pen_orbit_sensitivity"])
+            if "pen_pan_sensitivity" in data:
+                prefs.pen_pan_sensitivity = float(data["pen_pan_sensitivity"])
             if "pen_ui_scale" in data:
                 prefs.pen_ui_scale = float(data["pen_ui_scale"])
             if "auto_start" in data:

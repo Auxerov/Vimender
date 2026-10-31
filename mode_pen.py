@@ -1,7 +1,7 @@
 import math
 import time
 import bpy
-from mathutils import Vector
+from mathutils import Vector, Quaternion
 from .state import (
     S, WHITE, tag_all, get_preferences, check_shortcut,
     set_active_mode, area_at, area_by_ptr, window_region, SENS_LEVELS
@@ -151,6 +151,53 @@ MOUSE_TOUCH_SWALLOW_EVENTS = {
 }
 
 
+def apply_pen_mmb_navigation(context, win, area, dx, dy, is_pan):
+    space = area.spaces.active if area.spaces else None
+    rv3d = space.region_3d if space else None
+    reg = window_region(area)
+    if not rv3d or not reg:
+        return
+
+    prefs = get_preferences(context)
+    rot = rv3d.view_rotation
+    d = rv3d.view_distance
+
+    if is_pan:
+        # Shift + Middle Click Pan
+        pan_sens = float(getattr(prefs, 'pen_pan_sensitivity', 1.75)) if prefs else 1.75
+        lens = max(getattr(space, 'lens', 50.0), 1.0)
+        u = d * VIEW_SENSOR_MM / (lens * max(reg.width, reg.height, 1)) * pan_sens
+        right = rot @ Vector((1.0, 0.0, 0.0))
+        up = rot @ Vector((0.0, 1.0, 0.0))
+        rv3d.view_location = rv3d.view_location - (right * dx + up * dy) * u
+    else:
+        # Middle Click Orbit (Turntable)
+        orbit_sens = float(getattr(prefs, 'pen_orbit_sensitivity', 1.0)) if prefs else 1.0
+        yaw = -dx * (math.pi / max(reg.width, 1)) * orbit_sens
+        pitch = dy * (math.pi / max(reg.height, 1)) * orbit_sens
+
+        up_vec = rot @ Vector((0.0, 1.0, 0.0))
+        right = rot @ Vector((1.0, 0.0, 0.0))
+        eye = rv3d.view_location + (rot @ Vector((0.0, 0.0, d)))
+        q_pitch = Quaternion(right, pitch)
+
+        if up_vec.z > 0.05:
+            q_yaw = Quaternion(Vector((0.0, 0.0, 1.0)), yaw)
+            test_rot = (q_pitch @ rot).normalized()
+            if (test_rot @ Vector((0.0, 1.0, 0.0))).z > 0.02:
+                new_rot = (q_yaw @ test_rot).normalized()
+            else:
+                new_rot = (q_yaw @ rot).normalized()
+        else:
+            q_yaw = Quaternion(up_vec, yaw)
+            new_rot = (q_yaw @ q_pitch @ rot).normalized()
+
+        rv3d.view_rotation = new_rot
+        rv3d.view_location = eye - (new_rot @ Vector((0.0, 0.0, d)))
+
+    area.tag_redraw()
+
+
 def handle_pen_event(op, context, event, win, area):
     t, v = event.type, event.value
     prefs = get_preferences(context)
@@ -192,6 +239,58 @@ def handle_pen_event(op, context, event, win, area):
                             for a in win.screen.areas:
                                 if a.type == 'VIEW_3D':
                                     a.tag_redraw()
+            return {'RUNNING_MODAL'}
+
+    # 4. Middle-Click (Orbit) and Shift + Middle-Click (Pan) with Pen Mode sensitivities:
+    if t == 'MIDDLEMOUSE':
+        target_v3d = area if (area and area.type == 'VIEW_3D') else (
+            area_at(win, event.mouse_x, event.mouse_y) if win else None
+        )
+        if target_v3d and target_v3d.type != 'VIEW_3D':
+            target_v3d = None
+
+        if v == 'PRESS':
+            if target_v3d:
+                S.pen_mmb_active = True
+                S.pen_mmb_is_pan = bool(event.shift)
+                S.pen_mmb_last_x = event.mouse_x
+                S.pen_mmb_last_y = event.mouse_y
+                S.pen_mmb_area_ptr = target_v3d.as_pointer()
+                return {'RUNNING_MODAL'}
+        elif v == 'RELEASE':
+            if getattr(S, 'pen_mmb_active', False):
+                S.pen_mmb_active = False
+                S.pen_mmb_is_pan = False
+                S.pen_mmb_area_ptr = 0
+                if target_v3d:
+                    target_v3d.tag_redraw()
+                elif area:
+                    area.tag_redraw()
+                return {'RUNNING_MODAL'}
+
+    elif getattr(S, 'pen_mmb_active', False):
+        if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
+            last_x = getattr(S, 'pen_mmb_last_x', event.mouse_x)
+            last_y = getattr(S, 'pen_mmb_last_y', event.mouse_y)
+            dx = event.mouse_x - last_x
+            dy = event.mouse_y - last_y
+            S.pen_mmb_last_x = event.mouse_x
+            S.pen_mmb_last_y = event.mouse_y
+
+            if hasattr(event, 'shift'):
+                S.pen_mmb_is_pan = bool(event.shift)
+
+            if dx != 0 or dy != 0:
+                target_v3d = area_by_ptr(win, getattr(S, 'pen_mmb_area_ptr', 0)) or (
+                    area if (area and area.type == 'VIEW_3D') else None
+                )
+                if target_v3d and target_v3d.type == 'VIEW_3D':
+                    apply_pen_mmb_navigation(context, win, target_v3d, dx, dy, is_pan=S.pen_mmb_is_pan)
+            return {'RUNNING_MODAL'}
+
+        elif t == 'ESC' and v == 'PRESS':
+            S.pen_mmb_active = False
+            S.pen_mmb_is_pan = False
             return {'RUNNING_MODAL'}
 
     return {'PASS_THROUGH'}

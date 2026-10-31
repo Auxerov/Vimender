@@ -940,7 +940,8 @@ class _StylusNavigator:
         if now - self._last_cfg_t > 2.0:
             self._last_cfg_t = now
             try:
-                self._cfg_sens = float(load_vimender_config().get('stylus_pan_sensitivity', 1.75))
+                cfg = load_vimender_config()
+                self._cfg_sens = float(cfg.get('pen_pan_sensitivity', cfg.get('stylus_pan_sensitivity', 1.75)))
             except Exception:
                 self._cfg_sens = 1.75
 

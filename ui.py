@@ -629,6 +629,9 @@ def shutdown():
     if getattr(S, 'pen_mode', False) or getattr(S, 'pen_prev_ui_scale', None) is not None:
         S.pen_mode = False
         S.pen_ptr = 0
+        S.pen_mmb_active = False
+        S.pen_mmb_is_pan = False
+        S.pen_mmb_area_ptr = 0
         if getattr(S, 'pen_nav', None):
             S.pen_nav.reset()
         if getattr(S, 'pen_prev_ui_scale', None) is not None:

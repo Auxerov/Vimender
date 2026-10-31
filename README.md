@@ -177,8 +177,9 @@ Dedicated stylus tablet mode (`WHITE` indicator) crafted for graphics tablets, W
 | **Pen / Stylus Tip** | Full Passthrough | 100% native drawing, sculpting, and grease pencil pressure support without modal interception. |
 | **Single-Finger Touch** | Palm Rejection | Strictly ignored so resting your hand or palm while sketching never accidentally spins the scene. |
 | **2-Finger Hand Pinch** | Isolated View Zoom | Isolated viewport zoom and pan anchored around fingers. |
-| **Lower Barrel Button** | Scene Orbit | Hold & drag to rotate the 3D viewport (`view3d.rotate`). |
-| **Upper Barrel Button** | Scene Pan | Hold & drag to pan the 3D viewport (`view3d.move`). |
+| **Middle Click** / Lower Button | Scene Orbit | Hold & drag to rotate the 3D viewport (configurable orbit sensitivity). |
+| **Shift + Middle Click** / Upper Button | Scene Pan | Hold & drag to pan the 3D viewport (configurable pan sensitivity). |
+| **Pen Settings Dialog** | `Edit > Pen Settings...` | Direct modal menu to tune Middle-Click Orbit, Shift+Middle-Click Pan sensitivity, and UI scale on the fly. |
 | **C** | Box Hint Select | Triggers box selection without leaving pen workflow. |
 | **UI Button Scale** | Touch/Pen Optimized | Automatically scales Properties panel buttons & tabs up by 25% for easy stylus tapping; restores to exact normal size on exit. |
 | `Ctrl + Alt + P` / Edit Menu | Exit Pen Mode | Strictly locked: only `Ctrl + Alt + P` or the Edit menu toggle exits Pen Mode (ESC and all tool keys pass directly through to Blender). |

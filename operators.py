@@ -101,6 +101,38 @@ class WM_OT_vim_pen_mode_toggle(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class WM_OT_vim_pen_settings(bpy.types.Operator):
+    bl_idname = "wm.vim_pen_settings"
+    bl_label = "Vimender: Pen Mode Settings"
+    bl_description = "Configure Pen Mode Middle-Click (Orbit) and Shift+Middle-Click (Pan) sensitivities"
+    bl_options = {'REGISTER'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=340)
+
+    def draw(self, context):
+        layout = self.layout
+        prefs = get_preferences(context)
+        if not prefs:
+            layout.label(text="Preferences not found", icon='ERROR')
+            return
+
+        box_nav = layout.box()
+        box_nav.label(text="Pen Navigation Sensitivity", icon='VIEW_PAN')
+        col = box_nav.column(align=True)
+        col.prop(prefs, "pen_orbit_sensitivity", text="Orta Tık / Middle Click (Orbit)", slider=True)
+        col.prop(prefs, "pen_pan_sensitivity", text="Shift + Orta Tık (Pan)", slider=True)
+
+        layout.separator()
+        box_ui = layout.box()
+        box_ui.label(text="Pen Mode UI Scale", icon='WINDOW')
+        box_ui.prop(prefs, "pen_ui_scale", text="Properties & UI Button Scale", slider=True)
+
+    def execute(self, context):
+        tag_all()
+        return {'FINISHED'}
+
+
 
 class WM_OT_vim_nudge(bpy.types.Operator):
     bl_idname = "wm.vim_nudge"

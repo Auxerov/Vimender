@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Vimender",
     "author": "Auxerov",
-    "version": (1, 0, 3),
+    "version": (1, 0, 4),
     "blender": (5, 0, 0),
     "location": "F3 > Vim Mode",
     "description": "Keyboard controller for Blender with modal navigation, hints, walk mode, and tablet mode",
@@ -50,7 +50,7 @@ from .preferences import (
     WM_OT_vim_update_dialog, repair_corrupted_keymaps
 )
 from .operators import (
-    WM_OT_vim_mode_toggle, WM_OT_vim_pen_mode_toggle, WM_OT_vim_nudge, WM_OT_vim_set_editor,
+    WM_OT_vim_mode_toggle, WM_OT_vim_pen_mode_toggle, WM_OT_vim_pen_settings, WM_OT_vim_nudge, WM_OT_vim_set_editor,
     WM_OT_vim_tablet_select_modifier,
     WM_OT_vim_search_object, WM_OT_vim_search_mode, WM_OT_vim_fuzzy_search,
     WM_OT_vim_general_search, WM_OT_vim_save_prompt, WM_OT_vim_save_action,
@@ -61,6 +61,7 @@ classes = (
     VimenderPreferences,
     WM_OT_vim_mode_toggle,
     WM_OT_vim_pen_mode_toggle,
+    WM_OT_vim_pen_settings,
     WM_OT_vim_nudge,
     WM_OT_vim_set_editor,
     WM_OT_vim_tablet_select_modifier,
@@ -152,6 +153,7 @@ def _edit_menu_draw(self, context):
     if wm and hasattr(wm, 'vim_pen_mode'):
         self.layout.separator()
         self.layout.prop(wm, 'vim_pen_mode', text="Vimender: Pen Mode")
+        self.layout.operator(WM_OT_vim_pen_settings.bl_idname, text="Vimender: Pen Settings...", icon='PREFERENCES')
 
 
 def _window_menu_draw(self, context):
@@ -161,12 +163,14 @@ def _window_menu_draw(self, context):
     wm = getattr(context, 'window_manager', None)
     if wm and hasattr(wm, 'vim_pen_mode'):
         self.layout.prop(wm, 'vim_pen_mode', text="Vimender: Pen Mode")
+        self.layout.operator(WM_OT_vim_pen_settings.bl_idname, text="Vimender: Pen Settings...", icon='PREFERENCES')
     self.layout.operator(WM_OT_vim_check_update.bl_idname, text="Vimender: Check for Updates", icon='FILE_REFRESH')
     self.layout.operator(WM_OT_vim_update_addon.bl_idname, text="Vimender: Update Now", icon='IMPORT')
 
 
 def _view3d_menu_draw(self, context):
     self.layout.separator()
+    self.layout.operator(WM_OT_vim_pen_settings.bl_idname, text="Vimender: Pen Mode Sensitivity...", icon='PREFERENCES')
     self.layout.operator(WM_OT_vim_update_dialog.bl_idname, text="Vimender: Check Updates...", icon='URL')
 
 

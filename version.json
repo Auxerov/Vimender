@@ -1,5 +1,5 @@
 {
-  "version": "1.0.3",
-  "commit": "4b0883d",
-  "message": "feat(pen): dynamic UI button and properties scaling in Pen Mode with automatic restoration"
+  "version": "1.0.4",
+  "commit": "HEAD",
+  "message": "feat(pen): dedicated Middle-Click (Orbit) and Shift+Middle-Click (Pan) sensitivity controls and settings menu in Pen Mode"
 }
