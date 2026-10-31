@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Vimender",
     "author": "Auxerov",
-    "version": (1, 0, 7),
+    "version": (1, 0, 8),
     "blender": (5, 0, 0),
     "location": "F3 > Vim Mode",
     "description": "Keyboard controller for Blender with modal navigation, hints, walk mode, and tablet mode",
@@ -38,7 +38,7 @@ else:
     from . import operators
 
 import bpy
-from .state import S, load_vimender_state, get_preferences, close_x11_display, set_active_mode, tag_all
+from .state import S, load_vimender_state, load_last_mode, get_preferences, close_x11_display, set_active_mode, tag_all
 from .ui import (
     patch_view_pie, unpatch_view_pie, restore_modal_keymaps, shutdown,
     VIM_MT_editor_more, VIEW3D_MT_vim_view_pie
@@ -89,6 +89,11 @@ def _auto_start():
     try:
         if load_vimender_state() and not S.active:
             bpy.ops.wm.vim_mode_toggle('INVOKE_DEFAULT')
+        if load_vimender_state() and S.active and load_last_mode() == 'PEN' and not getattr(S, 'pen_mode', False):
+            ctx = bpy.context
+            win = getattr(ctx, 'window', None)
+            target_a = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None) if win and getattr(win, 'screen', None) else None
+            set_active_mode('PEN', ctx, target_area=target_a)
     except Exception as e:
         print(f"[Vimender] Auto-start error: {e}")
     return None

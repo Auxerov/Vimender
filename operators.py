@@ -8,6 +8,7 @@ from .state import (
     is_blender_modal_active, send_modal_plus_minus, send_fake_escape, send_fake_numpad,
     adjust_active_modal_or_modifier, check_shortcut, get_preferences, is_altgr_pressed,
     is_view_pie_trigger, change_sens, _exec_view3d_op, save_vimender_state,
+    load_last_mode, save_last_mode,
     MOUSE_CANCEL, MODIFIER_KEYS, CONSUME_KEYS, PASS_KEYS_IN,
     PREFIX_DIRS, PREFIX_REPEAT_TIMEOUT, PREFIX_TIMEOUT, ALL_DIRS, NUDGE_DIRS,
     ARROW_DIRS, _addon_keymaps, NUMPAD_PIE_KEYS, is_edit_mode, set_active_mode,
@@ -648,6 +649,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if S.active:
             shutdown()
             save_vimender_state(False)
+            save_last_mode('PREVIEW')
             self.report({'INFO'}, "Vimender: Disabled")
             return {'FINISHED'}
         S.active = True
@@ -691,7 +693,10 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         tag_all()
         self._set_status(context)
         save_vimender_state(True)
-        self.report({'INFO'}, "Vimender: PREVIEW MODE")
+        if load_last_mode() == 'PEN':
+            set_active_mode('PEN', context, self.report, target_area=v3d)
+        else:
+            self.report({'INFO'}, "Vimender: PREVIEW MODE")
         return {'RUNNING_MODAL'}
 
     def execute(self, context):
@@ -1928,22 +1933,7 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
                 pass
 
         if tgt == "VIM_NAV":
-            S.cursor_mode = False
-            S.preview_mode = False
-            S.navigation_mode = True
-            S.workspace_nav = True
-            S.clear_hint()
-            S.nav.reset()
-            S.smooth_cursor.reset()
-            area = context.area or (win.screen.areas[0] if win and win.screen and win.screen.areas else None)
-            if area:
-                S.hover_ptr = area.as_pointer()
-            self.report({'INFO'}, "Vimender: NAVIGATION MODE")
-            try:
-                context.workspace.status_text_set("Vimender: NAVIGATION MODE")
-            except Exception:
-                pass
-            tag_all()
+            set_active_mode('NAV', context, self.report)
             return {'FINISHED'}
 
         if tgt == "VIM_ORBIT":
@@ -1959,19 +1949,7 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
             return {'FINISHED'}
 
         if tgt == "VIM_PREVIEW":
-            S.cursor_mode = False
-            S.navigation_mode = False
-            S.workspace_nav = False
-            S.preview_mode = True
-            S.clear_hint()
-            S.nav.reset()
-            S.smooth_cursor.reset()
-            self.report({'INFO'}, "Vimender: PREVIEW MODE")
-            try:
-                context.workspace.status_text_set("Vimender: PREVIEW MODE")
-            except Exception:
-                pass
-            tag_all()
+            set_active_mode('PREVIEW', context, self.report)
             return {'FINISHED'}
 
         if tgt == "VIM_PEN":

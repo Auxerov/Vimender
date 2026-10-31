@@ -845,6 +845,14 @@ def load_vimender_state() -> bool:
     return bool(load_vimender_config().get('auto_start', False))
 
 
+def save_last_mode(mode_name: str):
+    save_vimender_config({'last_mode': str(mode_name)})
+
+
+def load_last_mode() -> str:
+    return str(load_vimender_config().get('last_mode', 'PREVIEW'))
+
+
 def save_arrow_keys_layout(enabled: bool):
     save_vimender_config({'arrow_keys_layout': bool(enabled)})
 
@@ -991,6 +999,8 @@ def check_shortcut(prefs, prefix, event, fallback_key, fallback_ctrl=False, fall
 def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
     if context is None:
         context = bpy.context
+
+    save_last_mode(mode_name)
 
     if S.walk_mode:
         S.walk_mode = False
