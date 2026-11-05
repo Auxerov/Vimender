@@ -29,7 +29,12 @@ class Quaternion:
                            w1*y2-x1*z2+y1*w2+z1*x2, w1*z2+x1*y2-y1*x2+z1*w2))
     def normalized(s):
         n = math.sqrt(sum(c*c for c in s.q)); return Quaternion(tuple(c/n for c in s.q))
-mu = types.ModuleType('mathutils'); mu.Vector=Vector; mu.Quaternion=Quaternion; mu.Matrix=object
+    def to_euler(s, order='XYZ'): return Euler((0,0,0), order)
+class Euler:
+    def __init__(s, angles=(0,0,0), order='XYZ'):
+        s.x, s.y, s.z = angles; s.order = order
+    def to_quaternion(s): return Quaternion((1,0,0,0))
+mu = types.ModuleType('mathutils'); mu.Vector=Vector; mu.Quaternion=Quaternion; mu.Euler=Euler; mu.Matrix=object
 sys.modules['mathutils']=mu
 
 

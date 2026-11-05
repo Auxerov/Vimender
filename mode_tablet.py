@@ -5,7 +5,7 @@ import threading
 import time
 import bpy
 import blf
-from mathutils import Vector, Quaternion
+from mathutils import Vector, Quaternion, Euler
 from bpy_extras.view3d_utils import region_2d_to_origin_3d, region_2d_to_vector_3d, location_3d_to_region_2d
 from .state import (
     S, GREY, tag_all, window_region, area_by_ptr, area_at,
@@ -907,9 +907,10 @@ class EvdevStylusTracker:
                             with self.lock:
                                 self.stylus_mmb_down = btn_orbit
                                 self.btn_orbit_down = btn_orbit
-                                if not btn_orbit:
-                                    self.last_orbit_x = None
-                                    self.last_orbit_y = None
+                                # Always clear anchor on both press and release so
+                                # the starting point is strictly registered with ZERO delta!
+                                self.last_orbit_x = None
+                                self.last_orbit_y = None
                     elif ev.type == ecodes.EV_ABS:
                         if ev.code == ecodes.ABS_X:
                             curr_x = float(ev.value)
@@ -943,14 +944,16 @@ class EvdevStylusTracker:
                                 if self.last_orbit_x is not None and self.last_orbit_y is not None:
                                     dx = (curr_x - self.last_orbit_x) / self.x_rng
                                     dy = (curr_y - self.last_orbit_y) / self.y_rng
-                                    self.orbit_delta[0] += dx
-                                    self.orbit_delta[1] += dy
+                                    # Filter out sensor teleports / glitches
+                                    if abs(dx) < 0.12 and abs(dy) < 0.12:
+                                        self.orbit_delta[0] += dx
+                                        self.orbit_delta[1] += dy
                                 self.last_orbit_x = curr_x
                                 self.last_orbit_y = curr_y
                         else:
                             with self.lock:
-                                self.last_orbit_x = curr_x
-                                self.last_orbit_y = curr_y
+                                self.last_orbit_x = None
+                                self.last_orbit_y = None
             except BlockingIOError:
                 time.sleep(0.003)
             except Exception:
@@ -1003,11 +1006,18 @@ class _StylusNavigator:
         if win is None:
             win = context.window
 
-        area = (
-            area_by_ptr(win, getattr(S, 'pen_ptr', 0)) or
-            area_by_ptr(win, S.hover_ptr) or
-            next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None) if win and win.screen else None
-        )
+        target_area = None
+        if getattr(S, 'hover_ptr', 0):
+            a = area_by_ptr(win, S.hover_ptr)
+            if a and a.type == 'VIEW_3D':
+                target_area = a
+        if not target_area and getattr(S, 'pen_mode', False) and getattr(S, 'pen_ptr', 0):
+            a = area_by_ptr(win, S.pen_ptr)
+            if a and a.type == 'VIEW_3D':
+                target_area = a
+        if not target_area and win and win.screen:
+            target_area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None)
+        area = target_area
         if not area or area.type != 'VIEW_3D':
             return False
 
@@ -1048,29 +1058,20 @@ class _StylusNavigator:
             rv3d.view_location = rv3d.view_location - (right * dpx + up * dpy) * u
             changed = True
 
-        # Lower barrel button: Orbit (turntable)
+        # Lower barrel button: Orbit (clean canonical turntable)
         if odx != 0.0 or ody != 0.0:
             if rv3d.view_perspective == 'CAMERA' and not getattr(space, 'lock_camera', False):
                 rv3d.view_perspective = 'PERSP'
 
-            yaw = -odx * math.pi * self._cfg_orbit_sens
-            pitch = -ody * (H / W) * math.pi * self._cfg_orbit_sens
+            sens = SENS_LEVELS[S.sens_idx] if hasattr(S, 'sens_idx') else 1.0
+            yaw = -odx * (math.pi * 1.6) * sens * self._cfg_orbit_sens
+            pitch = ody * (math.pi * 1.6) * sens * self._cfg_orbit_sens
 
             rot = rv3d.view_rotation
-            up_vec = rot @ Vector((0.0, 1.0, 0.0))
-            right = rot @ Vector((1.0, 0.0, 0.0))
-            q_pitch = Quaternion(right, pitch)
-            if up_vec.z > 0.05:
-                q_yaw = Quaternion(Vector((0.0, 0.0, 1.0)), yaw)
-                test_rot = (q_pitch @ rot).normalized()
-                if (test_rot @ Vector((0.0, 1.0, 0.0))).z > 0.02:
-                    new_rot = (q_yaw @ test_rot).normalized()
-                else:
-                    new_rot = (q_yaw @ rot).normalized()
-            else:
-                q_yaw = Quaternion(up_vec, yaw)
-                new_rot = (q_yaw @ q_pitch @ rot).normalized()
-            rv3d.view_rotation = new_rot
+            e = rot.to_euler('XYZ')
+            new_z = (e.z + yaw) % (2.0 * math.pi)
+            new_x = max(0.01, min(math.pi - 0.01, e.x + pitch))
+            rv3d.view_rotation = Euler((new_x, 0.0, new_z), 'XYZ').to_quaternion()
             changed = True
 
         if changed:
