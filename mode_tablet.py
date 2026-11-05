@@ -690,6 +690,7 @@ class EvdevStylusTracker:
         self.lock = threading.Lock()
 
         self.btn_pan_down = False
+        self.btn_orbit_down = False
         self.btn_stylus_down = False
         self.btn_stylus2_down = False
         self.stylus_mmb_down = False
@@ -700,7 +701,10 @@ class EvdevStylusTracker:
         self.last_pen_prox_time = 0.0
         self.last_x = None
         self.last_y = None
+        self.last_orbit_x = None
+        self.last_orbit_y = None
         self.pan_delta = [0.0, 0.0]
+        self.orbit_delta = [0.0, 0.0]
         self.x_min, self.x_rng = 0.0, 30182.0
         self.y_min, self.y_rng = 0.0, 18864.0
 
@@ -751,12 +755,12 @@ class EvdevStylusTracker:
 
     def is_stylus_mmb_down(self):
         with self.lock:
-            return bool(self.stylus_mmb_down or self.btn_stylus2_down)
+            return bool(self.btn_orbit_down or self.stylus_mmb_down or self.btn_stylus2_down)
 
     def is_any_button_down(self):
         """Returns True if any physical stylus barrel button is currently held down."""
         with self.lock:
-            return bool(self.btn_stylus_down or self.btn_stylus2_down or self.stylus_mmb_down or self.btn_pan_down)
+            return bool(self.btn_stylus_down or self.btn_stylus2_down or self.btn_orbit_down or self.stylus_mmb_down or self.btn_pan_down)
 
     def is_stylus2_down(self):
         """Returns True if the lower stylus barrel button (BTN_STYLUS2) is currently held down."""
@@ -795,6 +799,7 @@ class EvdevStylusTracker:
         self.active = True
         with self.lock:
             self.btn_pan_down = False
+            self.btn_orbit_down = False
             self.btn_stylus_down = False
             self.btn_stylus2_down = False
             self.stylus_mmb_down = False
@@ -805,7 +810,10 @@ class EvdevStylusTracker:
             self.last_pen_prox_time = 0.0
             self.last_x = None
             self.last_y = None
+            self.last_orbit_x = None
+            self.last_orbit_y = None
             self.pan_delta = [0.0, 0.0]
+            self.orbit_delta = [0.0, 0.0]
         self._stop_evt = threading.Event()
         self.thread = threading.Thread(target=self._read_loop, args=(dev, self._stop_evt),
                                        daemon=True, name="EvdevStylus")
@@ -831,6 +839,7 @@ class EvdevStylusTracker:
         curr_x = None
         curr_y = None
         btn_pan = False
+        btn_orbit = False
         pan_btn_mode = str(load_vimender_config().get('stylus_pan_button', 'BTN_STYLUS')).upper()
         cfg_check_t = 0.0
 
@@ -853,32 +862,37 @@ class EvdevStylusTracker:
                                     self.last_pen_prox_time = time.perf_counter()
                                 else:
                                     self.btn_pan_down = False
+                                    self.btn_orbit_down = False
                                     self.btn_stylus_down = False
                                     self.btn_stylus2_down = False
                                     self.stylus_mmb_down = False
+                                    btn_pan = False
+                                    btn_orbit = False
                         elif c == getattr(ecodes, 'BTN_TOUCH', 330):
                             with self.lock:
                                 self.pen_touch_down = bool(val)
                                 if val:
                                     self.last_pen_touch_time = time.perf_counter()
 
-                        # Lower stylus button (BTN_STYLUS2 or BTN_TOOL_RUBBER)
-                        elif c in (ecodes.BTN_STYLUS2, getattr(ecodes, 'BTN_TOOL_RUBBER', 321)):
-                            with self.lock:
-                                self.btn_stylus2_down = bool(val)
-                                self.stylus_mmb_down = bool(val)
-
-                        elif c == ecodes.BTN_STYLUS:
+                        # Track hardware state of both buttons
+                        if c == ecodes.BTN_STYLUS:
                             with self.lock:
                                 self.btn_stylus_down = bool(val)
+                        elif c == ecodes.BTN_STYLUS2:
+                            with self.lock:
+                                self.btn_stylus2_down = bool(val)
 
                         is_pan_btn = False
+                        is_orbit_btn = False
                         if pan_btn_mode == 'BTN_STYLUS2':
                             is_pan_btn = (c == ecodes.BTN_STYLUS2)
+                            is_orbit_btn = (c in (ecodes.BTN_STYLUS, getattr(ecodes, 'BTN_TOOL_RUBBER', 321)))
                         elif pan_btn_mode == 'BOTH':
                             is_pan_btn = (c in (ecodes.BTN_STYLUS, ecodes.BTN_STYLUS2))
-                        else:
+                            is_orbit_btn = False
+                        else:  # Default: BTN_STYLUS (upper) is Pan, BTN_STYLUS2 (lower) is Orbit
                             is_pan_btn = (c == ecodes.BTN_STYLUS)
+                            is_orbit_btn = (c in (ecodes.BTN_STYLUS2, getattr(ecodes, 'BTN_TOOL_RUBBER', 321)))
 
                         if is_pan_btn:
                             btn_pan = bool(val)
@@ -887,6 +901,15 @@ class EvdevStylusTracker:
                                 if not btn_pan:
                                     self.last_x = None
                                     self.last_y = None
+
+                        if is_orbit_btn:
+                            btn_orbit = bool(val)
+                            with self.lock:
+                                self.stylus_mmb_down = btn_orbit
+                                self.btn_orbit_down = btn_orbit
+                                if not btn_orbit:
+                                    self.last_orbit_x = None
+                                    self.last_orbit_y = None
                     elif ev.type == ecodes.EV_ABS:
                         if ev.code == ecodes.ABS_X:
                             curr_x = float(ev.value)
@@ -914,6 +937,20 @@ class EvdevStylusTracker:
                             with self.lock:
                                 self.last_x = curr_x
                                 self.last_y = curr_y
+
+                        if btn_orbit and curr_x is not None and curr_y is not None:
+                            with self.lock:
+                                if self.last_orbit_x is not None and self.last_orbit_y is not None:
+                                    dx = (curr_x - self.last_orbit_x) / self.x_rng
+                                    dy = (curr_y - self.last_orbit_y) / self.y_rng
+                                    self.orbit_delta[0] += dx
+                                    self.orbit_delta[1] += dy
+                                self.last_orbit_x = curr_x
+                                self.last_orbit_y = curr_y
+                        else:
+                            with self.lock:
+                                self.last_orbit_x = curr_x
+                                self.last_orbit_y = curr_y
             except BlockingIOError:
                 time.sleep(0.003)
             except Exception:
@@ -927,19 +964,26 @@ _stylus_tracker = EvdevStylusTracker()
 
 class _StylusNavigator:
     """
-    Consumes stylus tracker pan deltas on Blender's main thread and pans
-    the active 3D viewport smoothly when the upper barrel button is held.
+    Consumes stylus tracker pan & orbit deltas on Blender's main thread:
+    - Upper barrel button: Pans the active 3D viewport smoothly (original behavior).
+    - Lower barrel button: Orbits the active 3D viewport smoothly (turntable).
+    Both stop immediately the instant the physical button is released.
     """
     def __init__(self):
         self._last_cfg_t = 0.0
         self._cfg_sens = 1.75
+        self._cfg_orbit_sens = 1.0
 
     def reset(self):
         with _stylus_tracker.lock:
             _stylus_tracker.pan_delta[0] = _stylus_tracker.pan_delta[1] = 0.0
+            _stylus_tracker.orbit_delta[0] = _stylus_tracker.orbit_delta[1] = 0.0
             _stylus_tracker.btn_pan_down = False
+            _stylus_tracker.btn_orbit_down = False
             _stylus_tracker.last_x = None
             _stylus_tracker.last_y = None
+            _stylus_tracker.last_orbit_x = None
+            _stylus_tracker.last_orbit_y = None
 
     def tick(self, context=None, win=None):
         if not getattr(_stylus_tracker, 'active', False):
@@ -948,8 +992,10 @@ class _StylusNavigator:
         with _stylus_tracker.lock:
             pdx, pdy = _stylus_tracker.pan_delta
             _stylus_tracker.pan_delta[0] = _stylus_tracker.pan_delta[1] = 0.0
+            odx, ody = _stylus_tracker.orbit_delta
+            _stylus_tracker.orbit_delta[0] = _stylus_tracker.orbit_delta[1] = 0.0
 
-        if pdx == 0.0 and pdy == 0.0:
+        if pdx == 0.0 and pdy == 0.0 and odx == 0.0 and ody == 0.0:
             return False
 
         if context is None:
@@ -977,24 +1023,58 @@ class _StylusNavigator:
             try:
                 cfg = load_vimender_config()
                 self._cfg_sens = float(cfg.get('pen_pan_sensitivity', cfg.get('stylus_pan_sensitivity', 1.75)))
+                self._cfg_orbit_sens = float(cfg.get('pen_orbit_sensitivity', cfg.get('stylus_orbit_sensitivity', 1.0)))
             except Exception:
                 self._cfg_sens = 1.75
+                self._cfg_orbit_sens = 1.0
 
         W = max(float(win.width), 1.0)
         H = max(float(win.height), 1.0)
-        dpx = pdx * W
-        dpy = -pdy * H
+        changed = False
 
-        rot = rv3d.view_rotation
-        d = rv3d.view_distance
-        sens = SENS_LEVELS[S.sens_idx] if hasattr(S, 'sens_idx') else 1.0
-        lens = max(getattr(space, 'lens', 50.0), 1.0)
-        u = d * VIEW_SENSOR_MM / (lens * max(reg.width, reg.height, 1)) * sens * self._cfg_sens
-        right = rot @ Vector((1.0, 0.0, 0.0))
-        up = rot @ Vector((0.0, 1.0, 0.0))
+        # Upper barrel button: Pan (original behavior preserved completely)
+        if pdx != 0.0 or pdy != 0.0:
+            dpx = pdx * W
+            dpy = -pdy * H
 
-        rv3d.view_location = rv3d.view_location - (right * dpx + up * dpy) * u
-        area.tag_redraw()
+            rot = rv3d.view_rotation
+            d = rv3d.view_distance
+            sens = SENS_LEVELS[S.sens_idx] if hasattr(S, 'sens_idx') else 1.0
+            lens = max(getattr(space, 'lens', 50.0), 1.0)
+            u = d * VIEW_SENSOR_MM / (lens * max(reg.width, reg.height, 1)) * sens * self._cfg_sens
+            right = rot @ Vector((1.0, 0.0, 0.0))
+            up = rot @ Vector((0.0, 1.0, 0.0))
+
+            rv3d.view_location = rv3d.view_location - (right * dpx + up * dpy) * u
+            changed = True
+
+        # Lower barrel button: Orbit (turntable)
+        if odx != 0.0 or ody != 0.0:
+            if rv3d.view_perspective == 'CAMERA' and not getattr(space, 'lock_camera', False):
+                rv3d.view_perspective = 'PERSP'
+
+            yaw = -odx * math.pi * self._cfg_orbit_sens
+            pitch = -ody * (H / W) * math.pi * self._cfg_orbit_sens
+
+            rot = rv3d.view_rotation
+            up_vec = rot @ Vector((0.0, 1.0, 0.0))
+            right = rot @ Vector((1.0, 0.0, 0.0))
+            q_pitch = Quaternion(right, pitch)
+            if up_vec.z > 0.05:
+                q_yaw = Quaternion(Vector((0.0, 0.0, 1.0)), yaw)
+                test_rot = (q_pitch @ rot).normalized()
+                if (test_rot @ Vector((0.0, 1.0, 0.0))).z > 0.02:
+                    new_rot = (q_yaw @ test_rot).normalized()
+                else:
+                    new_rot = (q_yaw @ rot).normalized()
+            else:
+                q_yaw = Quaternion(up_vec, yaw)
+                new_rot = (q_yaw @ q_pitch @ rot).normalized()
+            rv3d.view_rotation = new_rot
+            changed = True
+
+        if changed:
+            area.tag_redraw()
         return True
 
 

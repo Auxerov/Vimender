@@ -1384,22 +1384,28 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             # All other events (ESC, brush shortcuts, undo/redo, Blender tools) pass directly through.
             return {'PASS_THROUGH'}
 
-        # Stylus Middle-Click Navigation Guard (Preview & other modes):
-        # Prevent Wayland dropped release events from locking native view3d.rotate
-        if t == 'MIDDLEMOUSE' or getattr(S, 'pen_mmb_active', False):
-            try:
-                from .mode_tablet import _stylus_tracker
+        # Stylus Barrel Button Guards (Preview & other modes):
+        # Orbit (lower button) and Pan (upper button) are driven directly by S.stylus_nav via evdev deltas.
+        # Swallow stylus MIDDLEMOUSE and clicks while buttons are held so Blender never enters modal view3d.rotate.
+        try:
+            from .mode_tablet import _stylus_tracker
+            if getattr(_stylus_tracker, 'active', False):
+                if getattr(_stylus_tracker, 'btn_orbit_down', False) or getattr(_stylus_tracker, 'btn_pan_down', False):
+                    if t in {'LEFTMOUSE', 'MIDDLEMOUSE', 'RIGHTMOUSE'}:
+                        return {'RUNNING_MODAL'}
+            if t == 'MIDDLEMOUSE':
                 is_stylus_event = (
                     getattr(event, 'is_tablet', False) or
-                    (getattr(_stylus_tracker, 'active', False) and _stylus_tracker.is_pen_in_proximity(0.25)) or
-                    getattr(S, 'pen_mmb_active', False)
+                    (getattr(_stylus_tracker, 'active', False) and (
+                        _stylus_tracker.is_pen_in_proximity(0.35) or
+                        getattr(_stylus_tracker, 'btn_orbit_down', False) or
+                        getattr(_stylus_tracker, 'btn_pan_down', False)
+                    ))
                 )
                 if is_stylus_event:
-                    res = handle_pen_event(self, context, event, win, area)
-                    if res != {'PASS_THROUGH'}:
-                        return res
-            except Exception:
-                pass
+                    return {'RUNNING_MODAL'}
+        except Exception:
+            pass
 
         if transform_active(win) or is_blender_modal_active(win):
             if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not getattr(S, 'pen_mode', False) and not S.mode:

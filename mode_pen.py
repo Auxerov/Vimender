@@ -244,74 +244,28 @@ def handle_pen_event(op, context, event, win, area):
                                     a.tag_redraw()
             return {'RUNNING_MODAL'}
 
-    # 4. Middle-Click Navigation in Pen Mode:
-    # - If Shift is held: Intercept for accelerated Shift + MMB Pan (scaled by pen_pan_sensitivity).
-    # - If Shift is NOT held: Return PASS_THROUGH so Blender's native view3d.rotate handles turntable orbit!
-    #   Under Fedora 45 Wayland, when the stylus lower button is released, EvdevStylusTracker injects
-    #   a synthetic uinput pointer release, immediately terminating native view3d.rotate cleanly.
+    # 4. Stylus Barrel Button Guards (Pen Mode):
+    # Both Pan (Upper button) and Orbit (Lower button) are handled cleanly and directly by
+    # S.stylus_nav via raw hardware evdev deltas without entering Blender's modal loop.
+    # We swallow stylus clicks and MIDDLEMOUSE while either button is pressed so Blender
+    # never enters modal view3d.rotate or starts unwanted brush strokes.
+    if getattr(_stylus_tracker, 'active', False):
+        if getattr(_stylus_tracker, 'btn_orbit_down', False) or getattr(_stylus_tracker, 'btn_pan_down', False):
+            if t in {'LEFTMOUSE', 'MIDDLEMOUSE', 'RIGHTMOUSE'}:
+                return {'RUNNING_MODAL'}
+
     if t == 'MIDDLEMOUSE':
-        if v == 'PRESS':
-            if bool(event.shift):
-                target_v3d = area if (area and area.type == 'VIEW_3D') else (
-                    area_at(win, event.mouse_x, event.mouse_y) if win else None
-                )
-                if target_v3d and target_v3d.type == 'VIEW_3D':
-                    S.pen_mmb_active = True
-                    S.pen_mmb_from_stylus = True
-                    S.pen_mmb_is_pan = True
-                    S.pen_mmb_last_x = event.mouse_x
-                    S.pen_mmb_last_y = event.mouse_y
-                    S.pen_mmb_area_ptr = target_v3d.as_pointer()
-                    return {'RUNNING_MODAL'}
-            # Non-shift MMB: ALWAYS pass through to Blender's native view3d.rotate!
-            return {'PASS_THROUGH'}
-
-        elif v == 'RELEASE':
-            if getattr(S, 'pen_mmb_active', False):
-                S.pen_mmb_active = False
-                S.pen_mmb_from_stylus = False
-                S.pen_mmb_is_pan = False
-                S.pen_mmb_area_ptr = 0
-                if area:
-                    area.tag_redraw()
-                return {'RUNNING_MODAL'}
-            return {'PASS_THROUGH'}
-
-    elif getattr(S, 'pen_mmb_active', False):
-        if getattr(S, 'pen_mmb_from_stylus', False) and getattr(_stylus_tracker, 'active', False):
-            if hasattr(_stylus_tracker, 'is_any_button_down') and not _stylus_tracker.is_any_button_down():
-                S.pen_mmb_active = False
-                S.pen_mmb_from_stylus = False
-                S.pen_mmb_is_pan = False
-                S.pen_mmb_area_ptr = 0
-                if area:
-                    area.tag_redraw()
-                return {'RUNNING_MODAL'}
-
-        if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
-            last_x = getattr(S, 'pen_mmb_last_x', event.mouse_x)
-            last_y = getattr(S, 'pen_mmb_last_y', event.mouse_y)
-            dx = event.mouse_x - last_x
-            dy = event.mouse_y - last_y
-            S.pen_mmb_last_x = event.mouse_x
-            S.pen_mmb_last_y = event.mouse_y
-
-            if dx != 0 or dy != 0:
-                target_v3d = area_by_ptr(win, getattr(S, 'pen_mmb_area_ptr', 0)) or (
-                    area if (area and area.type == 'VIEW_3D') else None
-                )
-                if target_v3d and target_v3d.type == 'VIEW_3D':
-                    apply_pen_mmb_navigation(
-                        context, win, target_v3d, dx, dy,
-                        is_pan=True
-                    )
+        is_stylus = (
+            getattr(event, 'is_tablet', False) or
+            (getattr(_stylus_tracker, 'active', False) and (
+                _stylus_tracker.is_pen_in_proximity(0.35) or
+                getattr(_stylus_tracker, 'btn_orbit_down', False) or
+                getattr(_stylus_tracker, 'btn_pan_down', False)
+            ))
+        )
+        if is_stylus:
+            # Stylus lower button orbit is actively handled by S.stylus_nav!
             return {'RUNNING_MODAL'}
-
-        elif t == 'ESC' and v == 'PRESS':
-            S.pen_mmb_active = False
-            S.pen_mmb_from_stylus = False
-            S.pen_mmb_is_pan = False
-            S.pen_mmb_area_ptr = 0
-            return {'RUNNING_MODAL'}
+        return {'PASS_THROUGH'}
 
     return {'PASS_THROUGH'}
