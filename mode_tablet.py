@@ -1065,7 +1065,7 @@ class _StylusNavigator:
 
             sens = SENS_LEVELS[S.sens_idx] if hasattr(S, 'sens_idx') else 1.0
             yaw = -odx * (math.pi * 1.6) * sens * self._cfg_orbit_sens
-            pitch = ody * (math.pi * 1.6) * sens * self._cfg_orbit_sens
+            pitch = -ody * (math.pi * 1.6) * sens * self._cfg_orbit_sens
 
             rot = rv3d.view_rotation
             e = rot.to_euler('XYZ')
