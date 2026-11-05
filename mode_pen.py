@@ -237,29 +237,26 @@ def handle_pen_event(op, context, event, win, area):
                                     a.tag_redraw()
             return {'RUNNING_MODAL'}
 
-    # 4. Middle-Click Navigation in Pen Mode (Turntable Orbit & Pan):
-    # Under Wayland on GNOME 51 (Fedora 45), stylus barrel buttons mapped to Middle Click
-    # frequently drop release events when released while touching or grazing the glass.
-    # To permanently prevent stuck navigation, Vimender directly manages both Orbit and Pan,
-    # and validates against raw evdev hardware button state so Orbit immediately stops on release.
+    # 4. Middle-Click Navigation in Pen Mode:
+    # - If Shift is held: Intercept for accelerated Shift + MMB Pan (scaled by pen_pan_sensitivity).
+    # - If Shift is NOT held: Return PASS_THROUGH so Blender's native view3d.rotate handles turntable orbit!
+    #   Under Fedora 45 Wayland, when the stylus lower button is released, EvdevStylusTracker injects
+    #   a synthetic uinput pointer release, immediately terminating native view3d.rotate cleanly.
     if t == 'MIDDLEMOUSE':
         if v == 'PRESS':
-            is_stylus = (
-                getattr(event, 'is_tablet', False) or
-                (getattr(_stylus_tracker, 'active', False) and _stylus_tracker.is_pen_in_proximity(0.25)) or
-                getattr(S, 'pen_mode', False)
-            )
-            target_v3d = area if (area and area.type == 'VIEW_3D') else (
-                area_at(win, event.mouse_x, event.mouse_y) if win else None
-            )
-            if is_stylus and target_v3d and target_v3d.type == 'VIEW_3D':
-                S.pen_mmb_active = True
-                S.pen_mmb_from_stylus = True
-                S.pen_mmb_is_pan = bool(event.shift)
-                S.pen_mmb_last_x = event.mouse_x
-                S.pen_mmb_last_y = event.mouse_y
-                S.pen_mmb_area_ptr = target_v3d.as_pointer()
-                return {'RUNNING_MODAL'}
+            if bool(event.shift):
+                target_v3d = area if (area and area.type == 'VIEW_3D') else (
+                    area_at(win, event.mouse_x, event.mouse_y) if win else None
+                )
+                if target_v3d and target_v3d.type == 'VIEW_3D':
+                    S.pen_mmb_active = True
+                    S.pen_mmb_from_stylus = True
+                    S.pen_mmb_is_pan = True
+                    S.pen_mmb_last_x = event.mouse_x
+                    S.pen_mmb_last_y = event.mouse_y
+                    S.pen_mmb_area_ptr = target_v3d.as_pointer()
+                    return {'RUNNING_MODAL'}
+            # Non-shift MMB: ALWAYS pass through to Blender's native view3d.rotate!
             return {'PASS_THROUGH'}
 
         elif v == 'RELEASE':
@@ -274,10 +271,6 @@ def handle_pen_event(op, context, event, win, area):
             return {'PASS_THROUGH'}
 
     elif getattr(S, 'pen_mmb_active', False):
-        # Hardware evdev safety net:
-        # Check raw evdev device to confirm physical stylus button is actually still held.
-        # If the physical button was released (or pen left proximity), end navigation immediately,
-        # even if Wayland dropped the button-release event!
         if getattr(S, 'pen_mmb_from_stylus', False) and getattr(_stylus_tracker, 'active', False):
             if hasattr(_stylus_tracker, 'is_any_button_down') and not _stylus_tracker.is_any_button_down():
                 S.pen_mmb_active = False
@@ -303,7 +296,7 @@ def handle_pen_event(op, context, event, win, area):
                 if target_v3d and target_v3d.type == 'VIEW_3D':
                     apply_pen_mmb_navigation(
                         context, win, target_v3d, dx, dy,
-                        is_pan=getattr(S, 'pen_mmb_is_pan', False)
+                        is_pan=True
                     )
             return {'RUNNING_MODAL'}
 

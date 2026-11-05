@@ -1,5 +1,6 @@
 import math
 import time
+import threading
 import bpy
 from mathutils import Vector, Matrix, Quaternion
 from bpy_extras.view3d_utils import location_3d_to_region_2d
@@ -1028,6 +1029,26 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                             tag_all()
                 except Exception:
                     pass
+
+            # Fedora 45 Wayland safety net for stuck native view3d.rotate:
+            try:
+                from .mode_tablet import _stylus_tracker
+                if getattr(_stylus_tracker, 'active', False) and win and hasattr(win, 'modal_operators'):
+                    is_rotate_active = False
+                    for op in win.modal_operators:
+                        ident = (getattr(op, "bl_idname", "") or getattr(op, "name", "") or getattr(getattr(op, "bl_rna", None), "identifier", "")).lower()
+                        if "rotate" in ident or "orbit" in ident:
+                            is_rotate_active = True
+                            break
+                    if is_rotate_active:
+                        if not _stylus_tracker.is_stylus_mmb_down():
+                            now = time.perf_counter()
+                            last_release_t = getattr(_stylus_tracker, 'last_mmb_release_time', 0.0)
+                            if now - last_release_t > 0.15:
+                                _stylus_tracker.last_mmb_release_time = now
+                                threading.Thread(target=_stylus_tracker.emit_mmb_release, daemon=True).start()
+            except Exception:
+                pass
 
             if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not getattr(S, 'pen_mode', False) and not S.mode:
                 if not S.nudge_on and transform_active(win):
