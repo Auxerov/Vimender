@@ -143,8 +143,7 @@ def exit_pen_mode(context, report_fn=None):
 
 
 MOUSE_TOUCH_SWALLOW_EVENTS = {
-    'LEFTMOUSE', 'RIGHTMOUSE', 'MIDDLEMOUSE',
-    'BUTTON4MOUSE', 'BUTTON5MOUSE', 'BUTTON6MOUSE', 'BUTTON7MOUSE',
+    'LEFTMOUSE',
     'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE',
     'TRACKPADPAN', 'TRACKPADZOOM', 'MOUSEROTATE', 'MOUSESMARTZOOM',
     'WHEELUPMOUSE', 'WHEELDOWNMOUSE', 'WHEELINMOUSE', 'WHEELOUTMOUSE',
@@ -223,7 +222,15 @@ def handle_pen_event(op, context, event, win, area):
     # When fingers/palm are touching the screen and the physical pen is NOT on the glass:
     # ANY mouse button / move event is synthesized touch input from Mutter/Wayland.
     # We swallow it completely so Blender NEVER starts a sculpt or paint stroke!
-    if touch_active and not is_stylus_touching:
+    # IMPORTANT: Stylus barrel buttons and proximity events must NEVER be swallowed as touch!
+    is_stylus_event = (
+        getattr(event, 'is_tablet', False) or
+        (getattr(_stylus_tracker, 'active', False) and (
+            _stylus_tracker.is_pen_in_proximity(0.35) or
+            _stylus_tracker.is_any_button_down()
+        ))
+    )
+    if touch_active and not is_stylus_touching and not is_stylus_event:
         if t in MOUSE_TOUCH_SWALLOW_EVENTS:
             # Synchronously update pinch-to-zoom/pan on touch motion for immediate responsiveness
             if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:

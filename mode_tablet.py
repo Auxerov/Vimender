@@ -693,7 +693,6 @@ class EvdevStylusTracker:
         self.btn_stylus_down = False
         self.btn_stylus2_down = False
         self.stylus_mmb_down = False
-        self._uinput = None
         self.pen_touch_down = False
         self.pen_in_proximity = False
         self.pen_pressure = 0
@@ -750,32 +749,6 @@ class EvdevStylusTracker:
             self.x_min, self.x_rng = 0.0, 30182.0
             self.y_min, self.y_rng = 0.0, 18864.0
 
-    def _init_uinput(self):
-        if not HAVE_EVDEV or self._uinput:
-            return
-        try:
-            cap = {
-                ecodes.EV_KEY: [ecodes.BTN_LEFT, ecodes.BTN_MIDDLE, ecodes.BTN_RIGHT],
-                ecodes.EV_REL: [ecodes.REL_X, ecodes.REL_Y],
-            }
-            self._uinput = evdev.UInput(cap, name="Vimender-Virtual-Pointer")
-        except Exception:
-            self._uinput = None
-
-    def emit_mmb_release(self):
-        """Emits a synthetic BTN_MIDDLE click+release via uinput to ensure Wayland drops never stick Blender."""
-        if not self._uinput:
-            self._init_uinput()
-        if self._uinput:
-            try:
-                self._uinput.write(ecodes.EV_KEY, ecodes.BTN_MIDDLE, 1)
-                self._uinput.syn()
-                time.sleep(0.005)
-                self._uinput.write(ecodes.EV_KEY, ecodes.BTN_MIDDLE, 0)
-                self._uinput.syn()
-            except Exception:
-                pass
-
     def is_stylus_mmb_down(self):
         with self.lock:
             return bool(self.stylus_mmb_down or self.btn_stylus2_down)
@@ -820,7 +793,6 @@ class EvdevStylusTracker:
         self._load_ranges(dev)
         self.running = True
         self.active = True
-        self._init_uinput()
         with self.lock:
             self.btn_pan_down = False
             self.btn_stylus_down = False
@@ -852,12 +824,6 @@ class EvdevStylusTracker:
             except Exception:
                 pass
             self.dev = None
-        if self._uinput:
-            try:
-                self._uinput.close()
-            except Exception:
-                pass
-            self._uinput = None
         self.thread = None
         self.active = False
 
@@ -880,7 +846,6 @@ class EvdevStylusTracker:
                 for ev in dev.read():
                     if ev.type == ecodes.EV_KEY:
                         c, val = ev.code, ev.value
-                        need_mmb_release = False
                         if c == getattr(ecodes, 'BTN_TOOL_PEN', 320):
                             with self.lock:
                                 self.pen_in_proximity = bool(val)
@@ -890,9 +855,7 @@ class EvdevStylusTracker:
                                     self.btn_pan_down = False
                                     self.btn_stylus_down = False
                                     self.btn_stylus2_down = False
-                                    if self.stylus_mmb_down:
-                                        self.stylus_mmb_down = False
-                                        need_mmb_release = True
+                                    self.stylus_mmb_down = False
                         elif c == getattr(ecodes, 'BTN_TOUCH', 330):
                             with self.lock:
                                 self.pen_touch_down = bool(val)
@@ -903,19 +866,11 @@ class EvdevStylusTracker:
                         elif c in (ecodes.BTN_STYLUS2, getattr(ecodes, 'BTN_TOOL_RUBBER', 321)):
                             with self.lock:
                                 self.btn_stylus2_down = bool(val)
-                                if val:
-                                    self.stylus_mmb_down = True
-                                else:
-                                    if self.stylus_mmb_down:
-                                        self.stylus_mmb_down = False
-                                        need_mmb_release = True
+                                self.stylus_mmb_down = bool(val)
 
                         elif c == ecodes.BTN_STYLUS:
                             with self.lock:
                                 self.btn_stylus_down = bool(val)
-
-                        if need_mmb_release:
-                            self.emit_mmb_release()
 
                         is_pan_btn = False
                         if pan_btn_mode == 'BTN_STYLUS2':
