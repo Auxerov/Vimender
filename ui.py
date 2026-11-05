@@ -631,6 +631,7 @@ def shutdown():
         S.pen_mode = False
         S.pen_ptr = 0
         S.pen_mmb_active = False
+        S.pen_mmb_from_stylus = False
         S.pen_mmb_is_pan = False
         S.pen_mmb_area_ptr = 0
         if getattr(S, 'pen_nav', None):

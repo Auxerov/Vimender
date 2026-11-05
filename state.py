@@ -210,6 +210,7 @@ class _State:
         self.pen_saved_turntable_sens = None
         self.pen_saved_trackball_sens = None
         self.pen_mmb_active = False
+        self.pen_mmb_from_stylus = False
         self.pen_mmb_is_pan = False
         self.pen_mmb_last_x = 0
         self.pen_mmb_last_y = 0
@@ -1046,6 +1047,7 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         S.pen_mode = False
         S.pen_ptr = 0
         S.pen_mmb_active = False
+        S.pen_mmb_from_stylus = False
         S.pen_mmb_is_pan = False
         S.pen_mmb_area_ptr = 0
         if getattr(S, 'pen_nav', None):

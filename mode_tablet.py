@@ -690,6 +690,8 @@ class EvdevStylusTracker:
         self.lock = threading.Lock()
 
         self.btn_pan_down = False
+        self.btn_stylus_down = False
+        self.btn_stylus2_down = False
         self.pen_touch_down = False
         self.pen_in_proximity = False
         self.pen_pressure = 0
@@ -746,6 +748,16 @@ class EvdevStylusTracker:
             self.x_min, self.x_rng = 0.0, 30182.0
             self.y_min, self.y_rng = 0.0, 18864.0
 
+    def is_any_button_down(self):
+        """Returns True if any physical stylus barrel button is currently held down."""
+        with self.lock:
+            return bool(self.btn_stylus_down or self.btn_stylus2_down or self.btn_pan_down)
+
+    def is_stylus2_down(self):
+        """Returns True if the lower stylus barrel button (BTN_STYLUS2) is currently held down."""
+        with self.lock:
+            return bool(self.btn_stylus2_down)
+
     def is_pen_touching(self, window_seconds=0.10):
         """Returns True if the pen tip is currently touching the screen or was touching within window_seconds."""
         with self.lock:
@@ -778,6 +790,8 @@ class EvdevStylusTracker:
         self.active = True
         with self.lock:
             self.btn_pan_down = False
+            self.btn_stylus_down = False
+            self.btn_stylus2_down = False
             self.pen_touch_down = False
             self.pen_in_proximity = False
             self.pen_pressure = 0
@@ -831,11 +845,22 @@ class EvdevStylusTracker:
                                 self.pen_in_proximity = bool(val)
                                 if val:
                                     self.last_pen_prox_time = time.perf_counter()
+                                else:
+                                    self.btn_pan_down = False
+                                    self.btn_stylus_down = False
+                                    self.btn_stylus2_down = False
                         elif c == getattr(ecodes, 'BTN_TOUCH', 330):
                             with self.lock:
                                 self.pen_touch_down = bool(val)
                                 if val:
                                     self.last_pen_touch_time = time.perf_counter()
+
+                        if c == ecodes.BTN_STYLUS:
+                            with self.lock:
+                                self.btn_stylus_down = bool(val)
+                        elif c == ecodes.BTN_STYLUS2:
+                            with self.lock:
+                                self.btn_stylus2_down = bool(val)
 
                         is_pan_btn = False
                         if pan_btn_mode == 'BTN_STYLUS2':

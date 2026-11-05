@@ -1016,6 +1016,19 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             if getattr(S, 'stylus_nav', None) and S.stylus_nav.tick(context, win):
                 tag_all()
 
+            if getattr(S, 'pen_mmb_active', False) and getattr(S, 'pen_mmb_from_stylus', False):
+                try:
+                    from .mode_tablet import _stylus_tracker
+                    if getattr(_stylus_tracker, 'active', False) and hasattr(_stylus_tracker, 'is_any_button_down'):
+                        if not _stylus_tracker.is_any_button_down():
+                            S.pen_mmb_active = False
+                            S.pen_mmb_from_stylus = False
+                            S.pen_mmb_is_pan = False
+                            S.pen_mmb_area_ptr = 0
+                            tag_all()
+                except Exception:
+                    pass
+
             if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not getattr(S, 'pen_mode', False) and not S.mode:
                 if not S.nudge_on and transform_active(win):
                     self._start_nudge(context, win)
@@ -1368,6 +1381,23 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             # While in Pen Mode, ONLY Ctrl+Alt+P (or the Edit menu) can exit.
             # All other events (ESC, brush shortcuts, undo/redo, Blender tools) pass directly through.
             return {'PASS_THROUGH'}
+
+        # Stylus Middle-Click Navigation Guard (Preview & other modes):
+        # Prevent Wayland dropped release events from locking native view3d.rotate
+        if t == 'MIDDLEMOUSE' or getattr(S, 'pen_mmb_active', False):
+            try:
+                from .mode_tablet import _stylus_tracker
+                is_stylus_event = (
+                    getattr(event, 'is_tablet', False) or
+                    (getattr(_stylus_tracker, 'active', False) and _stylus_tracker.is_pen_in_proximity(0.25)) or
+                    getattr(S, 'pen_mmb_active', False)
+                )
+                if is_stylus_event:
+                    res = handle_pen_event(self, context, event, win, area)
+                    if res != {'PASS_THROUGH'}:
+                        return res
+            except Exception:
+                pass
 
         if transform_active(win) or is_blender_modal_active(win):
             if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not getattr(S, 'pen_mode', False) and not S.mode:
