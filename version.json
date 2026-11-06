@@ -1,5 +1,5 @@
 {
-  "version": "1.0.8",
-  "commit": "7924dac",
-  "message": "feat(pen): automatically resume in Pen Mode on Blender startup if it was the last active mode"
+  "version": "1.0.9",
+  "commit": "5192923",
+  "message": "feat(paint): add color palette and asset browser popups in texture paint"
 }
