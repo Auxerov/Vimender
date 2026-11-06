@@ -2557,17 +2557,144 @@ class WM_OT_vim_close_search(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class WM_OT_vim_palette_apply_active(bpy.types.Operator):
+    bl_idname = "wm.vim_palette_apply_active"
+    bl_label = "Apply Active Color"
+    bl_description = "Apply selected palette swatch to brush"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        ts = context.tool_settings
+        settings = getattr(ts, 'image_paint', None)
+        if not settings and hasattr(ts, 'paint_mode'):
+            settings = ts.paint_mode
+        palette = getattr(settings, 'palette', None) if settings else None
+        if not palette or not palette.colors:
+            return {'CANCELLED'}
+
+        c = getattr(palette.colors, 'active', None) or palette.colors[0]
+        col = tuple(c.color)
+        brush = getattr(settings, 'brush', None)
+        if brush:
+            brush.color = col
+        ups = getattr(settings, 'unified_paint_settings', None) or getattr(ts, 'unified_paint_settings', None)
+        if ups:
+            ups.color = col
+        tag_all()
+        return {'FINISHED'}
+
+
+class WM_OT_vim_palette_add_current(bpy.types.Operator):
+    bl_idname = "wm.vim_palette_add_current"
+    bl_label = "Add Brush Color"
+    bl_description = "Add current brush color to palette"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        ts = context.tool_settings
+        settings = getattr(ts, 'image_paint', None)
+        if not settings and hasattr(ts, 'paint_mode'):
+            settings = ts.paint_mode
+        if not settings:
+            return {'CANCELLED'}
+
+        palette = getattr(settings, 'palette', None)
+        if not palette:
+            palette = bpy.data.palettes.new("Palette")
+            settings.palette = palette
+
+        brush = getattr(settings, 'brush', None)
+        ups = getattr(settings, 'unified_paint_settings', None) or getattr(ts, 'unified_paint_settings', None)
+        use_unified = ups and getattr(ups, 'use_unified_color', False)
+        src_color = ups.color if (use_unified and ups) else (brush.color if brush else (1.0, 1.0, 1.0))
+
+        new_c = palette.colors.new()
+        new_c.color = tuple(src_color)
+        palette.colors.active = new_c
+        tag_all()
+        return {'FINISHED'}
+
+
+class WM_OT_vim_palette_update_active(bpy.types.Operator):
+    bl_idname = "wm.vim_palette_update_active"
+    bl_label = "Update Swatch"
+    bl_description = "Update active palette swatch with current brush color"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        ts = context.tool_settings
+        settings = getattr(ts, 'image_paint', None)
+        if not settings and hasattr(ts, 'paint_mode'):
+            settings = ts.paint_mode
+        palette = getattr(settings, 'palette', None) if settings else None
+        if not palette or not palette.colors.active:
+            return {'CANCELLED'}
+
+        brush = getattr(settings, 'brush', None)
+        ups = getattr(settings, 'unified_paint_settings', None) or getattr(ts, 'unified_paint_settings', None)
+        use_unified = ups and getattr(ups, 'use_unified_color', False)
+        src_color = ups.color if (use_unified and ups) else (brush.color if brush else (1.0, 1.0, 1.0))
+
+        palette.colors.active.color = tuple(src_color)
+        tag_all()
+        return {'FINISHED'}
+
+
+class WM_OT_vim_palette_select_color(bpy.types.Operator):
+    bl_idname = "wm.vim_palette_select_color"
+    bl_label = "Select Swatch"
+    bl_description = "Apply specific palette swatch to brush"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    color_index: bpy.props.IntProperty(default=0)
+
+    def execute(self, context):
+        ts = context.tool_settings
+        settings = getattr(ts, 'image_paint', None)
+        if not settings and hasattr(ts, 'paint_mode'):
+            settings = ts.paint_mode
+        palette = getattr(settings, 'palette', None) if settings else None
+        if not palette or not palette.colors:
+            return {'CANCELLED'}
+
+        idx = max(0, min(self.color_index, len(palette.colors) - 1))
+        c = palette.colors[idx]
+        palette.colors.active = c
+        col = tuple(c.color)
+        brush = getattr(settings, 'brush', None)
+        if brush:
+            brush.color = col
+        ups = getattr(settings, 'unified_paint_settings', None) or getattr(ts, 'unified_paint_settings', None)
+        if ups:
+            ups.color = col
+        tag_all()
+        return {'FINISHED'}
+
+
 class WM_OT_vim_color_palette(bpy.types.Operator):
     bl_idname = "wm.vim_color_palette"
     bl_label = "Color Palette"
     bl_description = "Color Palette popup for Texture Paint"
     bl_options = {'REGISTER', 'UNDO'}
 
+    _last_active_ptr = None
+    _last_active_rgb = None
+
     @classmethod
     def poll(cls, context):
         return is_texture_paint_mode(context)
 
     def invoke(self, context, event):
+        ts = context.tool_settings
+        settings = getattr(ts, 'image_paint', None)
+        palette = getattr(settings, 'palette', None) if settings else None
+        active_entry = getattr(getattr(palette, 'colors', None), 'active', None) if palette else None
+        if active_entry:
+            WM_OT_vim_color_palette._last_active_ptr = active_entry.as_pointer()
+            WM_OT_vim_color_palette._last_active_rgb = tuple(round(x, 4) for x in active_entry.color)
+        else:
+            WM_OT_vim_color_palette._last_active_ptr = None
+            WM_OT_vim_color_palette._last_active_rgb = None
         return context.window_manager.invoke_popup(self, width=280)
 
     def execute(self, context):
@@ -2584,6 +2711,26 @@ class WM_OT_vim_color_palette(bpy.types.Operator):
             return
 
         brush = getattr(settings, 'brush', None)
+        ups = getattr(settings, 'unified_paint_settings', None) or getattr(ts, 'unified_paint_settings', None)
+        use_unified = ups and getattr(ups, 'use_unified_color', False)
+        prop_owner = ups if (use_unified and ups) else brush
+
+        palette = getattr(settings, 'palette', None)
+        if palette and getattr(palette, 'colors', None):
+            active_c_entry = getattr(palette.colors, 'active', None)
+            if active_c_entry:
+                active_rgb = tuple(round(x, 4) for x in active_c_entry.color)
+                curr_ptr = active_c_entry.as_pointer()
+                last_ptr = getattr(WM_OT_vim_color_palette, '_last_active_ptr', None)
+                last_rgb = getattr(WM_OT_vim_color_palette, '_last_active_rgb', None)
+                if last_ptr != curr_ptr or last_rgb != active_rgb:
+                    WM_OT_vim_color_palette._last_active_ptr = curr_ptr
+                    WM_OT_vim_color_palette._last_active_rgb = active_rgb
+                    if brush:
+                        brush.color = active_c_entry.color
+                    if ups:
+                        ups.color = active_c_entry.color
+                    tag_all()
 
         col = layout.column(align=True)
         row = col.row(align=True)
@@ -2591,19 +2738,28 @@ class WM_OT_vim_color_palette(bpy.types.Operator):
 
         col.template_ID(settings, "palette", new="palette.new")
 
-        if getattr(settings, 'palette', None):
+        if palette:
             col.template_palette(settings, "palette", color=True)
             r = col.row(align=True)
-            r.operator("palette.color_add", icon='ADD', text="Add Color")
+            r.operator("wm.vim_palette_add_current", icon='ADD', text="Add")
             r.operator("palette.color_delete", icon='REMOVE', text="Delete")
+            r.operator("wm.vim_palette_apply_active", icon='CHECKMARK', text="Apply")
+            r.operator("wm.vim_palette_update_active", icon='FILE_REFRESH', text="Update")
 
-        if brush:
+        if prop_owner:
             col.separator()
-            col.template_color_picker(brush, "color", value_slider=True)
+            col.template_color_picker(prop_owner, "color", value_slider=True)
             r2 = col.row(align=True)
-            r2.prop(brush, "color", text="")
-            r2.prop(brush, "secondary_color", text="")
+            r2.prop(prop_owner, "color", text="")
+            r2.prop(prop_owner, "secondary_color", text="")
             r2.operator("paint.brush_colors_flip", icon='FILE_REFRESH', text="")
+            if brush and ups:
+                if use_unified:
+                    brush.color = ups.color
+                    brush.secondary_color = ups.secondary_color
+                else:
+                    ups.color = brush.color
+                    ups.secondary_color = brush.secondary_color
 
 
 _orig_brush_asset_poll = None
