@@ -1,5 +1,5 @@
 {
-  "version": "1.0.11",
-  "commit": "f1b109d",
-  "message": "fix(paint): instantly sync color palette selection and edits to brush and unified color"
+  "version": "1.0.12",
+  "commit": "677abb8",
+  "message": "feat(palette): support color palette in grease pencil draw mode"
 }
