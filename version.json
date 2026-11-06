@@ -1,5 +1,5 @@
 {
-  "version": "1.0.9",
-  "commit": "5192923",
-  "message": "feat(paint): add color palette and asset browser popups in texture paint"
+  "version": "1.0.10",
+  "commit": "0a1082b",
+  "message": "fix(paint): use native in-viewport asset shelf popover instead of new window"
 }
