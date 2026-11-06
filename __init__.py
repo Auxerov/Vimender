@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Vimender",
     "author": "Auxerov",
-    "version": (1, 0, 9),
+    "version": (1, 0, 10),
     "blender": (5, 0, 0),
     "location": "F3 > Vim Mode",
     "description": "Keyboard controller for Blender with modal navigation, hints, walk mode, and tablet mode",
@@ -55,6 +55,7 @@ from .operators import (
     WM_OT_vim_search_object, WM_OT_vim_search_mode, WM_OT_vim_fuzzy_search,
     WM_OT_vim_general_search, WM_OT_vim_save_prompt, WM_OT_vim_save_action,
     WM_OT_vim_close_search, WM_OT_vim_color_palette, WM_OT_vim_asset_browser_popup,
+    hook_brush_asset_shelf, unhook_brush_asset_shelf,
     register_search_key, unregister_search_key
 )
 
@@ -224,9 +225,11 @@ def register():
             restore_base_ui_scale()
     except Exception:
         pass
+    hook_brush_asset_shelf()
 
 
 def unregister():
+    unhook_brush_asset_shelf()
     unpatch_view_pie()
     shutdown()
     restore_modal_keymaps()

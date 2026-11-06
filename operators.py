@@ -1348,24 +1348,11 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     print(f"[Vimender] search_object error: {e}")
             return {'RUNNING_MODAL'}
 
-        is_asset_popup_win = (
-            len(context.window_manager.windows) > 1 and
-            win and win.screen and len(win.screen.areas) == 1 and
-            win.screen.areas[0].ui_type == 'ASSETS'
-        )
-        if is_asset_popup_win and (t in {'ESC', 'V'} or getattr(event, 'unicode', '') in {'v', 'V'}) and v == 'PRESS':
-            try:
-                with context.temp_override(window=win):
-                    bpy.ops.wm.window_close()
-            except Exception as e:
-                print(f"[Vimender] close asset window error: {e}")
-            return {'RUNNING_MODAL'}
-
         if is_texture_paint_mode(context):
             prefs = get_preferences(context)
             if check_shortcut(prefs, 'color_palette', event, 'C', fallback_ctrl=False) and v == 'PRESS':
                 try:
-                    with context.temp_override(window=win):
+                    with context.temp_override(window=win, area=area):
                         bpy.ops.wm.vim_color_palette('INVOKE_DEFAULT')
                 except Exception as e:
                     print(f"[Vimender] color_palette error: {e}")
@@ -1373,7 +1360,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
             if check_shortcut(prefs, 'asset_browser', event, 'V', fallback_ctrl=False) and v == 'PRESS':
                 try:
-                    with context.temp_override(window=win):
+                    with context.temp_override(window=win, area=area):
                         bpy.ops.wm.vim_asset_browser_popup('INVOKE_DEFAULT')
                 except Exception as e:
                     print(f"[Vimender] asset_browser error: {e}")
@@ -2619,71 +2606,86 @@ class WM_OT_vim_color_palette(bpy.types.Operator):
             r2.operator("paint.brush_colors_flip", icon='FILE_REFRESH', text="")
 
 
+_orig_brush_asset_poll = None
+
+def _vim_brush_asset_poll(cls, asset):
+    global _orig_brush_asset_poll
+    if _orig_brush_asset_poll:
+        try:
+            if not _orig_brush_asset_poll(asset):
+                return False
+        except Exception:
+            pass
+    prefs = get_preferences(bpy.context)
+    target_lib = getattr(prefs, 'texture_paint_asset_library', 'ALL') if prefs else 'ALL'
+    if not target_lib or target_lib == 'ALL':
+        return True
+    if target_lib == 'LOCAL':
+        return not getattr(asset, 'full_library_path', None) or bool(getattr(asset, 'local_id', None))
+    if target_lib == 'ESSENTIALS':
+        p = getattr(asset, 'full_library_path', '') or ''
+        return 'essentials' in p.lower()
+    user_lib = bpy.context.preferences.filepaths.asset_libraries.get(target_lib)
+    if user_lib:
+        import os
+        try:
+            lib_p = os.path.realpath(bpy.path.abspath(user_lib.path))
+            ast_p = os.path.realpath(bpy.path.abspath(getattr(asset, 'full_library_path', '') or ''))
+            return ast_p.startswith(lib_p)
+        except Exception:
+            return True
+    return True
+
+def hook_brush_asset_shelf():
+    global _orig_brush_asset_poll
+    try:
+        from bl_ui.properties_paint_common import BrushAssetShelf
+        if _orig_brush_asset_poll is None:
+            _orig_brush_asset_poll = BrushAssetShelf.asset_poll
+            BrushAssetShelf.asset_poll = classmethod(_vim_brush_asset_poll)
+    except Exception:
+        pass
+
+def unhook_brush_asset_shelf():
+    global _orig_brush_asset_poll
+    try:
+        from bl_ui.properties_paint_common import BrushAssetShelf
+        if _orig_brush_asset_poll is not None:
+            BrushAssetShelf.asset_poll = _orig_brush_asset_poll
+            _orig_brush_asset_poll = None
+    except Exception:
+        pass
+
+
 class WM_OT_vim_asset_browser_popup(bpy.types.Operator):
     bl_idname = "wm.vim_asset_browser_popup"
-    bl_label = "Texture Paint Asset Browser"
-    bl_description = "Open or toggle Asset Browser popup for Texture Paint"
+    bl_label = "Asset Browser Popup"
+    bl_description = "Open Asset Browser popup for Texture Paint"
     bl_options = {'REGISTER'}
 
+    @classmethod
+    def poll(cls, context):
+        return is_texture_paint_mode(context)
+
+    def invoke(self, context, event):
+        return self.execute(context)
+
     def execute(self, context):
-        wm = context.window_manager
-        prefs = get_preferences(context)
-        target_lib = getattr(prefs, 'texture_paint_asset_library', 'ALL') if prefs else 'ALL'
-
-        existing_win = None
-        for w in wm.windows:
-            if len(w.screen.areas) == 1 and w.screen.areas[0].ui_type == 'ASSETS':
-                existing_win = w
-                break
-
-        if existing_win:
-            try:
-                with context.temp_override(window=existing_win):
-                    bpy.ops.wm.window_close()
-            except Exception as e:
-                print(f"[Vimender] window_close error: {e}")
-            return {'FINISHED'}
-
-        old_ptrs = set(w.as_pointer() for w in wm.windows)
+        area = context.area
+        shelf_name = "IMAGE_AST_brush_paint" if (area and area.type == 'IMAGE_EDITOR') else "VIEW3D_AST_brush_texture_paint"
         try:
-            res = bpy.ops.wm.window_new('INVOKE_DEFAULT')
+            res = bpy.ops.wm.call_asset_shelf_popover('INVOKE_DEFAULT', name=shelf_name)
+            if res in ({'FINISHED'}, {'RUNNING_MODAL'}):
+                return {'FINISHED'}
         except Exception:
-            try:
-                res = bpy.ops.wm.window_new()
-            except Exception as e:
-                print(f"[Vimender] window_new error: {e}")
-                res = None
+            pass
 
-        new_win = next((w for w in wm.windows if w.as_pointer() not in old_ptrs), None)
-        if not new_win:
-            area = context.area
-            if area:
-                area.ui_type = 'ASSETS'
+        sd = getattr(area, 'spaces', None)
+        active_sp = getattr(sd, 'active', None) if sd else None
+        if active_sp and hasattr(active_sp, 'show_region_asset_shelf'):
+            active_sp.show_region_asset_shelf = not active_sp.show_region_asset_shelf
             return {'FINISHED'}
 
-        area = new_win.screen.areas[0]
-        area.ui_type = 'ASSETS'
-
-        def _apply_lib(retries=20):
-            try:
-                if not new_win or new_win not in list(bpy.context.window_manager.windows):
-                    return None
-                sp = area.spaces.active
-                if sp and getattr(sp, 'params', None):
-                    if hasattr(sp.params, 'asset_library_reference'):
-                        try:
-                            sp.params.asset_library_reference = target_lib
-                        except Exception:
-                            sp.params.asset_library_reference = 'ALL'
-                    area.tag_redraw()
-                    return None
-            except Exception:
-                pass
-            if retries > 0:
-                return 0.05
-            return None
-
-        bpy.app.timers.register(_apply_lib)
         return {'FINISHED'}
 
 
