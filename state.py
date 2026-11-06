@@ -903,6 +903,23 @@ def is_edit_mode(context):
         return True
     return False
 
+def is_texture_paint_mode(context):
+    if not context:
+        return False
+    if getattr(context, 'mode', '') == 'PAINT_TEXTURE':
+        return True
+    obj = getattr(context, 'active_object', None)
+    if obj and getattr(obj, 'mode', '') == 'PAINT_TEXTURE':
+        return True
+    if getattr(context, 'image_paint_object', None) is not None:
+        return True
+    area = getattr(context, 'area', None)
+    if area and area.type == 'IMAGE_EDITOR':
+        sd = getattr(area.spaces, 'active', None)
+        if sd and getattr(sd, 'mode', None) == 'PAINT':
+            return True
+    return False
+
 def get_preferences(context=None):
     global _keymaps_initialized
     if context is None:
@@ -1078,7 +1095,6 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
 
     S.preview_mode = False
 
-    # Manage UI scale: slightly boost when entering TABLET or PEN, restore to 1.0 otherwise
     if mode_name in {'TABLET', 'PEN'}:
         apply_tablet_ui_scale(context)
     else:

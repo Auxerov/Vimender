@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Vimender",
     "author": "Auxerov",
-    "version": (1, 0, 8),
+    "version": (1, 0, 9),
     "blender": (5, 0, 0),
     "location": "F3 > Vim Mode",
     "description": "Keyboard controller for Blender with modal navigation, hints, walk mode, and tablet mode",
@@ -54,7 +54,8 @@ from .operators import (
     WM_OT_vim_tablet_select_modifier,
     WM_OT_vim_search_object, WM_OT_vim_search_mode, WM_OT_vim_fuzzy_search,
     WM_OT_vim_general_search, WM_OT_vim_save_prompt, WM_OT_vim_save_action,
-    WM_OT_vim_close_search, register_search_key, unregister_search_key
+    WM_OT_vim_close_search, WM_OT_vim_color_palette, WM_OT_vim_asset_browser_popup,
+    register_search_key, unregister_search_key
 )
 
 classes = (
@@ -72,6 +73,8 @@ classes = (
     WM_OT_vim_save_prompt,
     WM_OT_vim_save_action,
     WM_OT_vim_close_search,
+    WM_OT_vim_color_palette,
+    WM_OT_vim_asset_browser_popup,
     WM_OT_vim_export_keymap,
     WM_OT_vim_import_keymap,
     WM_OT_vim_reset_keymap,

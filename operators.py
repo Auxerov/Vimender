@@ -12,7 +12,7 @@ from .state import (
     load_last_mode, save_last_mode,
     MOUSE_CANCEL, MODIFIER_KEYS, CONSUME_KEYS, PASS_KEYS_IN,
     PREFIX_DIRS, PREFIX_REPEAT_TIMEOUT, PREFIX_TIMEOUT, ALL_DIRS, NUDGE_DIRS,
-    ARROW_DIRS, _addon_keymaps, NUMPAD_PIE_KEYS, is_edit_mode, set_active_mode,
+    ARROW_DIRS, _addon_keymaps, NUMPAD_PIE_KEYS, is_edit_mode, is_texture_paint_mode, set_active_mode,
     get_selection_center_2d, get_active_transform_type, SENS_LEVELS,
     CURSOR_MAX_SPEED, LETTERS
 )
@@ -1271,7 +1271,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         is_less_key = (t == 'GRLESS' or getattr(event, 'unicode', '') in {'<', '>', '|'})
 
         if is_less_key and not (area and area.type in PASS_KEYS_IN):
-            # 1. Data / Fuzzy Search: Shift+AltGr+< (or Shift+Alt+<)
             is_fuzzy = (
                 check_shortcut(prefs, 'fuzzy_search', event, 'GRLESS', fallback_ctrl=False, fallback_shift=True, fallback_alt=True) or
                 ((is_altgr_pressed(event) or event.alt) and (event.shift or getattr(event, 'unicode', '') == '>'))
@@ -1285,7 +1284,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                         print(f"[Vimender] fuzzy_search error: {e}")
                 return {'RUNNING_MODAL'}
 
-            # 2. Mode Search: AltGr+< (or Alt+< or unicode '|')
             is_mode_search = (
                 check_shortcut(prefs, 'search_mode', event, 'GRLESS', fallback_ctrl=False, fallback_alt=True) or
                 ((is_altgr_pressed(event) or event.alt or getattr(event, 'unicode', '') == '|') and not (event.shift or getattr(event, 'unicode', '') == '>'))
@@ -1299,7 +1297,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                         print(f"[Vimender] search_mode error: {e}")
                 return {'RUNNING_MODAL'}
 
-            # 3. Object / Cursor Search: Ctrl+<
             is_obj_search = (
                 check_shortcut(prefs, 'search_object', event, 'GRLESS', fallback_ctrl=True) or
                 (event.ctrl and not (event.alt or is_altgr_pressed(event) or event.shift or getattr(event, 'oskey', False)))
@@ -1312,7 +1309,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                         print(f"[Vimender] search_object error: {e}")
                 return {'RUNNING_MODAL'}
 
-            # 4. General / Menu Search: Plain <
             is_plain_less = not (event.ctrl or event.alt or is_altgr_pressed(event) or event.shift or getattr(event, 'oskey', False) or getattr(event, 'unicode', '') in {'>', '|'})
             is_menu_search = check_shortcut(prefs, 'search_menu', event, 'GRLESS', fallback_ctrl=False) or is_plain_less
             if is_menu_search:
@@ -1342,7 +1338,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                             print(f"[Vimender] search_menu error: {e}")
                 return {'RUNNING_MODAL'}
 
-            # Always consume any GRLESS event so it never falls through to Auxeref!
             return {'RUNNING_MODAL'}
 
         if t == 'F3' and event.ctrl and not (event.alt or event.shift or getattr(event, 'oskey', False)):
@@ -1352,6 +1347,42 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 except Exception as e:
                     print(f"[Vimender] search_object error: {e}")
             return {'RUNNING_MODAL'}
+
+        is_asset_popup_win = (
+            len(context.window_manager.windows) > 1 and
+            win and win.screen and len(win.screen.areas) == 1 and
+            win.screen.areas[0].ui_type == 'ASSETS'
+        )
+        if is_asset_popup_win and (t in {'ESC', 'V'} or getattr(event, 'unicode', '') in {'v', 'V'}) and v == 'PRESS':
+            try:
+                with context.temp_override(window=win):
+                    bpy.ops.wm.window_close()
+            except Exception as e:
+                print(f"[Vimender] close asset window error: {e}")
+            return {'RUNNING_MODAL'}
+
+        if is_texture_paint_mode(context):
+            prefs = get_preferences(context)
+            if check_shortcut(prefs, 'color_palette', event, 'C', fallback_ctrl=False) and v == 'PRESS':
+                try:
+                    with context.temp_override(window=win):
+                        bpy.ops.wm.vim_color_palette('INVOKE_DEFAULT')
+                except Exception as e:
+                    print(f"[Vimender] color_palette error: {e}")
+                return {'RUNNING_MODAL'}
+
+            if check_shortcut(prefs, 'asset_browser', event, 'V', fallback_ctrl=False) and v == 'PRESS':
+                try:
+                    with context.temp_override(window=win):
+                        bpy.ops.wm.vim_asset_browser_popup('INVOKE_DEFAULT')
+                except Exception as e:
+                    print(f"[Vimender] asset_browser error: {e}")
+                return {'RUNNING_MODAL'}
+
+            if (check_shortcut(prefs, 'color_palette', event, 'C', fallback_ctrl=False) or
+                check_shortcut(prefs, 'asset_browser', event, 'V', fallback_ctrl=False)):
+                if v == 'RELEASE':
+                    return {'RUNNING_MODAL'}
 
         if S.walk_mode:
             res = handle_walk_event(self, context, event, win, area)
@@ -1380,13 +1411,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     set_active_mode('PREVIEW', context, self.report)
                     return {'RUNNING_MODAL'}
 
-            # While in Pen Mode, ONLY Ctrl+Alt+P (or the Edit menu) can exit.
-            # All other events (ESC, brush shortcuts, undo/redo, Blender tools) pass directly through.
             return {'PASS_THROUGH'}
 
-        # Stylus Barrel Button Guards (Preview & other modes):
-        # Orbit (lower button) and Pan (upper button) are driven directly by S.stylus_nav via evdev deltas.
-        # Swallow stylus MIDDLEMOUSE and clicks while buttons are held so Blender never enters modal view3d.rotate.
         try:
             from .mode_tablet import _stylus_tracker
             if getattr(_stylus_tracker, 'active', False):
@@ -2541,6 +2567,123 @@ class WM_OT_vim_close_search(bpy.types.Operator):
         S.save_dialog_open = False
         send_fake_escape()
         tag_all()
+        return {'FINISHED'}
+
+
+class WM_OT_vim_color_palette(bpy.types.Operator):
+    bl_idname = "wm.vim_color_palette"
+    bl_label = "Color Palette"
+    bl_description = "Color Palette popup for Texture Paint"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return is_texture_paint_mode(context)
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_popup(self, width=280)
+
+    def execute(self, context):
+        return {'FINISHED'}
+
+    def draw(self, context):
+        layout = self.layout
+        ts = context.tool_settings
+        settings = getattr(ts, 'image_paint', None)
+        if not settings and hasattr(ts, 'paint_mode'):
+            settings = ts.paint_mode
+        if not settings:
+            layout.label(text="No paint settings found")
+            return
+
+        brush = getattr(settings, 'brush', None)
+
+        col = layout.column(align=True)
+        row = col.row(align=True)
+        row.label(text="Color Palette", icon='COLOR')
+
+        col.template_ID(settings, "palette", new="palette.new")
+
+        if getattr(settings, 'palette', None):
+            col.template_palette(settings, "palette", color=True)
+            r = col.row(align=True)
+            r.operator("palette.color_add", icon='ADD', text="Add Color")
+            r.operator("palette.color_delete", icon='REMOVE', text="Delete")
+
+        if brush:
+            col.separator()
+            col.template_color_picker(brush, "color", value_slider=True)
+            r2 = col.row(align=True)
+            r2.prop(brush, "color", text="")
+            r2.prop(brush, "secondary_color", text="")
+            r2.operator("paint.brush_colors_flip", icon='FILE_REFRESH', text="")
+
+
+class WM_OT_vim_asset_browser_popup(bpy.types.Operator):
+    bl_idname = "wm.vim_asset_browser_popup"
+    bl_label = "Texture Paint Asset Browser"
+    bl_description = "Open or toggle Asset Browser popup for Texture Paint"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        wm = context.window_manager
+        prefs = get_preferences(context)
+        target_lib = getattr(prefs, 'texture_paint_asset_library', 'ALL') if prefs else 'ALL'
+
+        existing_win = None
+        for w in wm.windows:
+            if len(w.screen.areas) == 1 and w.screen.areas[0].ui_type == 'ASSETS':
+                existing_win = w
+                break
+
+        if existing_win:
+            try:
+                with context.temp_override(window=existing_win):
+                    bpy.ops.wm.window_close()
+            except Exception as e:
+                print(f"[Vimender] window_close error: {e}")
+            return {'FINISHED'}
+
+        old_ptrs = set(w.as_pointer() for w in wm.windows)
+        try:
+            res = bpy.ops.wm.window_new('INVOKE_DEFAULT')
+        except Exception:
+            try:
+                res = bpy.ops.wm.window_new()
+            except Exception as e:
+                print(f"[Vimender] window_new error: {e}")
+                res = None
+
+        new_win = next((w for w in wm.windows if w.as_pointer() not in old_ptrs), None)
+        if not new_win:
+            area = context.area
+            if area:
+                area.ui_type = 'ASSETS'
+            return {'FINISHED'}
+
+        area = new_win.screen.areas[0]
+        area.ui_type = 'ASSETS'
+
+        def _apply_lib(retries=20):
+            try:
+                if not new_win or new_win not in list(bpy.context.window_manager.windows):
+                    return None
+                sp = area.spaces.active
+                if sp and getattr(sp, 'params', None):
+                    if hasattr(sp.params, 'asset_library_reference'):
+                        try:
+                            sp.params.asset_library_reference = target_lib
+                        except Exception:
+                            sp.params.asset_library_reference = 'ALL'
+                    area.tag_redraw()
+                    return None
+            except Exception:
+                pass
+            if retries > 0:
+                return 0.05
+            return None
+
+        bpy.app.timers.register(_apply_lib)
         return {'FINISHED'}
 
 

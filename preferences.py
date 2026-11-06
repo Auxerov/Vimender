@@ -380,7 +380,34 @@ KEY_PREFIXES = (
     ("bevel", "Bevel Tool (B)", "B", False, False, False),
     ("persp_ortho", "Persp / Ortho View (Y / Asterisk)", "Y", False, False, False),
     ("view_selected", "Focus Selected View (Numpad . / I)", "NUMPAD_PERIOD", False, False, False),
+    ("color_palette", "Color Palette (C)", "C", False, False, False),
+    ("asset_browser", "Asset Browser Popup (V)", "V", False, False, False),
 )
+
+
+def get_asset_libraries_items(self, context):
+    items = [
+        ('ALL', "All Libraries", "Show assets from all asset libraries"),
+        ('LOCAL', "Current File", "Show assets from current blend file"),
+        ('ESSENTIALS', "Essentials", "Show Blender built-in essentials"),
+    ]
+    prefs = None
+    if context and hasattr(context, 'preferences'):
+        prefs = context.preferences
+    elif hasattr(bpy, 'context') and hasattr(bpy.context, 'preferences'):
+        prefs = bpy.context.preferences
+    if prefs and hasattr(prefs, 'filepaths'):
+        for lib in prefs.filepaths.asset_libraries:
+            if lib.name and not any(it[0] == lib.name for it in items):
+                items.append((lib.name, lib.name, getattr(lib, 'path', '') or lib.name))
+    return items
+
+
+def _on_texture_paint_asset_lib_change(self, context):
+    try:
+        save_vimender_config({'texture_paint_asset_library': str(self.texture_paint_asset_library)})
+    except Exception as e:
+        print(f"[Vimender] Asset lib save error: {e}")
 
 
 def save_keymaps_to_config(prefs):
@@ -436,6 +463,12 @@ def load_keymaps_from_config(prefs):
     for prefix in ("search_menu", "search_object", "search_mode", "fuzzy_search"):
         if getattr(prefs, f"key_{prefix}", "") == "SPACE":
             setattr(prefs, f"key_{prefix}", "GRLESS")
+    lib = cfg.get('texture_paint_asset_library')
+    if lib:
+        try:
+            setattr(prefs, 'texture_paint_asset_library', lib)
+        except Exception:
+            pass
     repair_corrupted_keymaps(prefs)
 
 
@@ -533,6 +566,24 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     ctrl_view_selected: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
     shift_view_selected: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
     alt_view_selected: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
+
+    key_color_palette: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='C', update=_on_keymap_change)
+    ctrl_color_palette: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
+    shift_color_palette: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_color_palette: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
+
+    key_asset_browser: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='V', update=_on_keymap_change)
+    ctrl_asset_browser: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
+    shift_asset_browser: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
+    alt_asset_browser: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
+
+    texture_paint_asset_library: bpy.props.EnumProperty(
+        name="Texture Paint Asset Library",
+        description="Asset library opened when pressing V in Texture Paint mode",
+        items=get_asset_libraries_items,
+        default=0,
+        update=_on_texture_paint_asset_lib_change,
+    )
 
     def _get_auto_start(self):
         return load_vimender_state()
@@ -814,6 +865,11 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             self._draw_shortcut(box2, "Persp / Ortho View (Y / Asterisk)", "persp_ortho")
             self._draw_shortcut(box2, "Focus Selected View (Numpad . / I)", "view_selected")
 
+            box_paint = layout.box()
+            box_paint.label(text="Texture Paint Popups", icon='BRUSH_DATA')
+            box_paint.prop(self, "texture_paint_asset_library", text="Asset Library")
+            self._draw_shortcut(box_paint, "Color Palette (C)", "color_palette")
+            self._draw_shortcut(box_paint, "Asset Browser Popup (V)", "asset_browser")
 
             box3 = layout.box()
             box3.label(text="General Settings", icon='PREFERENCES')
@@ -857,6 +913,7 @@ class WM_OT_vim_export_keymap(bpy.types.Operator, ExportHelper):
             "pen_pan_sensitivity": float(getattr(prefs, 'pen_pan_sensitivity', 1.75)),
             "pen_ui_scale": float(getattr(prefs, 'pen_ui_scale', 1.25)),
             "auto_start": bool(getattr(prefs, 'auto_start', False)),
+            "texture_paint_asset_library": str(getattr(prefs, 'texture_paint_asset_library', 'ALL')),
         }
         for prefix, label, def_k, def_c, def_s, def_a in KEY_PREFIXES:
             data["keymaps"][prefix] = {
@@ -932,6 +989,11 @@ class WM_OT_vim_import_keymap(bpy.types.Operator, ImportHelper):
                 prefs.pen_ui_scale = float(data["pen_ui_scale"])
             if "auto_start" in data:
                 prefs.auto_start = bool(data["auto_start"])
+            if "texture_paint_asset_library" in data:
+                try:
+                    setattr(prefs, 'texture_paint_asset_library', data["texture_paint_asset_library"])
+                except Exception:
+                    pass
             save_keymaps_to_config(prefs)
             tag_all()
             self.report({'INFO'}, f"Vimender: Keymaps imported from {os.path.basename(self.filepath)}")
@@ -957,6 +1019,10 @@ class WM_OT_vim_reset_keymap(bpy.types.Operator):
             setattr(prefs, f"ctrl_{prefix}", def_c)
             setattr(prefs, f"shift_{prefix}", def_s)
             setattr(prefs, f"alt_{prefix}", def_a)
+        try:
+            setattr(prefs, 'texture_paint_asset_library', 'ALL')
+        except Exception:
+            pass
         save_keymaps_to_config(prefs)
         tag_all()
         self.report({'INFO'}, "Vimender: Keymaps reset to defaults")

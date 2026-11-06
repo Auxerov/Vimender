@@ -874,7 +874,6 @@ class EvdevStylusTracker:
                                 if val:
                                     self.last_pen_touch_time = time.perf_counter()
 
-                        # Track hardware state of both buttons
                         if c == ecodes.BTN_STYLUS:
                             with self.lock:
                                 self.btn_stylus_down = bool(val)
@@ -890,7 +889,7 @@ class EvdevStylusTracker:
                         elif pan_btn_mode == 'BOTH':
                             is_pan_btn = (c in (ecodes.BTN_STYLUS, ecodes.BTN_STYLUS2))
                             is_orbit_btn = False
-                        else:  # Default: BTN_STYLUS (upper) is Pan, BTN_STYLUS2 (lower) is Orbit
+                        else:
                             is_pan_btn = (c == ecodes.BTN_STYLUS)
                             is_orbit_btn = (c in (ecodes.BTN_STYLUS2, getattr(ecodes, 'BTN_TOOL_RUBBER', 321)))
 
@@ -907,8 +906,6 @@ class EvdevStylusTracker:
                             with self.lock:
                                 self.stylus_mmb_down = btn_orbit
                                 self.btn_orbit_down = btn_orbit
-                                # Always clear anchor on both press and release so
-                                # the starting point is strictly registered with ZERO delta!
                                 self.last_orbit_x = None
                                 self.last_orbit_y = None
                     elif ev.type == ecodes.EV_ABS:
@@ -944,7 +941,6 @@ class EvdevStylusTracker:
                                 if self.last_orbit_x is not None and self.last_orbit_y is not None:
                                     dx = (curr_x - self.last_orbit_x) / self.x_rng
                                     dy = (curr_y - self.last_orbit_y) / self.y_rng
-                                    # Filter out sensor teleports / glitches
                                     if abs(dx) < 0.12 and abs(dy) < 0.12:
                                         self.orbit_delta[0] += dx
                                         self.orbit_delta[1] += dy
@@ -1042,7 +1038,6 @@ class _StylusNavigator:
         H = max(float(win.height), 1.0)
         changed = False
 
-        # Upper barrel button: Pan (original behavior preserved completely)
         if pdx != 0.0 or pdy != 0.0:
             dpx = pdx * W
             dpy = -pdy * H
@@ -1058,7 +1053,6 @@ class _StylusNavigator:
             rv3d.view_location = rv3d.view_location - (right * dpx + up * dpy) * u
             changed = True
 
-        # Lower barrel button: Orbit (clean canonical turntable)
         if odx != 0.0 or ody != 0.0:
             if rv3d.view_perspective == 'CAMERA' and not getattr(space, 'lock_camera', False):
                 rv3d.view_perspective = 'PERSP'

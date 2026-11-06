@@ -36,7 +36,6 @@ class _PenNavigator:
         if not getattr(_tracker, 'active', False):
             return False
 
-        # Inhibit pinch-zoom and pan if pen is actively touching the glass
         if getattr(_stylus_tracker, 'is_pen_touching', None) and _stylus_tracker.is_pen_touching():
             with _tracker.lock:
                 _tracker.pan_delta[0] = _tracker.pan_delta[1] = 0.0
@@ -76,7 +75,6 @@ class _PenNavigator:
             _tracker.zoom_log = 0.0
             mid_n = _tracker.mid_n
 
-        # If not 2 fingers, discard any gesture motion to prevent single-finger / palm drift
         if fingers != 2:
             self._anchor = (0.0, 0.0)
             return False
@@ -162,7 +160,6 @@ def apply_pen_mmb_navigation(context, win, area, dx, dy, is_pan):
     d = rv3d.view_distance
 
     if is_pan:
-        # Shift + Middle Click Pan
         pan_sens = float(getattr(prefs, 'pen_pan_sensitivity', 1.75)) if prefs else 1.75
         lens = max(getattr(space, 'lens', 50.0), 1.0)
         u = d * VIEW_SENSOR_MM / (lens * max(reg.width, reg.height, 1)) * pan_sens
@@ -170,7 +167,6 @@ def apply_pen_mmb_navigation(context, win, area, dx, dy, is_pan):
         up = rot @ Vector((0.0, 1.0, 0.0))
         rv3d.view_location = rv3d.view_location - (right * dx + up * dy) * u
     else:
-        # Middle Click Orbit (Clean Turntable around fixed target/pivot)
         orbit_sens = float(getattr(prefs, 'pen_orbit_sensitivity', 1.0)) if prefs else 1.0
         yaw = -dx * (math.pi / max(reg.width, 1)) * orbit_sens
         pitch = -dy * (math.pi / max(reg.height, 1)) * orbit_sens
@@ -188,7 +184,6 @@ def apply_pen_mmb_navigation(context, win, area, dx, dy, is_pan):
             q_yaw = Quaternion(up_vec, yaw)
             new_rot = (q_yaw @ q_pitch @ rot).normalized()
         rv3d.view_rotation = new_rot
-        # Note: rv3d.view_location is never modified during orbit so it strictly orbits around the target!
 
     area.tag_redraw()
 
@@ -202,27 +197,16 @@ def handle_pen_event(op, context, event, win, area):
     except Exception:
         return {'PASS_THROUGH'}
 
-    # 1. Stylus Pen hardware check:
-    # Does the physical Wacom Pen have its tip touching the glass?
-    # (Reads directly from /dev/input/event6 via evdev - 100% reliable)
     is_stylus_touching = False
     if getattr(_stylus_tracker, 'active', False):
         is_stylus_touching = _stylus_tracker.is_pen_touching(window_seconds=0.10)
     else:
         is_stylus_touching = getattr(event, 'is_tablet', False)
 
-    # 2. Touch hardware check:
-    # Are touchscreen fingers or palm contacts touching the glass?
-    # (Reads directly from /dev/input/event7 via evdev)
     touch_active = False
     if getattr(_tracker, 'active', False):
         touch_active = _tracker.is_touch_active(cooldown=0.30)
 
-    # 3. Swallow touch-synthesized mouse events in Pen Mode:
-    # When fingers/palm are touching the screen and the physical pen is NOT on the glass:
-    # ANY mouse button / move event is synthesized touch input from Mutter/Wayland.
-    # We swallow it completely so Blender NEVER starts a sculpt or paint stroke!
-    # IMPORTANT: Stylus barrel buttons and proximity events must NEVER be swallowed as touch!
     is_stylus_event = (
         getattr(event, 'is_tablet', False) or
         (getattr(_stylus_tracker, 'active', False) and (
@@ -232,7 +216,6 @@ def handle_pen_event(op, context, event, win, area):
     )
     if touch_active and not is_stylus_touching and not is_stylus_event:
         if t in MOUSE_TOUCH_SWALLOW_EVENTS:
-            # Synchronously update pinch-to-zoom/pan on touch motion for immediate responsiveness
             if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
                 if getattr(S, 'pen_nav', None):
                     if S.pen_nav.tick(context, win):
@@ -244,11 +227,6 @@ def handle_pen_event(op, context, event, win, area):
                                     a.tag_redraw()
             return {'RUNNING_MODAL'}
 
-    # 4. Stylus Barrel Button Guards (Pen Mode):
-    # Both Pan (Upper button) and Orbit (Lower button) are handled cleanly and directly by
-    # S.stylus_nav via raw hardware evdev deltas without entering Blender's modal loop.
-    # We swallow stylus clicks and MIDDLEMOUSE while either button is pressed so Blender
-    # never enters modal view3d.rotate or starts unwanted brush strokes.
     if getattr(_stylus_tracker, 'active', False):
         if getattr(_stylus_tracker, 'btn_orbit_down', False) or getattr(_stylus_tracker, 'btn_pan_down', False):
             if t in {'LEFTMOUSE', 'MIDDLEMOUSE', 'RIGHTMOUSE'}:
@@ -264,7 +242,6 @@ def handle_pen_event(op, context, event, win, area):
             ))
         )
         if is_stylus:
-            # Stylus lower button orbit is actively handled by S.stylus_nav!
             return {'RUNNING_MODAL'}
         return {'PASS_THROUGH'}
 
