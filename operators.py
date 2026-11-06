@@ -12,7 +12,7 @@ from .state import (
     load_last_mode, save_last_mode,
     MOUSE_CANCEL, MODIFIER_KEYS, CONSUME_KEYS, PASS_KEYS_IN,
     PREFIX_DIRS, PREFIX_REPEAT_TIMEOUT, PREFIX_TIMEOUT, ALL_DIRS, NUDGE_DIRS,
-    ARROW_DIRS, _addon_keymaps, NUMPAD_PIE_KEYS, is_edit_mode, is_texture_paint_mode, set_active_mode,
+    ARROW_DIRS, _addon_keymaps, NUMPAD_PIE_KEYS, is_edit_mode, is_texture_paint_mode, is_draw_mode, get_active_paint_settings, set_active_mode,
     get_selection_center_2d, get_active_transform_type, SENS_LEVELS,
     CURSOR_MAX_SPEED, LETTERS
 )
@@ -1348,7 +1348,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     print(f"[Vimender] search_object error: {e}")
             return {'RUNNING_MODAL'}
 
-        if is_texture_paint_mode(context):
+        if is_texture_paint_mode(context) or is_draw_mode(context):
             prefs = get_preferences(context)
             if check_shortcut(prefs, 'color_palette', event, 'C', fallback_ctrl=False) and v == 'PRESS':
                 try:
@@ -2565,9 +2565,7 @@ class WM_OT_vim_palette_apply_active(bpy.types.Operator):
 
     def execute(self, context):
         ts = context.tool_settings
-        settings = getattr(ts, 'image_paint', None)
-        if not settings and hasattr(ts, 'paint_mode'):
-            settings = ts.paint_mode
+        settings = get_active_paint_settings(context)
         palette = getattr(settings, 'palette', None) if settings else None
         if not palette or not palette.colors:
             return {'CANCELLED'}
@@ -2592,9 +2590,7 @@ class WM_OT_vim_palette_add_current(bpy.types.Operator):
 
     def execute(self, context):
         ts = context.tool_settings
-        settings = getattr(ts, 'image_paint', None)
-        if not settings and hasattr(ts, 'paint_mode'):
-            settings = ts.paint_mode
+        settings = get_active_paint_settings(context)
         if not settings:
             return {'CANCELLED'}
 
@@ -2623,9 +2619,7 @@ class WM_OT_vim_palette_update_active(bpy.types.Operator):
 
     def execute(self, context):
         ts = context.tool_settings
-        settings = getattr(ts, 'image_paint', None)
-        if not settings and hasattr(ts, 'paint_mode'):
-            settings = ts.paint_mode
+        settings = get_active_paint_settings(context)
         palette = getattr(settings, 'palette', None) if settings else None
         if not palette or not palette.colors.active:
             return {'CANCELLED'}
@@ -2650,9 +2644,7 @@ class WM_OT_vim_palette_select_color(bpy.types.Operator):
 
     def execute(self, context):
         ts = context.tool_settings
-        settings = getattr(ts, 'image_paint', None)
-        if not settings and hasattr(ts, 'paint_mode'):
-            settings = ts.paint_mode
+        settings = get_active_paint_settings(context)
         palette = getattr(settings, 'palette', None) if settings else None
         if not palette or not palette.colors:
             return {'CANCELLED'}
@@ -2674,7 +2666,7 @@ class WM_OT_vim_palette_select_color(bpy.types.Operator):
 class WM_OT_vim_color_palette(bpy.types.Operator):
     bl_idname = "wm.vim_color_palette"
     bl_label = "Color Palette"
-    bl_description = "Color Palette popup for Texture Paint"
+    bl_description = "Color Palette popup for Paint and Draw modes"
     bl_options = {'REGISTER', 'UNDO'}
 
     _last_active_ptr = None
@@ -2682,11 +2674,10 @@ class WM_OT_vim_color_palette(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return is_texture_paint_mode(context)
+        return is_texture_paint_mode(context) or is_draw_mode(context)
 
     def invoke(self, context, event):
-        ts = context.tool_settings
-        settings = getattr(ts, 'image_paint', None)
+        settings = get_active_paint_settings(context)
         palette = getattr(settings, 'palette', None) if settings else None
         active_entry = getattr(getattr(palette, 'colors', None), 'active', None) if palette else None
         if active_entry:
@@ -2703,9 +2694,7 @@ class WM_OT_vim_color_palette(bpy.types.Operator):
     def draw(self, context):
         layout = self.layout
         ts = context.tool_settings
-        settings = getattr(ts, 'image_paint', None)
-        if not settings and hasattr(ts, 'paint_mode'):
-            settings = ts.paint_mode
+        settings = get_active_paint_settings(context)
         if not settings:
             layout.label(text="No paint settings found")
             return
@@ -2816,19 +2805,24 @@ def unhook_brush_asset_shelf():
 class WM_OT_vim_asset_browser_popup(bpy.types.Operator):
     bl_idname = "wm.vim_asset_browser_popup"
     bl_label = "Asset Browser Popup"
-    bl_description = "Open Asset Browser popup for Texture Paint"
+    bl_description = "Open Asset Browser popup for brushes"
     bl_options = {'REGISTER'}
 
     @classmethod
     def poll(cls, context):
-        return is_texture_paint_mode(context)
+        return is_texture_paint_mode(context) or is_draw_mode(context)
 
     def invoke(self, context, event):
         return self.execute(context)
 
     def execute(self, context):
         area = context.area
-        shelf_name = "IMAGE_AST_brush_paint" if (area and area.type == 'IMAGE_EDITOR') else "VIEW3D_AST_brush_texture_paint"
+        if area and area.type == 'IMAGE_EDITOR':
+            shelf_name = "IMAGE_AST_brush_paint"
+        elif is_draw_mode(context):
+            shelf_name = "VIEW3D_AST_brush_gpencil_paint"
+        else:
+            shelf_name = "VIEW3D_AST_brush_texture_paint"
         try:
             res = bpy.ops.wm.call_asset_shelf_popover('INVOKE_DEFAULT', name=shelf_name)
             if res in ({'FINISHED'}, {'RUNNING_MODAL'}):

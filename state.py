@@ -920,6 +920,43 @@ def is_texture_paint_mode(context):
             return True
     return False
 
+
+def is_draw_mode(context):
+    if not context:
+        return False
+    mode = getattr(context, 'mode', '')
+    if mode in {'PAINT_GPENCIL', 'PAINT_GREASE_PENCIL'}:
+        return True
+    obj = getattr(context, 'active_object', None)
+    if obj and getattr(obj, 'mode', '') in {'PAINT_GPENCIL', 'PAINT_GREASE_PENCIL'}:
+        return True
+    if getattr(context, 'gpencil_data', None) is not None and 'PAINT' in mode:
+        return True
+    return False
+
+
+def get_active_paint_settings(context):
+    if not context:
+        return None
+    ts = getattr(context, 'tool_settings', None)
+    if not ts:
+        return None
+    if is_draw_mode(context):
+        settings = getattr(ts, 'gpencil_paint', None) or getattr(ts, 'grease_pencil_paint', None)
+        if settings:
+            return settings
+    if is_texture_paint_mode(context):
+        settings = getattr(ts, 'image_paint', None)
+        if settings:
+            return settings
+    return (
+        getattr(ts, 'gpencil_paint', None) or
+        getattr(ts, 'grease_pencil_paint', None) or
+        getattr(ts, 'image_paint', None) or
+        getattr(ts, 'vertex_paint', None) or
+        getattr(ts, 'paint_mode', None)
+    )
+
 def get_preferences(context=None):
     global _keymaps_initialized
     if context is None:

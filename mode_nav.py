@@ -9,7 +9,7 @@ from .state import (
     focusable_areas, area_at, area_by_ptr, change_sens, _exec_view3d_op,
     get_preferences, check_shortcut, NUMPAD_PIE_KEYS, MOUSE_CANCEL,
     PREFIX_DIRS, PREFIX_REPEAT_TIMEOUT, PREFIX_TIMEOUT, ALL_DIRS,
-    ARROW_DIRS, NUDGE_DIRS, is_edit_mode, is_texture_paint_mode, is_altgr_pressed, NUM_TO_PAD, UNICODE_TO_PAD,
+    ARROW_DIRS, NUDGE_DIRS, is_edit_mode, is_texture_paint_mode, is_draw_mode, is_altgr_pressed, NUM_TO_PAD, UNICODE_TO_PAD,
     send_fake_numpad, adjust_active_modal_or_modifier, send_modal_plus_minus,
     transform_active, is_blender_modal_active, PASS_KEYS_IN, set_active_mode
 )
@@ -794,7 +794,7 @@ def handle_orbit_pan_event(op, context, event, win, area):
             op._start_hint(context, win, target_area, False, action, mx, my)
             return {'RUNNING_MODAL'}
 
-    if not is_texture_paint_mode(context) and check_shortcut(prefs, 'box_select', event, 'C', fallback_ctrl=False, allow_shift_alt_extend=True) and v == 'PRESS':
+    if not is_texture_paint_mode(context) and not is_draw_mode(context) and check_shortcut(prefs, 'box_select', event, 'C', fallback_ctrl=False, allow_shift_alt_extend=True) and v == 'PRESS':
         target_area = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
         if target_area:
             if target_area.type != 'VIEW_3D':
