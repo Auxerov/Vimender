@@ -1,5 +1,5 @@
 {
-  "version": "1.0.10",
-  "commit": "0a1082b",
-  "message": "fix(paint): use native in-viewport asset shelf popover instead of new window"
+  "version": "1.0.11",
+  "commit": "f1b109d",
+  "message": "fix(paint): instantly sync color palette selection and edits to brush and unified color"
 }
