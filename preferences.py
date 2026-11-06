@@ -578,8 +578,8 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     alt_asset_browser: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
     texture_paint_asset_library: bpy.props.EnumProperty(
-        name="Texture Paint Asset Library",
-        description="Asset library opened when pressing V in Texture Paint mode",
+        name="Extra Brush Library",
+        description="Extra asset library for custom brushes (built-in brushes are always preserved)",
         items=get_asset_libraries_items,
         default=0,
         update=_on_texture_paint_asset_lib_change,
@@ -866,10 +866,14 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             self._draw_shortcut(box2, "Focus Selected View (Numpad . / I)", "view_selected")
 
             box_paint = layout.box()
-            box_paint.label(text="Texture Paint Popups", icon='BRUSH_DATA')
-            box_paint.prop(self, "texture_paint_asset_library", text="Asset Library")
+            box_paint.label(text="Paint & Draw Popups", icon='BRUSH_DATA')
+            row_b = box_paint.row(align=True)
+            row_b.label(text="Built-in Brushes: Always Active (Essentials)", icon='CHECKMARK')
+            box_paint.prop(self, "texture_paint_asset_library", text="Extra Brush Library")
+            row_add = box_paint.row(align=True)
+            row_add.operator("wm.vim_add_brush_library", text="Add Extra Brush Library Folder", icon='FILE_FOLDER')
             self._draw_shortcut(box_paint, "Color Palette (C)", "color_palette")
-            self._draw_shortcut(box_paint, "Asset Browser Popup (V)", "asset_browser")
+            self._draw_shortcut(box_paint, "Brush Shelf Popup (V)", "asset_browser")
 
             box3 = layout.box()
             box3.label(text="General Settings", icon='PREFERENCES')

@@ -2751,55 +2751,63 @@ class WM_OT_vim_color_palette(bpy.types.Operator):
                     ups.secondary_color = brush.secondary_color
 
 
-_orig_brush_asset_poll = None
+def cleanup_brush_asset_shelf():
+    try:
+        import bl_ui.properties_paint_common as ppc
+        shelf_cls = getattr(ppc, 'BrushAssetShelf', None)
+        if not shelf_cls:
+            return
+        func = getattr(getattr(shelf_cls, 'asset_poll', None), '__func__', None)
+        if func and 'vim' in func.__name__:
+            import importlib
+            importlib.reload(ppc)
+            shelf_cls.asset_poll = ppc.BrushAssetShelf.asset_poll
+    except Exception:
+        pass
 
-def _vim_brush_asset_poll(cls, asset):
-    global _orig_brush_asset_poll
-    if _orig_brush_asset_poll:
-        try:
-            if not _orig_brush_asset_poll(asset):
-                return False
-        except Exception:
-            pass
-    prefs = get_preferences(bpy.context)
-    target_lib = getattr(prefs, 'texture_paint_asset_library', 'ALL') if prefs else 'ALL'
-    if not target_lib or target_lib == 'ALL':
-        return True
-    if target_lib == 'LOCAL':
-        return not getattr(asset, 'full_library_path', None) or bool(getattr(asset, 'local_id', None))
-    if target_lib == 'ESSENTIALS':
-        p = getattr(asset, 'full_library_path', '') or ''
-        return 'essentials' in p.lower()
-    user_lib = bpy.context.preferences.filepaths.asset_libraries.get(target_lib)
-    if user_lib:
+
+class WM_OT_vim_add_brush_library(bpy.types.Operator):
+    bl_idname = "wm.vim_add_brush_library"
+    bl_label = "Add Extra Brush Library"
+    bl_description = "Add a folder containing custom brushes to Blender Asset Libraries"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    directory: bpy.props.StringProperty(
+        name="Folder Path",
+        description="Directory containing custom brush assets",
+        subtype='DIR_PATH'
+    )
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        if not self.directory:
+            return {'CANCELLED'}
         import os
-        try:
-            lib_p = os.path.realpath(bpy.path.abspath(user_lib.path))
-            ast_p = os.path.realpath(bpy.path.abspath(getattr(asset, 'full_library_path', '') or ''))
-            return ast_p.startswith(lib_p)
-        except Exception:
-            return True
-    return True
+        path = os.path.realpath(bpy.path.abspath(self.directory))
+        if not os.path.isdir(path):
+            self.report({'WARNING'}, f"Directory does not exist: {path}")
+            return {'CANCELLED'}
 
-def hook_brush_asset_shelf():
-    global _orig_brush_asset_poll
-    try:
-        from bl_ui.properties_paint_common import BrushAssetShelf
-        if _orig_brush_asset_poll is None:
-            _orig_brush_asset_poll = BrushAssetShelf.asset_poll
-            BrushAssetShelf.asset_poll = classmethod(_vim_brush_asset_poll)
-    except Exception:
-        pass
+        lib_name = os.path.basename(path.rstrip('/\\')) or "Custom Brushes"
+        prefs = context.preferences
+        libs = prefs.filepaths.asset_libraries
+        existing = libs.get(lib_name)
+        if not existing:
+            for l in libs:
+                if os.path.realpath(bpy.path.abspath(l.path)) == path:
+                    existing = l
+                    break
+        if not existing:
+            new_lib = libs.new(name=lib_name, directory=path)
+            self.report({'INFO'}, f"Added extra brush library: {new_lib.name}")
+        else:
+            self.report({'INFO'}, f"Brush library already registered: {existing.name}")
 
-def unhook_brush_asset_shelf():
-    global _orig_brush_asset_poll
-    try:
-        from bl_ui.properties_paint_common import BrushAssetShelf
-        if _orig_brush_asset_poll is not None:
-            BrushAssetShelf.asset_poll = _orig_brush_asset_poll
-            _orig_brush_asset_poll = None
-    except Exception:
-        pass
+        tag_all()
+        return {'FINISHED'}
 
 
 class WM_OT_vim_asset_browser_popup(bpy.types.Operator):
