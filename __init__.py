@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Vimender",
     "author": "Auxerov",
-    "version": (1, 0, 13),
+    "version": (1, 0, 14),
     "blender": (5, 0, 0),
     "location": "F3 > Vim Mode",
     "description": "Keyboard controller for Blender with modal navigation, hints, walk mode, and tablet mode",
@@ -228,7 +228,7 @@ def register():
         bpy.app.timers.register(_auto_start, first_interval=0.1)
     try:
         from .state import restore_base_ui_scale, S
-        if not (getattr(S, 'pen_mode', False) or getattr(S, 'tablet_mode', False)):
+        if not getattr(S, 'pen_mode', False):
             restore_base_ui_scale()
     except Exception:
         pass

@@ -209,6 +209,7 @@ class _State:
         self.pen_prev_ui_scale = None
         self.pen_saved_turntable_sens = None
         self.pen_saved_trackball_sens = None
+        self.pen_saved_emulate_3_button = None
         self.pen_mmb_active = False
         self.pen_mmb_from_stylus = False
         self.pen_mmb_is_pan = False
@@ -1106,11 +1107,13 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         S.pen_mmb_area_ptr = 0
         if getattr(S, 'pen_nav', None):
             S.pen_nav.reset()
+        if getattr(S, 'stylus_nav', None):
+            S.stylus_nav.reset()
         try:
             from .mode_tablet import _tracker, _stylus_tracker
             if not S.tablet_mode:
                 _tracker.stop()
-                _stylus_tracker.stop()
+            _stylus_tracker.stop()
         except Exception:
             pass
 
@@ -1124,6 +1127,9 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
                 if getattr(S, 'pen_saved_trackball_sens', None) is not None:
                     inputs.view_rotate_sensitivity_trackball = S.pen_saved_trackball_sens
                     S.pen_saved_trackball_sens = None
+                if getattr(S, 'pen_saved_emulate_3_button', None) is not None:
+                    inputs.use_mouse_emulate_3_button = S.pen_saved_emulate_3_button
+                    S.pen_saved_emulate_3_button = None
             except Exception:
                 pass
 
@@ -1132,7 +1138,7 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
 
     S.preview_mode = False
 
-    if mode_name in {'TABLET', 'PEN'}:
+    if mode_name == 'PEN':
         apply_tablet_ui_scale(context)
     else:
         restore_base_ui_scale(context)
@@ -1168,14 +1174,8 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
         if getattr(S, 'touch_nav', None):
             S.touch_nav.reset()
         try:
-            prefs = get_preferences(context)
-            cfg = load_vimender_config()
-            use_stylus = bool(getattr(prefs, 'stylus_pen', False)) or bool(cfg.get('stylus_pen', False))
-            if use_stylus:
-                inputs = context.preferences.inputs
-                if getattr(S, 'tablet_prev_emulate_3_button', None) is None:
-                    S.tablet_prev_emulate_3_button = inputs.use_mouse_emulate_3_button
-                inputs.use_mouse_emulate_3_button = True
+            from .mode_tablet import _stylus_tracker
+            _stylus_tracker.stop()
         except Exception:
             pass
         try:
@@ -1230,6 +1230,14 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
                 pass
         else:
             S.pen_nav.reset()
+        if getattr(S, 'stylus_nav', None) is None:
+            try:
+                from .mode_tablet import _StylusNavigator
+                S.stylus_nav = _StylusNavigator()
+            except Exception:
+                pass
+        else:
+            S.stylus_nav.reset()
         try:
             from .mode_tablet import _tracker, _stylus_tracker
             _tracker.start()
@@ -1249,8 +1257,15 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
                     S.pen_saved_trackball_sens = float(inputs.view_rotate_sensitivity_trackball)
                 inputs.view_rotate_sensitivity_turntable = S.pen_saved_turntable_sens * orbit_sens
                 inputs.view_rotate_sensitivity_trackball = S.pen_saved_trackball_sens * orbit_sens
+
+                cfg = load_vimender_config()
+                use_stylus_emul = bool(getattr(prefs, 'stylus_pen', False)) or bool(cfg.get('stylus_pen', False))
+                if use_stylus_emul:
+                    if getattr(S, 'pen_saved_emulate_3_button', None) is None:
+                        S.pen_saved_emulate_3_button = inputs.use_mouse_emulate_3_button
+                    inputs.use_mouse_emulate_3_button = True
             except Exception as e:
-                print(f"[Vimender] pen_mode orbit sensitivity error: {e}")
+                print(f"[Vimender] pen_mode settings error: {e}")
 
         if report_fn:
             report_fn({'INFO'}, "Vimender: PEN MODE")

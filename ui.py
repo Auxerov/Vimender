@@ -645,6 +645,9 @@ def shutdown():
             if getattr(S, 'pen_saved_trackball_sens', None) is not None:
                 inputs.view_rotate_sensitivity_trackball = S.pen_saved_trackball_sens
                 S.pen_saved_trackball_sens = None
+            if getattr(S, 'pen_saved_emulate_3_button', None) is not None:
+                inputs.use_mouse_emulate_3_button = S.pen_saved_emulate_3_button
+                S.pen_saved_emulate_3_button = None
         except Exception:
             pass
     if getattr(S, 'tablet_mode', False):

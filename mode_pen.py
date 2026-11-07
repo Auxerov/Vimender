@@ -232,17 +232,4 @@ def handle_pen_event(op, context, event, win, area):
             if t in {'LEFTMOUSE', 'MIDDLEMOUSE', 'RIGHTMOUSE'}:
                 return {'RUNNING_MODAL'}
 
-    if t == 'MIDDLEMOUSE':
-        is_stylus = (
-            getattr(event, 'is_tablet', False) or
-            (getattr(_stylus_tracker, 'active', False) and (
-                _stylus_tracker.is_pen_in_proximity(0.35) or
-                getattr(_stylus_tracker, 'btn_orbit_down', False) or
-                getattr(_stylus_tracker, 'btn_pan_down', False)
-            ))
-        )
-        if is_stylus:
-            return {'RUNNING_MODAL'}
-        return {'PASS_THROUGH'}
-
     return {'PASS_THROUGH'}

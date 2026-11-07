@@ -106,11 +106,11 @@ class WM_OT_vim_pen_mode_toggle(bpy.types.Operator):
 class WM_OT_vim_pen_settings(bpy.types.Operator):
     bl_idname = "wm.vim_pen_settings"
     bl_label = "Vimender: Pen Mode Settings"
-    bl_description = "Configure Pen Mode Middle-Click (Orbit) and Shift+Middle-Click (Pan) sensitivities"
+    bl_description = "Configure Pen Mode navigation, stylus buttons, and UI scale"
     bl_options = {'REGISTER'}
 
     def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=340)
+        return context.window_manager.invoke_props_dialog(self, width=380)
 
     def draw(self, context):
         layout = self.layout
@@ -122,13 +122,18 @@ class WM_OT_vim_pen_settings(bpy.types.Operator):
         box_nav = layout.box()
         box_nav.label(text="Pen Navigation Sensitivity", icon='VIEW_PAN')
         col = box_nav.column(align=True)
-        col.prop(prefs, "pen_orbit_sensitivity", text="Orta Tık / Middle Click (Orbit)", slider=True)
-        col.prop(prefs, "pen_pan_sensitivity", text="Shift + Orta Tık (Pan)", slider=True)
+        col.prop(prefs, "pen_orbit_sensitivity", text="Middle Click (Orbit)", slider=True)
+        col.prop(prefs, "pen_pan_sensitivity", text="Shift + Middle Click / Barrel (Pan)", slider=True)
 
-        layout.separator()
+        box_hw = layout.box()
+        box_hw.label(text="Stylus Pen Buttons", icon='RESTRICT_SELECT_OFF')
+        col_hw = box_hw.column(align=True)
+        col_hw.prop(prefs, "stylus_pen", text="Emulate 3 Button Mouse in Pen Mode")
+        col_hw.prop(prefs, "stylus_pan_button", text="Stylus Barrel Pan Button")
+
         box_ui = layout.box()
-        box_ui.label(text="Tablet & Pen UI Scale", icon='WINDOW')
-        box_ui.prop(prefs, "pen_ui_scale", text="Tablet / Pen UI Scale (Normal: 1.0)", slider=True)
+        box_ui.label(text="Pen Mode UI Scale", icon='WINDOW')
+        box_ui.prop(prefs, "pen_ui_scale", text="Pen Mode UI Scale (Normal: 1.0)", slider=True)
 
     def execute(self, context):
         tag_all()
@@ -679,11 +684,8 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if getattr(S, 'touch_nav', None):
             S.touch_nav.reset()
         try:
-            from .mode_tablet import disable_touchview_integration, _stylus_tracker, _StylusNavigator
+            from .mode_tablet import disable_touchview_integration
             disable_touchview_integration(context)
-            _stylus_tracker.start()
-            if getattr(S, 'stylus_nav', None) is None:
-                S.stylus_nav = _StylusNavigator()
         except Exception:
             pass
         wm = context.window_manager
@@ -1011,24 +1013,22 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
             elif getattr(S, 'pen_mode', False):
                 if getattr(S, 'pen_nav', None) and S.pen_nav.tick(context, win):
                     tag_all()
+                if getattr(S, 'stylus_nav', None) and S.stylus_nav.tick(context, win):
+                    tag_all()
+                if getattr(S, 'pen_mmb_active', False) and getattr(S, 'pen_mmb_from_stylus', False):
+                    try:
+                        from .mode_tablet import _stylus_tracker
+                        if getattr(_stylus_tracker, 'active', False) and hasattr(_stylus_tracker, 'is_any_button_down'):
+                            if not _stylus_tracker.is_any_button_down():
+                                S.pen_mmb_active = False
+                                S.pen_mmb_from_stylus = False
+                                S.pen_mmb_is_pan = False
+                                S.pen_mmb_area_ptr = 0
+                                tag_all()
+                    except Exception:
+                        pass
             elif not S.mode and not S.preview_mode and not getattr(S, 'pen_mode', False) and not S.nudge_on and not S.tablet_mode and not transform_active(win) and not is_blender_modal_active(win):
                 S.nav.tick(context, win)
-
-            if getattr(S, 'stylus_nav', None) and S.stylus_nav.tick(context, win):
-                tag_all()
-
-            if getattr(S, 'pen_mmb_active', False) and getattr(S, 'pen_mmb_from_stylus', False):
-                try:
-                    from .mode_tablet import _stylus_tracker
-                    if getattr(_stylus_tracker, 'active', False) and hasattr(_stylus_tracker, 'is_any_button_down'):
-                        if not _stylus_tracker.is_any_button_down():
-                            S.pen_mmb_active = False
-                            S.pen_mmb_from_stylus = False
-                            S.pen_mmb_is_pan = False
-                            S.pen_mmb_area_ptr = 0
-                            tag_all()
-                except Exception:
-                    pass
 
 
             if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not getattr(S, 'pen_mode', False) and not S.mode:
@@ -1399,26 +1399,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     return {'RUNNING_MODAL'}
 
             return {'PASS_THROUGH'}
-
-        try:
-            from .mode_tablet import _stylus_tracker
-            if getattr(_stylus_tracker, 'active', False):
-                if getattr(_stylus_tracker, 'btn_orbit_down', False) or getattr(_stylus_tracker, 'btn_pan_down', False):
-                    if t in {'LEFTMOUSE', 'MIDDLEMOUSE', 'RIGHTMOUSE'}:
-                        return {'RUNNING_MODAL'}
-            if t == 'MIDDLEMOUSE':
-                is_stylus_event = (
-                    getattr(event, 'is_tablet', False) or
-                    (getattr(_stylus_tracker, 'active', False) and (
-                        _stylus_tracker.is_pen_in_proximity(0.35) or
-                        getattr(_stylus_tracker, 'btn_orbit_down', False) or
-                        getattr(_stylus_tracker, 'btn_pan_down', False)
-                    ))
-                )
-                if is_stylus_event:
-                    return {'RUNNING_MODAL'}
-        except Exception:
-            pass
 
         if transform_active(win) or is_blender_modal_active(win):
             if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not getattr(S, 'pen_mode', False) and not S.mode:

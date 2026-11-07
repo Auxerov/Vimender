@@ -620,12 +620,12 @@ class VimenderPreferences(bpy.types.AddonPreferences):
         save_vimender_config({'stylus_pan_button': str(val).upper()})
 
     stylus_pan_button: bpy.props.EnumProperty(
-        name="Stylus Pan Button",
-        description="Physical barrel button used for Viewport Pan",
+        name="Stylus Barrel Pan Button",
+        description="Physical barrel button used for Viewport Pan in Pen Mode",
         items=[
-            ('BTN_STYLUS', "Upper Barrel Button (Default)", "Hardware BTN_STYLUS / code 331 pans the 3D viewport"),
-            ('BTN_STYLUS2', "Lower Barrel Button", "Hardware BTN_STYLUS2 / code 332 pans the 3D viewport"),
-            ('BOTH', "Either Barrel Button", "Allow either button to Pan"),
+            ('BTN_STYLUS', "Upper Barrel Button (Default)", "Hardware BTN_STYLUS / code 331 pans the 3D viewport in Pen Mode"),
+            ('BTN_STYLUS2', "Lower Barrel Button", "Hardware BTN_STYLUS2 / code 332 pans the 3D viewport in Pen Mode"),
+            ('BOTH', "Either Barrel Button", "Allow either button to Pan in Pen Mode"),
         ],
         default='BTN_STYLUS',
         get=_get_stylus_pan_button,
@@ -636,11 +636,25 @@ class VimenderPreferences(bpy.types.AddonPreferences):
         return bool(load_vimender_config().get('stylus_pen', False))
 
     def _set_stylus_pen(self, val):
-        save_vimender_config({'stylus_pen': bool(val)})
+        val = bool(val)
+        save_vimender_config({'stylus_pen': val})
+        if getattr(S, 'pen_mode', False):
+            try:
+                inputs = bpy.context.preferences.inputs
+                if val:
+                    if getattr(S, 'pen_saved_emulate_3_button', None) is None:
+                        S.pen_saved_emulate_3_button = inputs.use_mouse_emulate_3_button
+                    inputs.use_mouse_emulate_3_button = True
+                else:
+                    if getattr(S, 'pen_saved_emulate_3_button', None) is not None:
+                        inputs.use_mouse_emulate_3_button = S.pen_saved_emulate_3_button
+                        S.pen_saved_emulate_3_button = None
+            except Exception:
+                pass
 
     stylus_pen: bpy.props.BoolProperty(
-        name="Stylus Pen",
-        description="Enable Stylus Pen mode support (automatically enables Emulate 3 Button Mouse in Tablet Mode)",
+        name="Emulate 3 Button Mouse (Pen Mode)",
+        description="Enable Emulate 3 Button Mouse strictly while in Pen Mode (normal setting is restored on exit)",
         default=False,
         get=_get_stylus_pen,
         set=_set_stylus_pen,
@@ -654,7 +668,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
 
     stylus_pan_sensitivity: bpy.props.FloatProperty(
         name="Stylus Pan Sensitivity",
-        description="Speed / sensitivity multiplier for Stylus barrel button viewport pan",
+        description="Speed / sensitivity multiplier for Stylus barrel button viewport pan in Pen Mode",
         default=1.75,
         min=0.2,
         max=5.0,
@@ -670,7 +684,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     def _set_pen_ui_scale(self, val):
         val = round(float(val), 2)
         save_vimender_config({'pen_ui_scale': val})
-        if getattr(S, 'pen_mode', False) or getattr(S, 'tablet_mode', False):
+        if getattr(S, 'pen_mode', False):
             try:
                 base = float(getattr(S, 'base_ui_scale', 1.0))
                 bpy.context.preferences.view.ui_scale = round(base * max(1.0, val), 2)
@@ -686,8 +700,8 @@ class VimenderPreferences(bpy.types.AddonPreferences):
                 pass
 
     pen_ui_scale: bpy.props.FloatProperty(
-        name="Tablet & Pen UI Scale",
-        description="Slight scale multiplier for buttons while in Tablet or Pen Mode (normal mode stays 1.0)",
+        name="Pen Mode UI Scale",
+        description="Scale multiplier for buttons active strictly in Pen Mode (normal mode stays 1.0)",
         default=1.15,
         min=1.0,
         max=1.4,
@@ -719,7 +733,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
 
     pen_orbit_sensitivity: bpy.props.FloatProperty(
         name="Pen Orbit Sensitivity",
-        description="Speed multiplier for Middle Click Viewport Orbit in Pen Mode",
+        description="Speed multiplier for Middle Click Viewport Orbit in Pen Mode (normal mode untouched)",
         default=1.0,
         min=0.2,
         max=5.0,
@@ -739,7 +753,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
 
     pen_pan_sensitivity: bpy.props.FloatProperty(
         name="Pen Pan Sensitivity",
-        description="Speed multiplier for Shift + Middle Click and Stylus Barrel Pan in Pen Mode",
+        description="Speed multiplier for Shift + Middle Click and Stylus Barrel Pan in Pen Mode (normal mode untouched)",
         default=1.75,
         min=0.2,
         max=5.0,
@@ -835,11 +849,19 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             box0 = layout.box()
             box0.label(text="Input Devices & Layout", icon='KEYBOARD')
             box0.prop(self, "arrow_keys_layout", text="Arrow Keys Layout (Laptop / No Numpad)")
-            box0.prop(self, "stylus_pen", text="Stylus Pen (Emulate 3 Button Mouse in Tablet Mode)")
-            box0.prop(self, "stylus_pan_button", text="Stylus Pan Button")
-            box0.prop(self, "pen_orbit_sensitivity", text="Pen Middle-Click Sensitivity (Orbit)", slider=True)
-            box0.prop(self, "pen_pan_sensitivity", text="Pen Shift+Middle-Click Sensitivity (Pan)", slider=True)
-            box0.prop(self, "pen_ui_scale", text="Tablet & Pen Mode UI Scale (Normal: 1.0)", slider=True)
+
+            box_pen = layout.box()
+            box_pen.label(text="Pen Mode Settings", icon='GREASEPENCIL')
+            row_info = box_pen.row(align=True)
+            row_info.label(text="Active strictly in Pen Mode (Ctrl+Alt+P). Normal tablet settings are preserved.", icon='INFO')
+            col_pen = box_pen.column(align=True)
+            col_pen.prop(self, "stylus_pen", text="Emulate 3 Button Mouse (Pen Mode Only)")
+            col_pen.prop(self, "stylus_pan_button", text="Stylus Barrel Pan Button")
+            col_pen.prop(self, "pen_orbit_sensitivity", text="Middle Click Sensitivity (Orbit)", slider=True)
+            col_pen.prop(self, "pen_pan_sensitivity", text="Shift+Middle Click / Barrel Sensitivity (Pan)", slider=True)
+            col_pen.prop(self, "pen_ui_scale", text="Pen Mode UI Scale (Normal: 1.0)", slider=True)
+            row_open_pen = box_pen.row(align=True)
+            row_open_pen.operator("wm.vim_pen_settings", text="Pen Mode Quick Settings Dialog...", icon='PREFERENCES')
 
 
             box = layout.box()
@@ -912,6 +934,7 @@ class WM_OT_vim_export_keymap(bpy.types.Operator, ExportHelper):
             "keymaps": {},
             "arrow_keys_layout": bool(getattr(prefs, 'arrow_keys_layout', False)),
             "stylus_pen": bool(getattr(prefs, 'stylus_pen', False)),
+            "stylus_pan_button": str(getattr(prefs, 'stylus_pan_button', 'BTN_STYLUS')),
             "stylus_pan_sensitivity": float(getattr(prefs, 'stylus_pan_sensitivity', 1.75)),
             "pen_orbit_sensitivity": float(getattr(prefs, 'pen_orbit_sensitivity', 1.0)),
             "pen_pan_sensitivity": float(getattr(prefs, 'pen_pan_sensitivity', 1.75)),
@@ -983,6 +1006,8 @@ class WM_OT_vim_import_keymap(bpy.types.Operator, ImportHelper):
                 prefs.arrow_keys_layout = bool(data["arrow_keys_layout"])
             if "stylus_pen" in data:
                 prefs.stylus_pen = bool(data["stylus_pen"])
+            if "stylus_pan_button" in data:
+                prefs.stylus_pan_button = str(data["stylus_pan_button"])
             if "stylus_pan_sensitivity" in data:
                 prefs.stylus_pan_sensitivity = float(data["stylus_pan_sensitivity"])
             if "pen_orbit_sensitivity" in data:
