@@ -1,5 +1,5 @@
 {
   "version": "1.0.15",
-  "commit": "ccaf84d",
+  "commit": "674d78e",
   "message": "fix(modes): restore all mode switches and fix proportional editing wheel resize"
 }
