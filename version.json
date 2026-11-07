@@ -1,5 +1,5 @@
 {
-  "version": "1.0.13",
-  "commit": "eee9384",
-  "message": "fix(brushes): restore built-in blender brushes and support adding extra brush libraries safely"
+  "version": "1.0.14",
+  "commit": "f0aa4c3",
+  "message": "refactor(pen): isolate all pen and stylus settings strictly to pen mode"
 }
