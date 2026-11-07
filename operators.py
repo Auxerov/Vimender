@@ -520,6 +520,9 @@ class WM_OT_vim_nudge(bpy.types.Operator):
             self._cleanup(context)
             return {'PASS_THROUGH'}
 
+        if t in {'WHEELUPMOUSE', 'WHEELDOWNMOUSE', 'WHEELINMOUSE', 'WHEELOUTMOUSE', 'TRACKPADPAN'}:
+            return {'PASS_THROUGH'}
+
         if t in {'X', 'Y', 'Z'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey or event.shift):
             if self.locked_axis == t:
                 self.axis_press_count += 1
@@ -1366,67 +1369,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 if v == 'RELEASE':
                     return {'RUNNING_MODAL'}
 
-        if S.walk_mode:
-            res = handle_walk_event(self, context, event, win, area)
-            if res != {'PASS_THROUGH'}:
-                return res
-
-        if S.tablet_mode:
-            res = handle_tablet_event(self, context, event, win, area)
-            if res != {'PASS_THROUGH'}:
-                return res
-
-        if getattr(S, 'pen_mode', False):
-            res = handle_pen_event(self, context, event, win, area)
-            if res != {'PASS_THROUGH'}:
-                return res
-
-            prefs = get_preferences(context)
-            is_pen_shortcut = (
-                check_shortcut(prefs, 'pen', event, 'P', fallback_ctrl=True, fallback_alt=True) or
-                ((t == 'P' or getattr(event, 'unicode', '') in {'p', 'P'}) and event.ctrl and event.alt and not (event.oskey or event.shift))
-            )
-            if is_pen_shortcut:
-                if v == 'RELEASE':
-                    return {'RUNNING_MODAL'}
-                if v == 'PRESS':
-                    set_active_mode('PREVIEW', context, self.report)
-                    return {'RUNNING_MODAL'}
-
-            return {'PASS_THROUGH'}
-
-        if transform_active(win) or is_blender_modal_active(win):
-            if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not getattr(S, 'pen_mode', False) and not S.mode:
-                if (t in {'N', 'M'} or event.unicode in {'n', 'N', 'm', 'M'}) and not (event.ctrl or event.alt or event.oskey):
-                    if v == 'PRESS':
-                        is_up = (t == 'N' or event.unicode in {'n', 'N'})
-                        adjust_active_modal_or_modifier(context, is_up)
-                        send_modal_plus_minus(is_up)
-                        if area:
-                            area.tag_redraw()
-                    return {'RUNNING_MODAL'}
-                if not S.nudge_on and transform_active(win):
-                    is_nudge_key = t in {'H', 'J', 'K', 'L', 'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW', 'NUMPAD_8', 'NUMPAD_2', 'NUMPAD_4', 'NUMPAD_6'}
-                    init_k = t if is_nudge_key else ""
-                    init_v = v if is_nudge_key else ""
-                    self._start_nudge(context, win, initial_key=init_k, initial_val=init_v, initial_shift=event.shift, start_x=event.mouse_x, start_y=event.mouse_y)
-                    if is_nudge_key and v == 'PRESS':
-                        return {'RUNNING_MODAL'}
-                if t in {'H', 'J', 'K', 'L', 'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW', 'NUMPAD_8', 'NUMPAD_2', 'NUMPAD_4', 'NUMPAD_6'} and not (event.ctrl or event.alt or event.oskey):
-                    return {'PASS_THROUGH'}
-            return {'PASS_THROUGH'}
-
         prefs = get_preferences(context)
-        use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
-        plain = not (event.alt or event.oskey)
-
-        if t in {'G', 'R', 'S', 'E'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
-            if t == 'R':
-                S.last_transform_type = 'ROTATE'
-            elif t == 'S':
-                S.last_transform_type = 'RESIZE'
-            else:
-                S.last_transform_type = 'TRANSLATE'
 
         is_walk_shortcut = (
             check_shortcut(prefs, 'walk', event, 'Q', fallback_alt=True) or
@@ -1504,7 +1447,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
         is_pen_shortcut = (
             check_shortcut(prefs, 'pen', event, 'P', fallback_ctrl=True, fallback_alt=True) or
-            ((t == 'P' or event.unicode in {'p', 'P'}) and event.ctrl and event.alt and not (event.oskey or event.shift))
+            ((t == 'P' or event.unicode in {'p', 'P'}) and event.ctrl and event.alt and not (getattr(event, 'oskey', False) or event.shift))
         )
         if is_pen_shortcut:
             if v == 'RELEASE':
@@ -1516,6 +1459,59 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     target_a = area or area_by_ptr(win, S.hover_ptr) or area_at(win, mx, my) or context.area
                     set_active_mode('PEN', context, self.report, target_area=target_a)
                 return {'RUNNING_MODAL'}
+
+        if S.walk_mode:
+            res = handle_walk_event(self, context, event, win, area)
+            if res != {'PASS_THROUGH'}:
+                return res
+
+        if S.tablet_mode:
+            res = handle_tablet_event(self, context, event, win, area)
+            if res != {'PASS_THROUGH'}:
+                return res
+
+        if getattr(S, 'pen_mode', False):
+            if t in {'ESC', 'RET', 'NUMPAD_ENTER'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey or event.shift):
+                set_active_mode('PREVIEW', context, self.report)
+                return {'RUNNING_MODAL'}
+            res = handle_pen_event(self, context, event, win, area)
+            if res != {'PASS_THROUGH'}:
+                return res
+            return {'PASS_THROUGH'}
+
+        if transform_active(win) or is_blender_modal_active(win):
+            if t in {'WHEELUPMOUSE', 'WHEELDOWNMOUSE', 'WHEELINMOUSE', 'WHEELOUTMOUSE', 'TRACKPADPAN'}:
+                return {'PASS_THROUGH'}
+            if not S.navigation_mode and not S.cursor_mode and not S.walk_mode and not S.tablet_mode and not getattr(S, 'pen_mode', False) and not S.mode:
+                if (t in {'N', 'M'} or event.unicode in {'n', 'N', 'm', 'M'}) and not (event.ctrl or event.alt or event.oskey):
+                    if v == 'PRESS':
+                        is_up = (t == 'N' or event.unicode in {'n', 'N'})
+                        adjust_active_modal_or_modifier(context, is_up)
+                        send_modal_plus_minus(is_up)
+                        if area:
+                            area.tag_redraw()
+                    return {'RUNNING_MODAL'}
+                if not S.nudge_on and transform_active(win):
+                    is_nudge_key = t in {'H', 'J', 'K', 'L', 'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW', 'NUMPAD_8', 'NUMPAD_2', 'NUMPAD_4', 'NUMPAD_6'}
+                    init_k = t if is_nudge_key else ""
+                    init_v = v if is_nudge_key else ""
+                    self._start_nudge(context, win, initial_key=init_k, initial_val=init_v, initial_shift=event.shift, start_x=event.mouse_x, start_y=event.mouse_y)
+                    if is_nudge_key and v == 'PRESS':
+                        return {'RUNNING_MODAL'}
+                if t in {'H', 'J', 'K', 'L', 'UP_ARROW', 'DOWN_ARROW', 'LEFT_ARROW', 'RIGHT_ARROW', 'NUMPAD_8', 'NUMPAD_2', 'NUMPAD_4', 'NUMPAD_6'} and not (event.ctrl or event.alt or event.oskey):
+                    return {'PASS_THROUGH'}
+            return {'PASS_THROUGH'}
+
+        use_arrow_layout = bool(getattr(prefs, 'arrow_keys_layout', False)) if prefs else False
+        plain = not (event.alt or event.oskey)
+
+        if t in {'G', 'R', 'S', 'E'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey):
+            if t == 'R':
+                S.last_transform_type = 'ROTATE'
+            elif t == 'S':
+                S.last_transform_type = 'RESIZE'
+            else:
+                S.last_transform_type = 'TRANSLATE'
 
         is_bevel_key = (
             check_shortcut(prefs, 'bevel', event, 'B', fallback_ctrl=False) or
@@ -1600,6 +1596,38 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                     bpy.ops.wm.vim_search_mode('INVOKE_DEFAULT')
             except Exception as e:
                 print(f"[Vimender] search_mode error: {e}")
+            return {'RUNNING_MODAL'}
+
+        is_walk_sh = (
+            check_shortcut(prefs, 'walk', event, 'Q', fallback_alt=True) or
+            ((t == 'Q' or getattr(event, 'unicode', '') in {'q', 'Q'}) and event.alt and not (event.ctrl or event.oskey or event.shift))
+        )
+        if is_walk_sh and v == 'PRESS':
+            self._cancel_hint(context, win)
+            target_v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
+            if target_v3d and target_v3d.type == 'VIEW_3D':
+                set_active_mode('WALK', context, self.report, target_area=target_v3d)
+            else:
+                self.report({'INFO'}, "Vimender: Walk Mode only available in 3D Viewport")
+            return {'RUNNING_MODAL'}
+
+        is_tab_sh = (
+            check_shortcut(prefs, 'tablet', event, 'W', fallback_ctrl=True) or
+            ((t == 'W' or getattr(event, 'unicode', '') in {'w', 'W'}) and event.ctrl and not (event.alt or event.oskey or event.shift))
+        )
+        if is_tab_sh and v == 'PRESS':
+            self._cancel_hint(context, win)
+            set_active_mode('TABLET', context, self.report, target_area=area)
+            return {'RUNNING_MODAL'}
+
+        is_pen_sh = (
+            check_shortcut(prefs, 'pen', event, 'P', fallback_ctrl=True, fallback_alt=True) or
+            ((t == 'P' or getattr(event, 'unicode', '') in {'p', 'P'}) and event.ctrl and event.alt and not (getattr(event, 'oskey', False) or event.shift))
+        )
+        if is_pen_sh and v == 'PRESS':
+            self._cancel_hint(context, win)
+            target_a = area or area_by_ptr(win, S.hover_ptr) or area_at(win, mx, my) or context.area
+            set_active_mode('PEN', context, self.report, target_area=target_a)
             return {'RUNNING_MODAL'}
 
         if check_shortcut(prefs, 'cursor', event, 'NUMPAD_5', fallback_ctrl=True) and v == 'PRESS':

@@ -1,5 +1,5 @@
 {
-  "version": "1.0.14",
-  "commit": "e863bf6",
-  "message": "fix(pen): strictly isolate pen controls to pen mode without altering other addon features"
+  "version": "1.0.15",
+  "commit": "ccaf84d",
+  "message": "fix(modes): restore all mode switches and fix proportional editing wheel resize"
 }

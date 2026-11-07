@@ -538,13 +538,33 @@ def remove_draw_handlers():
     _handlers.clear()
 
 
-_MODAL_MAPS = ('Transform Modal Map', 'Bevel Modal Map')
+_MODAL_MAPS = ('Bevel Modal Map',)
 _CONFLICT_PROPS = {
-    'PROPORTIONAL_SIZE_UP', 'PROPORTIONAL_SIZE_DOWN',
     'SEGMENTS_UP', 'SEGMENTS_DOWN',
+}
+_CONFLICT_KEY_TYPES = {
+    'NUMPAD_PLUS', 'NUMPAD_MINUS', 'PLUS', 'MINUS', 'EQUAL',
 }
 
 _DISABLED_KMIS = set()
+
+
+def restore_proportional_and_wheel_keymaps():
+    for kc in _modal_keyconfigs():
+        for map_name in ('Transform Modal Map', 'Bevel Modal Map'):
+            km = kc.keymaps.get(map_name)
+            if not km:
+                continue
+            for kmi in km.keymap_items:
+                try:
+                    if map_name == 'Transform Modal Map':
+                        if not kmi.active:
+                            kmi.active = True
+                    elif getattr(kmi, 'type', '') in {'WHEELUPMOUSE', 'WHEELDOWNMOUSE', 'WHEELINMOUSE', 'WHEELOUTMOUSE'}:
+                        if not kmi.active:
+                            kmi.active = True
+                except Exception:
+                    pass
 
 
 def _modal_keyconfigs():
@@ -581,9 +601,7 @@ def _migrate_orbit_pan_default():
 
 
 def clean_modal_keymaps():
-    """Temporarily DEACTIVATE (never delete) Blender modal-map items that
-    collide with Vimender's +/- handling. Fully reversible via
-    restore_modal_keymaps(); nothing is written to the user's preferences."""
+    restore_proportional_and_wheel_keymaps()
     for kc in _modal_keyconfigs():
         for map_name in _MODAL_MAPS:
             km = kc.keymaps.get(map_name)
@@ -591,9 +609,10 @@ def clean_modal_keymaps():
                 continue
             for kmi in km.keymap_items:
                 try:
-                    if getattr(kmi, 'propvalue', '') in _CONFLICT_PROPS and kmi.active:
-                        kmi.active = False
-                        _DISABLED_KMIS.add(_kmi_sig(kc, map_name, kmi))
+                    if getattr(kmi, 'propvalue', '') in _CONFLICT_PROPS:
+                        if getattr(kmi, 'type', '') in _CONFLICT_KEY_TYPES and kmi.active:
+                            kmi.active = False
+                            _DISABLED_KMIS.add(_kmi_sig(kc, map_name, kmi))
                 except Exception:
                     pass
     try:
@@ -603,11 +622,11 @@ def clean_modal_keymaps():
 
 
 def restore_modal_keymaps():
-    """Re-enable exactly the items clean_modal_keymaps() deactivated."""
+    restore_proportional_and_wheel_keymaps()
     if not _DISABLED_KMIS:
         return
     for kc in _modal_keyconfigs():
-        for map_name in _MODAL_MAPS:
+        for map_name in ('Transform Modal Map', 'Bevel Modal Map'):
             km = kc.keymaps.get(map_name)
             if not km:
                 continue
