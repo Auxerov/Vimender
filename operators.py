@@ -106,11 +106,11 @@ class WM_OT_vim_pen_mode_toggle(bpy.types.Operator):
 class WM_OT_vim_pen_settings(bpy.types.Operator):
     bl_idname = "wm.vim_pen_settings"
     bl_label = "Vimender: Pen Mode Settings"
-    bl_description = "Configure Pen Mode navigation, stylus buttons, and UI scale"
+    bl_description = "Configure Pen Mode Middle-Click (Orbit) and Shift+Middle-Click (Pan) sensitivities"
     bl_options = {'REGISTER'}
 
     def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=380)
+        return context.window_manager.invoke_props_dialog(self, width=340)
 
     def draw(self, context):
         layout = self.layout
@@ -122,18 +122,13 @@ class WM_OT_vim_pen_settings(bpy.types.Operator):
         box_nav = layout.box()
         box_nav.label(text="Pen Navigation Sensitivity", icon='VIEW_PAN')
         col = box_nav.column(align=True)
-        col.prop(prefs, "pen_orbit_sensitivity", text="Middle Click (Orbit)", slider=True)
-        col.prop(prefs, "pen_pan_sensitivity", text="Shift + Middle Click / Barrel (Pan)", slider=True)
+        col.prop(prefs, "pen_orbit_sensitivity", text="Orta Tık / Middle Click (Orbit)", slider=True)
+        col.prop(prefs, "pen_pan_sensitivity", text="Shift + Orta Tık (Pan)", slider=True)
 
-        box_hw = layout.box()
-        box_hw.label(text="Stylus Pen Buttons", icon='RESTRICT_SELECT_OFF')
-        col_hw = box_hw.column(align=True)
-        col_hw.prop(prefs, "stylus_pen", text="Emulate 3 Button Mouse in Pen Mode")
-        col_hw.prop(prefs, "stylus_pan_button", text="Stylus Barrel Pan Button")
-
+        layout.separator()
         box_ui = layout.box()
-        box_ui.label(text="Pen Mode UI Scale", icon='WINDOW')
-        box_ui.prop(prefs, "pen_ui_scale", text="Pen Mode UI Scale (Normal: 1.0)", slider=True)
+        box_ui.label(text="Tablet & Pen UI Scale", icon='WINDOW')
+        box_ui.prop(prefs, "pen_ui_scale", text="Tablet / Pen UI Scale (Normal: 1.0)", slider=True)
 
     def execute(self, context):
         tag_all()

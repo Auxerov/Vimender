@@ -1138,7 +1138,7 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
 
     S.preview_mode = False
 
-    if mode_name == 'PEN':
+    if mode_name in {'TABLET', 'PEN'}:
         apply_tablet_ui_scale(context)
     else:
         restore_base_ui_scale(context)
@@ -1259,8 +1259,8 @@ def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
                 inputs.view_rotate_sensitivity_trackball = S.pen_saved_trackball_sens * orbit_sens
 
                 cfg = load_vimender_config()
-                use_stylus_emul = bool(getattr(prefs, 'stylus_pen', False)) or bool(cfg.get('stylus_pen', False))
-                if use_stylus_emul:
+                use_stylus = bool(getattr(prefs, 'stylus_pen', False)) or bool(cfg.get('stylus_pen', False))
+                if use_stylus:
                     if getattr(S, 'pen_saved_emulate_3_button', None) is None:
                         S.pen_saved_emulate_3_button = inputs.use_mouse_emulate_3_button
                     inputs.use_mouse_emulate_3_button = True

@@ -228,7 +228,7 @@ def register():
         bpy.app.timers.register(_auto_start, first_interval=0.1)
     try:
         from .state import restore_base_ui_scale, S
-        if not getattr(S, 'pen_mode', False):
+        if not (getattr(S, 'pen_mode', False) or getattr(S, 'tablet_mode', False)):
             restore_base_ui_scale()
     except Exception:
         pass
