@@ -47,19 +47,8 @@ class _PenNavigator:
         if win is None:
             win = context.window
 
-        area = (
-            area_by_ptr(win, getattr(S, 'pen_ptr', 0)) or
-            area_by_ptr(win, S.hover_ptr) or
-            next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None) if win and win.screen else None
-        )
-        if not area or area.type != 'VIEW_3D':
-            return False
-
-        space = area.spaces.active if area.spaces else None
-        rv3d = space.region_3d if space else None
-        reg = window_region(area)
-        if not rv3d or not reg:
-            return False
+        W = max(float(win.width), 1.0)
+        H = max(float(win.height), 1.0)
 
         with _tracker.lock:
             _tracker.orbit_delta[0] = _tracker.orbit_delta[1] = 0.0
@@ -79,17 +68,74 @@ class _PenNavigator:
             self._anchor = (0.0, 0.0)
             return False
 
+        target_area = None
+        if mid_n is not None:
+            touch_x = mid_n[0] * W
+            touch_y = (1.0 - mid_n[1]) * H
+            target_area = area_at(win, touch_x, touch_y)
+        if not target_area and getattr(S, 'hover_ptr', 0):
+            a = area_by_ptr(win, S.hover_ptr)
+            if a and a.type in {'VIEW_3D', 'IMAGE_EDITOR'}:
+                target_area = a
+        if not target_area and getattr(S, 'pen_ptr', 0):
+            a = area_by_ptr(win, S.pen_ptr)
+            if a and a.type in {'VIEW_3D', 'IMAGE_EDITOR'}:
+                target_area = a
+        if not target_area and win and win.screen:
+            target_area = next((a for a in win.screen.areas if a.type in {'VIEW_3D', 'IMAGE_EDITOR'}), None)
+
+        area = target_area
+        if not area or area.type not in {'VIEW_3D', 'IMAGE_EDITOR'}:
+            return False
+
+        reg = window_region(area)
+        if not reg:
+            return False
+
         now = time.perf_counter()
         dt = min(max(now - self._last_t, 0.001), 0.05) if self._last_t else 0.016
         self._last_t = now
-
-        W = max(float(win.width), 1.0)
-        H = max(float(win.height), 1.0)
 
         dpx = pdx * W
         dpy = -pdy * H
 
         if not (dpx or dpy or zlog):
+            return False
+
+        prefs = get_preferences(context)
+        sens = SENS_LEVELS[S.sens_idx] if hasattr(S, 'sens_idx') else 1.0
+
+        if area.type == 'IMAGE_EDITOR':
+            pan_sens = float(getattr(prefs, 'pen_pan_sensitivity', 1.75)) if prefs else 1.75
+            delta_x = -int(round(dpx * sens * pan_sens))
+            delta_y = -int(round(dpy * sens * pan_sens))
+
+            changed = False
+            if delta_x != 0 or delta_y != 0:
+                try:
+                    with context.temp_override(window=win, screen=win.screen, area=area, region=reg):
+                        bpy.ops.view2d.pan('EXEC_DEFAULT', deltax=delta_x, deltay=delta_y)
+                    changed = True
+                except Exception:
+                    pass
+
+            if abs(zlog) > 0.005:
+                zoom_delta = int(round(zlog * 350.0 * sens))
+                if zoom_delta != 0:
+                    try:
+                        with context.temp_override(window=win, screen=win.screen, area=area, region=reg):
+                            bpy.ops.view2d.zoom('EXEC_DEFAULT', deltax=zoom_delta, deltay=zoom_delta)
+                        changed = True
+                    except Exception:
+                        pass
+
+            if changed:
+                area.tag_redraw()
+            return changed
+
+        space = area.spaces.active if area.spaces else None
+        rv3d = space.region_3d if space else None
+        if not rv3d:
             return False
 
         if mid_n is not None:
@@ -149,13 +195,37 @@ MOUSE_TOUCH_SWALLOW_EVENTS = {
 
 
 def apply_pen_mmb_navigation(context, win, area, dx, dy, is_pan):
+    if not area:
+        return
+
+    prefs = get_preferences(context)
+
+    if area.type == 'IMAGE_EDITOR':
+        reg = window_region(area)
+        if not reg:
+            return
+        sens = SENS_LEVELS[S.sens_idx] if hasattr(S, 'sens_idx') else 1.0
+        pan_sens = float(getattr(prefs, 'pen_pan_sensitivity', 1.75)) if prefs else 1.75
+        delta_x = -int(round(dx * sens * pan_sens))
+        delta_y = -int(round(dy * sens * pan_sens))
+        if delta_x != 0 or delta_y != 0:
+            try:
+                with context.temp_override(window=win, screen=win.screen, area=area, region=reg):
+                    bpy.ops.view2d.pan('EXEC_DEFAULT', deltax=delta_x, deltay=delta_y)
+                area.tag_redraw()
+            except Exception:
+                pass
+        return
+
+    if area.type != 'VIEW_3D':
+        return
+
     space = area.spaces.active if area.spaces else None
     rv3d = space.region_3d if space else None
     reg = window_region(area)
     if not rv3d or not reg:
         return
 
-    prefs = get_preferences(context)
     rot = rv3d.view_rotation
     d = rv3d.view_distance
 
@@ -167,6 +237,10 @@ def apply_pen_mmb_navigation(context, win, area, dx, dy, is_pan):
         up = rot @ Vector((0.0, 1.0, 0.0))
         rv3d.view_location = rv3d.view_location - (right * dx + up * dy) * u
     else:
+        # AUTO PERSPECTIVE: switch from ORTHO / unlocked CAMERA to PERSP when orbiting
+        if getattr(rv3d, 'view_perspective', 'PERSP') != 'PERSP' and not (getattr(rv3d, 'view_perspective', 'PERSP') == 'CAMERA' and getattr(space, 'lock_camera', False)):
+            rv3d.view_perspective = 'PERSP'
+
         orbit_sens = float(getattr(prefs, 'pen_orbit_sensitivity', 1.0)) if prefs else 1.0
         yaw = -dx * (math.pi / max(reg.width, 1)) * orbit_sens
         pitch = -dy * (math.pi / max(reg.height, 1)) * orbit_sens
@@ -223,7 +297,7 @@ def handle_pen_event(op, context, event, win, area):
                             area.tag_redraw()
                         elif win and win.screen:
                             for a in win.screen.areas:
-                                if a.type == 'VIEW_3D':
+                                if a.type in {'VIEW_3D', 'IMAGE_EDITOR'}:
                                     a.tag_redraw()
             return {'RUNNING_MODAL'}
 
@@ -243,6 +317,18 @@ def handle_pen_event(op, context, event, win, area):
         )
         if is_stylus:
             return {'RUNNING_MODAL'}
+
+        # Physical mouse MMB orbit in VIEW_3D: Auto-perspective protection
+        if v == 'PRESS' and not event.shift:
+            target = area if (area and area.type == 'VIEW_3D') else None
+            if not target and win and win.screen:
+                target = area_at(win, event.mouse_x, event.mouse_y)
+            if target and target.type == 'VIEW_3D' and target.spaces.active:
+                rv = getattr(target.spaces.active, 'region_3d', None)
+                if rv and getattr(rv, 'view_perspective', 'PERSP') == 'ORTHO':
+                    rv.view_perspective = 'PERSP'
+                    target.tag_redraw()
+
         return {'PASS_THROUGH'}
 
     return {'PASS_THROUGH'}

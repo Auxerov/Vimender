@@ -1,5 +1,5 @@
 {
-  "version": "1.0.15",
-  "commit": "674d78e",
-  "message": "fix(modes): restore all mode switches and fix proportional editing wheel resize"
+  "version": "1.0.16",
+  "commit": "25f9999",
+  "message": "fix(pen): Image Editor hand/stylus navigation and auto-perspective on orbit"
 }

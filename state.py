@@ -1055,6 +1055,8 @@ def check_shortcut(prefs, prefix, event, fallback_key, fallback_ctrl=False, fall
 def set_active_mode(mode_name, context=None, report_fn=None, target_area=None):
     if context is None:
         context = bpy.context
+    if target_area is None and context:
+        target_area = getattr(context, 'area', None)
 
     save_last_mode(mode_name)
 

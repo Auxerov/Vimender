@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Vimender",
     "author": "Auxerov",
-    "version": (1, 0, 15),
+    "version": (1, 0, 16),
     "blender": (5, 0, 0),
     "location": "F3 > Vim Mode",
     "description": "Keyboard controller for Blender with modal navigation, hints, walk mode, and tablet mode",
@@ -195,6 +195,10 @@ def register():
         bpy.utils.register_class(c)
     patch_view_pie()
     register_search_key()
+    try:
+        bpy.context.preferences.inputs.use_auto_perspective = True
+    except Exception:
+        pass
     try:
         from .ui import restore_proportional_and_wheel_keymaps
         restore_proportional_and_wheel_keymaps()

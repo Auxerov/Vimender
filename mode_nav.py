@@ -128,6 +128,8 @@ class _SmoothNavigator:
                 rv3d.view_location = rv3d.view_location + (right * (self.vx * spd * dt) + up * (self.vy * spd * dt))
                 moved = True
             elif not is_pan and (self.vx != 0.0 or self.vy != 0.0):
+                if getattr(rv3d, 'view_perspective', 'PERSP') != 'PERSP' and not (getattr(rv3d, 'view_perspective', 'PERSP') == 'CAMERA' and getattr(area.spaces.active, 'lock_camera', False)):
+                    rv3d.view_perspective = 'PERSP'
                 spd = ORBIT_MAX_SPEED * sens
                 yaw = self.vx * spd * dt
                 pitch = -self.vy * spd * dt

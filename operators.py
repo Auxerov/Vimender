@@ -1804,6 +1804,16 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         if t in CONSUME_KEYS:
             return {'RUNNING_MODAL'}
 
+        if t == 'MIDDLEMOUSE' and v == 'PRESS' and not event.shift:
+            v3d = area if (area and area.type == 'VIEW_3D') else None
+            if not v3d and win and win.screen:
+                v3d = area_at(win, mx, my)
+            if v3d and v3d.type == 'VIEW_3D' and v3d.spaces.active:
+                rv = getattr(v3d.spaces.active, 'region_3d', None)
+                if rv and getattr(rv, 'view_perspective', 'PERSP') == 'ORTHO':
+                    rv.view_perspective = 'PERSP'
+                    v3d.tag_redraw()
+
         return {'PASS_THROUGH'}
 
 

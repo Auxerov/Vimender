@@ -500,6 +500,8 @@ class _TouchNavigator:
             changed = True
 
         if yaw or pitch:
+            if getattr(rv3d, 'view_perspective', 'PERSP') != 'PERSP' and not (getattr(rv3d, 'view_perspective', 'PERSP') == 'CAMERA' and getattr(space, 'lock_camera', False)):
+                rv3d.view_perspective = 'PERSP'
             up_vec = rot @ Vector((0.0, 1.0, 0.0))
             right = rot @ Vector((1.0, 0.0, 0.0))
             eye = rv3d.view_location + (rot @ Vector((0.0, 0.0, d)))
@@ -656,7 +658,9 @@ class _TouchNavigator:
 
         cur_zlog = effective_zlog if live else 0.0
         if yaw or pitch or roll or dpx or dpy or cur_zlog:
-            if rv3d.view_perspective == 'CAMERA' and not getattr(space, 'lock_camera', False):
+            if (yaw or pitch) and getattr(rv3d, 'view_perspective', 'PERSP') != 'PERSP' and not (getattr(rv3d, 'view_perspective', 'PERSP') == 'CAMERA' and getattr(space, 'lock_camera', False)):
+                rv3d.view_perspective = 'PERSP'
+            elif getattr(rv3d, 'view_perspective', 'PERSP') == 'CAMERA' and not getattr(space, 'lock_camera', False):
                 rv3d.view_perspective = 'PERSP'
             if self._step(rv3d, space, reg, yaw, pitch, roll, dpx, dpy, cur_zlog, self._anchor):
                 changed = True
@@ -1005,22 +1009,20 @@ class _StylusNavigator:
         target_area = None
         if getattr(S, 'hover_ptr', 0):
             a = area_by_ptr(win, S.hover_ptr)
-            if a and a.type == 'VIEW_3D':
+            if a and a.type in {'VIEW_3D', 'IMAGE_EDITOR'}:
                 target_area = a
         if not target_area and getattr(S, 'pen_mode', False) and getattr(S, 'pen_ptr', 0):
             a = area_by_ptr(win, S.pen_ptr)
-            if a and a.type == 'VIEW_3D':
+            if a and a.type in {'VIEW_3D', 'IMAGE_EDITOR'}:
                 target_area = a
         if not target_area and win and win.screen:
-            target_area = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None)
+            target_area = next((a for a in win.screen.areas if a.type in {'VIEW_3D', 'IMAGE_EDITOR'}), None)
         area = target_area
-        if not area or area.type != 'VIEW_3D':
+        if not area or area.type not in {'VIEW_3D', 'IMAGE_EDITOR'}:
             return False
 
-        space = area.spaces.active if area.spaces else None
-        rv3d = space.region_3d if space else None
         reg = window_region(area)
-        if not rv3d or not reg:
+        if not reg:
             return False
 
         now = time.perf_counter()
@@ -1038,6 +1040,31 @@ class _StylusNavigator:
         H = max(float(win.height), 1.0)
         changed = False
 
+        if area.type == 'IMAGE_EDITOR':
+            dx = pdx if (pdx != 0.0 or pdy != 0.0) else odx
+            dy = pdy if (pdx != 0.0 or pdy != 0.0) else ody
+            if dx != 0.0 or dy != 0.0:
+                dpx = dx * W
+                dpy = -dy * H
+                sens = SENS_LEVELS[S.sens_idx] if hasattr(S, 'sens_idx') else 1.0
+                delta_x = -int(round(dpx * sens * self._cfg_sens))
+                delta_y = -int(round(dpy * sens * self._cfg_sens))
+                if delta_x != 0 or delta_y != 0:
+                    try:
+                        with context.temp_override(window=win, screen=win.screen, area=area, region=reg):
+                            bpy.ops.view2d.pan('EXEC_DEFAULT', deltax=delta_x, deltay=delta_y)
+                        changed = True
+                    except Exception:
+                        pass
+            if changed:
+                area.tag_redraw()
+            return changed
+
+        space = area.spaces.active if area.spaces else None
+        rv3d = space.region_3d if space else None
+        if not rv3d:
+            return False
+
         if pdx != 0.0 or pdy != 0.0:
             dpx = pdx * W
             dpy = -pdy * H
@@ -1054,7 +1081,7 @@ class _StylusNavigator:
             changed = True
 
         if odx != 0.0 or ody != 0.0:
-            if rv3d.view_perspective == 'CAMERA' and not getattr(space, 'lock_camera', False):
+            if getattr(rv3d, 'view_perspective', 'PERSP') != 'PERSP' and not (getattr(rv3d, 'view_perspective', 'PERSP') == 'CAMERA' and getattr(space, 'lock_camera', False)):
                 rv3d.view_perspective = 'PERSP'
 
             sens = SENS_LEVELS[S.sens_idx] if hasattr(S, 'sens_idx') else 1.0
