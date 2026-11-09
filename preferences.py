@@ -2,7 +2,7 @@ import bpy
 import json
 import os
 import subprocess
-import urllib.request
+from urllib.request import Request, urlopen
 import zipfile
 import shutil
 import tempfile
@@ -13,7 +13,7 @@ from .state import (
     S, tag_all, save_vimender_config, load_vimender_config,
     save_vimender_state, load_vimender_state,
     save_arrow_keys_layout, load_arrow_keys_layout,
-    get_preferences, _keymaps_initialized
+    get_preferences
 )
 
 def get_addon_directory():
@@ -94,11 +94,11 @@ def get_remote_git_commit():
 
 
     try:
-        req = urllib.request.Request(
+        req = Request(
             "https://api.github.com/repos/Auxerov/Vimender/commits/main",
             headers={"User-Agent": "Vimender-Blender-Addon"}
         )
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with urlopen(req, timeout=8) as resp:
             data = json.loads(resp.read().decode('utf-8'))
             sha = data.get("sha", "")
             msg = data.get("commit", {}).get("message", "").splitlines()[0]
@@ -119,11 +119,11 @@ def perform_addon_update():
 
 
     try:
-        req = urllib.request.Request(
+        req = Request(
             "https://github.com/Auxerov/Vimender/archive/refs/heads/main.zip",
             headers={"User-Agent": "Vimender-Blender-Addon"}
         )
-        with urllib.request.urlopen(req, timeout=25) as resp:
+        with urlopen(req, timeout=25) as resp:
             zip_bytes = resp.read()
 
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -160,8 +160,15 @@ def perform_addon_update():
                 _cached_installed_commit = remote_sha
                 vfile = os.path.join(addon_dir, "version.json")
                 try:
+                    cur_ver = "1.0.16"
+                    if os.path.exists(vfile):
+                        try:
+                            with open(vfile, "r", encoding="utf-8") as vf:
+                                cur_ver = json.load(vf).get("version", cur_ver)
+                        except Exception:
+                            pass
                     with open(vfile, "w", encoding="utf-8") as f:
-                        json.dump({"commit": remote_sha, "message": msg}, f, indent=2)
+                        json.dump({"version": cur_ver, "commit": remote_sha, "message": msg}, f, indent=2)
                 except Exception:
                     pass
 

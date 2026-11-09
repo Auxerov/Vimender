@@ -1,12 +1,11 @@
 import math
-import time
 import blf
 import bpy
 import gpu
 from gpu_extras.batch import batch_for_shader
 from .state import (
     S, GREEN, CYAN, RED, PURPLE, YELLOW, ORANGE, GREY, WHITE, BORDER_PX, HINT_BG,
-    HINT_TEXT, HINT_TYPED, LEADER, SPACE_NAMES, window_region, area_by_ptr, ui_scale,
+    HINT_TEXT, HINT_TYPED, LEADER, SPACE_NAMES, ui_scale,
     restore_base_ui_scale,
     tag_all, _handlers, _shader, _ORIGINAL_VIEW_PIE_DRAW, get_preferences, SENS_LEVELS,
     load_vimender_config, save_vimender_config

@@ -2,14 +2,13 @@ import math
 import time
 import ctypes
 import bpy
-from mathutils import Vector, Matrix, Quaternion
+from mathutils import Vector, Quaternion
 from .state import (
     S, ORBIT_MAX_SPEED, PAN_MAX_SPEED, ZOOM_MAX_SPEED, VIEW2D_PAN_SPEED,
     NAV_ACCEL_RATE, NAV_FRICTION, SENS_LEVELS, tag_all, window_region,
     focusable_areas, area_at, area_by_ptr, change_sens, _exec_view3d_op,
     get_preferences, check_shortcut, NUMPAD_PIE_KEYS, MOUSE_CANCEL,
-    PREFIX_DIRS, PREFIX_REPEAT_TIMEOUT, PREFIX_TIMEOUT, ALL_DIRS,
-    ARROW_DIRS, NUDGE_DIRS, is_edit_mode, is_texture_paint_mode, is_draw_mode, is_altgr_pressed, NUM_TO_PAD, UNICODE_TO_PAD,
+    ALL_DIRS, is_edit_mode, is_texture_paint_mode, is_draw_mode, is_altgr_pressed, NUM_TO_PAD, UNICODE_TO_PAD,
     send_fake_numpad, adjust_active_modal_or_modifier, send_modal_plus_minus,
     transform_active, is_blender_modal_active, PASS_KEYS_IN, set_active_mode
 )

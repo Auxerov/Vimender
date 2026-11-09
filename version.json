@@ -1,5 +1,5 @@
 {
   "version": "1.0.16",
-  "commit": "25f9999",
-  "message": "fix(pen): Image Editor hand/stylus navigation and auto-perspective on orbit"
+  "commit": "e4046a4",
+  "message": "fix(pen): prevent ESC from exiting Pen Mode and organize codebase"
 }

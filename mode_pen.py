@@ -1,9 +1,9 @@
 import math
 import time
 import bpy
-from mathutils import Vector, Quaternion, Euler
+from mathutils import Vector, Quaternion
 from .state import (
-    S, WHITE, tag_all, get_preferences, check_shortcut,
+    S, get_preferences,
     set_active_mode, area_at, area_by_ptr, window_region, SENS_LEVELS
 )
 

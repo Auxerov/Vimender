@@ -2,12 +2,11 @@ import math
 import time
 import bpy
 import bmesh
-from mathutils import Vector, Matrix
+from mathutils import Vector
 from bpy_extras.view3d_utils import location_3d_to_region_2d
 from .state import (
-    S, HINT_BG, HINT_TEXT, HINT_TYPED, LEADER, PALETTE, MAX_HINTS,
-    MIN_LABEL_LEN, MAX_LABEL_LEN, ALPHABET, tag_all, window_region,
-    ui_scale, make_labels, area_by_ptr, ALL_DIRS, SENS_LEVELS,
+    S, PALETTE, MAX_HINTS, tag_all, window_region,
+    ui_scale, make_labels, ALL_DIRS, SENS_LEVELS,
     CURSOR_MAX_SPEED, NAV_ACCEL_RATE, NAV_FRICTION
 )
 
@@ -264,13 +263,15 @@ def _collect_properties(context, area, region):
     ui = ui_scale()
     cur = space.context
     valid_tabs = []
-    for item in space.bl_rna.properties['context'].enum_items:
-        try:
-            space.context = item.identifier
-            valid_tabs.append((item.identifier, item.name))
-        except Exception:
-            pass
-    space.context = cur
+    try:
+        for item in space.bl_rna.properties['context'].enum_items:
+            try:
+                space.context = item.identifier
+                valid_tabs.append((item.identifier, item.name))
+            except Exception:
+                pass
+    finally:
+        space.context = cur
 
     if not valid_tabs:
         return None

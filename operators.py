@@ -1,30 +1,29 @@
 import math
 import time
-import threading
 import bpy
-from mathutils import Vector, Matrix, Quaternion
+from mathutils import Vector
 from bpy_extras.view3d_utils import location_3d_to_region_2d
 from .state import (
     S, release_all_held, tag_all, window_region, area_at, area_by_ptr, focusable_areas, transform_active,
-    is_blender_modal_active, send_modal_plus_minus, send_fake_escape, send_fake_numpad,
+    is_blender_modal_active, send_modal_plus_minus, send_fake_escape,
     adjust_active_modal_or_modifier, check_shortcut, get_preferences, is_altgr_pressed,
     is_view_pie_trigger, change_sens, _exec_view3d_op, save_vimender_state,
     load_last_mode, save_last_mode,
     MOUSE_CANCEL, MODIFIER_KEYS, CONSUME_KEYS, PASS_KEYS_IN,
-    PREFIX_DIRS, PREFIX_REPEAT_TIMEOUT, PREFIX_TIMEOUT, ALL_DIRS, NUDGE_DIRS,
-    ARROW_DIRS, _addon_keymaps, NUMPAD_PIE_KEYS, is_edit_mode, is_texture_paint_mode, is_draw_mode, get_active_paint_settings, set_active_mode,
+    PREFIX_DIRS, PREFIX_REPEAT_TIMEOUT, PREFIX_TIMEOUT,
+    ARROW_DIRS, _addon_keymaps, is_texture_paint_mode, is_draw_mode, get_active_paint_settings, set_active_mode,
     get_selection_center_2d, get_active_transform_type, SENS_LEVELS,
     CURSOR_MAX_SPEED, LETTERS
 )
 from .mode_walk import enter_walk_mode, exit_walk_mode, handle_walk_event
 from .mode_tablet import enter_tablet_mode, exit_tablet_mode, handle_tablet_event
 from .mode_cursor import enter_cursor_mode, exit_cursor_mode, handle_cursor_event
-from .mode_nav import neighbor_area, enter_nav_mode, exit_nav_mode, handle_nav_event, handle_orbit_pan_event, get_ordered_workspaces
-from .mode_preview import enter_preview_mode, exit_preview_mode, handle_preview_event
-from .mode_pen import enter_pen_mode, exit_pen_mode, handle_pen_event
+from .mode_nav import neighbor_area, handle_nav_event, handle_orbit_pan_event, get_ordered_workspaces
+from .mode_preview import handle_preview_event
+from .mode_pen import enter_pen_mode, handle_pen_event
 from .mode_hint import start_hint_global, apply_single, apply_box
 from .bool_tool import get_bool_tool_search_items, execute_bool_tool_action
-from .ui import clean_modal_keymaps, install_draw_handlers, remove_draw_handlers, shutdown, draw_editor_pie, draw_vim_view_pie
+from .ui import clean_modal_keymaps, install_draw_handlers, shutdown, draw_editor_pie, draw_vim_view_pie
 
 class WM_OT_vim_set_editor(bpy.types.Operator):
     bl_idname = "wm.vim_set_editor"
@@ -1471,9 +1470,6 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 return res
 
         if getattr(S, 'pen_mode', False):
-            if t in {'ESC', 'RET', 'NUMPAD_ENTER'} and v == 'PRESS' and not (event.ctrl or event.alt or event.oskey or event.shift):
-                set_active_mode('PREVIEW', context, self.report)
-                return {'RUNNING_MODAL'}
             res = handle_pen_event(self, context, event, win, area)
             if res != {'PASS_THROUGH'}:
                 return res

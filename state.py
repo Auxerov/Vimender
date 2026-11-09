@@ -5,17 +5,13 @@ import math
 import os
 import string
 import sys
-import time
 
-import blf
 import bmesh
 import bpy
-import gpu
 from bpy_extras.view3d_utils import location_3d_to_region_2d
-from mathutils import Vector, Matrix, Quaternion
+from mathutils import Vector, Quaternion
 
 ALPHABET = "sadgjklewmpghvniruqtyobxz"
-ALPHABET = "".join(dict.fromkeys(ch for ch in ALPHABET if ch not in {'f', 'c'}))
 
 MAX_HINTS = 3000
 MIN_LABEL_LEN = 2

@@ -3,8 +3,8 @@ import time
 import bpy
 from mathutils import Vector, Quaternion
 from .state import (
-    S, ORANGE, WALK_MOVE_SPEED, WALK_LOOK_SPEED, NAV_ACCEL_RATE, NAV_FRICTION,
-    SENS_LEVELS, tag_all, MOUSE_CANCEL, change_sens, area_by_ptr, set_active_mode, _exec_view3d_op
+    S, WALK_MOVE_SPEED, WALK_LOOK_SPEED, NAV_ACCEL_RATE, NAV_FRICTION,
+    SENS_LEVELS, tag_all, change_sens, area_by_ptr, set_active_mode, _exec_view3d_op
 )
 
 class _SmoothWalker:

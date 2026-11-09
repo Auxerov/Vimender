@@ -8,10 +8,9 @@ import blf
 from mathutils import Vector, Quaternion, Euler
 from bpy_extras.view3d_utils import region_2d_to_origin_3d, region_2d_to_vector_3d, location_3d_to_region_2d
 from .state import (
-    S, GREY, tag_all, window_region, area_by_ptr, area_at,
+    S, tag_all, window_region, area_by_ptr, area_at,
     set_active_mode, get_preferences, SENS_LEVELS, change_sens,
-    check_shortcut, ui_scale, send_fake_key, send_fake_escape,
-    send_fake_numpad, transform_active, is_blender_modal_active,
+    check_shortcut, ui_scale, transform_active, is_blender_modal_active,
     get_active_transform_type, load_vimender_config
 )
 

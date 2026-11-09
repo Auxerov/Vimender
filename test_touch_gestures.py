@@ -96,7 +96,6 @@ T.slots.clear(); T.slots[0]={'x':100,'y':100,'down':True,'palm':False}; T.slots[
 ok(T.finger_count==1,"palm contact not counted")
 lift()
 
-import time as _t
 frame((400,500),(600,500)); lift(); ok(T.pending_undo,"2-finger tap => undo"); T.pending_undo=False
 frame((400,500),(500,500),(600,500)); lift(); ok(T.pending_redo,"3-finger tap => redo")
 
