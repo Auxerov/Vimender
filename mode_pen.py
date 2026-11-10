@@ -230,6 +230,10 @@ def apply_pen_mmb_navigation(context, win, area, dx, dy, is_pan):
     d = rv3d.view_distance
 
     if is_pan:
+        # AUTO PERSPECTIVE: switch from CAMERA (unlocked) to PERSP so pan works
+        if getattr(rv3d, 'view_perspective', 'PERSP') == 'CAMERA' and not getattr(space, 'lock_camera', False):
+            rv3d.view_perspective = 'PERSP'
+
         pan_sens = float(getattr(prefs, 'pen_pan_sensitivity', 1.75)) if prefs else 1.75
         lens = max(getattr(space, 'lens', 50.0), 1.0)
         u = d * VIEW_SENSOR_MM / (lens * max(reg.width, reg.height, 1)) * pan_sens
@@ -318,16 +322,24 @@ def handle_pen_event(op, context, event, win, area):
         if is_stylus:
             return {'RUNNING_MODAL'}
 
-        # Physical mouse MMB orbit in VIEW_3D: Auto-perspective protection
-        if v == 'PRESS' and not event.shift:
+        # Physical mouse MMB in VIEW_3D: Auto-perspective protection
+        if v == 'PRESS':
             target = area if (area and area.type == 'VIEW_3D') else None
             if not target and win and win.screen:
                 target = area_at(win, event.mouse_x, event.mouse_y)
             if target and target.type == 'VIEW_3D' and target.spaces.active:
                 rv = getattr(target.spaces.active, 'region_3d', None)
-                if rv and getattr(rv, 'view_perspective', 'PERSP') == 'ORTHO':
-                    rv.view_perspective = 'PERSP'
-                    target.tag_redraw()
+                if rv:
+                    persp = getattr(rv, 'view_perspective', 'PERSP')
+                    lock_cam = getattr(target.spaces.active, 'lock_camera', False)
+                    # Orbit (no shift): ORTHO → PERSP
+                    # Pan (shift): CAMERA (unlocked) → PERSP so pan works
+                    if not event.shift and persp == 'ORTHO':
+                        rv.view_perspective = 'PERSP'
+                        target.tag_redraw()
+                    elif event.shift and persp == 'CAMERA' and not lock_cam:
+                        rv.view_perspective = 'PERSP'
+                        target.tag_redraw()
 
         return {'PASS_THROUGH'}
 
