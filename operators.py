@@ -726,7 +726,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
         try:
             if S.walk_mode:
                 sens_val = SENS_LEVELS[S.sens_idx]
-                txt = f"Vimender: WALK MODE [{sens_val:.2f}x] | WASD: Move | HJKL: Look | N/M: Sens (+/-) | Q/E: Down/Up | Alt+Q/Esc: Exit"
+                txt = f"Vimender: WALK MODE [{sens_val:.2f}x] | WASD: Move | HJKL: Look | N/M: Sens (+/-) | Q/E: Down/Up | Esc: Exit"
             elif S.tablet_mode:
                 txt = "Vimender: TABLET MODE | Drag: Orbit | Right-edge/Ctrl: Zoom | Bottom-edge/Shift: Pan | Double-tap: Fit | 2-Finger tap: Undo | Ctrl+W/Esc: Exit"
             elif S.cursor_mode:
@@ -1370,10 +1370,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
 
         prefs = get_preferences(context)
 
-        is_walk_shortcut = (
-            check_shortcut(prefs, 'walk', event, 'Q', fallback_alt=True) or
-            ((t == 'Q' or event.unicode in {'q', 'Q'}) and event.alt and not (event.ctrl or event.oskey or event.shift))
-        )
+        is_walk_shortcut = check_shortcut(prefs, 'walk', event, 'NONE')
         if is_walk_shortcut:
             if v == 'PRESS':
                 if S.walk_mode:
@@ -1594,10 +1591,7 @@ class WM_OT_vim_mode_toggle(bpy.types.Operator):
                 print(f"[Vimender] search_mode error: {e}")
             return {'RUNNING_MODAL'}
 
-        is_walk_sh = (
-            check_shortcut(prefs, 'walk', event, 'Q', fallback_alt=True) or
-            ((t == 'Q' or getattr(event, 'unicode', '') in {'q', 'Q'}) and event.alt and not (event.ctrl or event.oskey or event.shift))
-        )
+        is_walk_sh = check_shortcut(prefs, 'walk', event, 'NONE')
         if is_walk_sh and v == 'PRESS':
             self._cancel_hint(context, win)
             target_v3d = area or area_at(win, mx, my) or area_by_ptr(win, S.hover_ptr) or context.area
@@ -1928,10 +1922,11 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
             ("VIM_NAV", "Navigation Mode", "Vimender: Workspace & Area window navigation (Ctrl+B)", 'SCREEN_BACK', 0),
             ("VIM_ORBIT", "Orbit Mode", "Vimender: Turntable/Trackball orbit camera navigation", 'VIEW_ORBIT', 1),
             ("VIM_PAN", "Pan Mode", "Vimender: Camera Pan navigation", 'VIEW_PAN', 2),
-            ("VIM_CURSOR", "3D Cursor Mode", "Vimender: Smooth 3D Cursor control (HJKL)", 'PIVOT_CURSOR', 3),
-            ("VIM_PREVIEW", "Preview Mode", "Vimender: Preview hover and select mode", 'RESTRICT_VIEW_OFF', 4),
-            ("VIM_PEN", "Pen Mode", "Vimender: Stylus/Mouse drawing with 2-finger hand pinch-zoom (Ctrl+Alt+P)", 'PEN', 5),
-            ("VIM_PREFERENCES", "Vimender: Preferences / Keymaps", "Open Vimender preferences and customize keymaps", 'PREFERENCES', 6),
+            ("VIM_WALK", "Walk Mode", "Vimender: First-person camera navigation (WASD/HJKL)", 'VIEW_PERSPECTIVE', 3),
+            ("VIM_CURSOR", "3D Cursor Mode", "Vimender: Smooth 3D Cursor control (HJKL)", 'PIVOT_CURSOR', 4),
+            ("VIM_PREVIEW", "Preview Mode", "Vimender: Preview hover and select mode", 'RESTRICT_VIEW_OFF', 5),
+            ("VIM_PEN", "Pen Mode", "Vimender: Stylus/Mouse drawing with 2-finger hand pinch-zoom (Ctrl+Alt+P)", 'PEN', 6),
+            ("VIM_PREFERENCES", "Vimender: Preferences / Keymaps", "Open Vimender preferences and customize keymaps", 'PREFERENCES', 7),
 
             ("BL_OBJECT", "Blender: Object Mode", "Switch active object to Object Mode", 'OBJECT_DATAMODE', 10),
             ("BL_EDIT", "Blender: Edit Mode", "Switch active object to Edit Mode", 'EDITMODE_HLT', 11),
@@ -2002,6 +1997,16 @@ class WM_OT_vim_search_mode(bpy.types.Operator):
 
         if tgt == "VIM_PAN":
             set_active_mode('PAN', context, self.report)
+            return {'FINISHED'}
+
+        if tgt == "VIM_WALK":
+            target_v3d = area_by_ptr(win, S.hover_ptr) or context.area
+            if not target_v3d or target_v3d.type != 'VIEW_3D':
+                target_v3d = next((a for a in win.screen.areas if a.type == 'VIEW_3D'), None) if win and win.screen else None
+            if target_v3d and target_v3d.type == 'VIEW_3D':
+                set_active_mode('WALK', context, self.report, target_area=target_v3d)
+            else:
+                self.report({'INFO'}, "Vimender: Walk Mode only available in 3D Viewport")
             return {'FINISHED'}
 
         if tgt == "VIM_CURSOR":

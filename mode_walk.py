@@ -226,7 +226,7 @@ def handle_walk_event(op, context, event, win, area):
         op.report({'INFO'}, f"Vimender: Walk Sensitivity {sens_val:.2f}x")
         try:
             context.workspace.status_text_set(
-                f"Vimender: WALK MODE [{sens_val:.2f}x] | WASD/Arrows: Move | HJKL: Look | N/M: Sens (+/-) | Q/E: Down/Up | Alt+Q/Esc: Exit"
+                f"Vimender: WALK MODE [{sens_val:.2f}x] | WASD/Arrows: Move | HJKL: Look | N/M: Sens (+/-) | Q/E: Down/Up | Esc: Exit"
             )
         except Exception:
             pass

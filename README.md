@@ -6,7 +6,7 @@
 
 ## 📖 Quick-Start Guide
 
-Vimender transforms Blender's 3D Viewport into an efficient, modal keyboard and gesture-driven workspace inspired by Vim and CAD software. To begin, activate your desired mode using designated shortcuts such as `Ctrl + B` for Navigation, `Ctrl + W` for Tablet, `Ctrl + Alt + P` for Pen, or `Alt + Q` for Walk mode. Once active, move seamlessly with `H, J, K, L`, manipulate active transforms (`G, R, S, E`) with directional nudging, and jump directly to geometry using Vimium-style visual hints (`F` or `C`). Press `Esc` at any time to return safely to Preview mode or press `<` to trigger quick contextual search menus.
+Vimender transforms Blender's 3D Viewport into an efficient, modal keyboard and gesture-driven workspace inspired by Vim and CAD software. To begin, activate your desired mode using designated shortcuts such as `Ctrl + B` for Navigation, `Ctrl + W` for Tablet, `Ctrl + Alt + P` for Pen, or Mode Search for Walk mode. Once active, move seamlessly with `H, J, K, L`, manipulate active transforms (`G, R, S, E`) with directional nudging, and jump directly to geometry using Vimium-style visual hints (`F` or `C`). Press `Esc` at any time to return safely to Preview mode or press `<` to trigger quick contextual search menus.
 
 ---
 
@@ -42,7 +42,7 @@ Vimender operates through a non-blocking modal event loop with dedicated modes:
 | **Preview** | `Ctrl + Y` | Clean camera/render preview mode that passes through regular Blender commands. |
 | **Navigation** | `Ctrl + B` | Focus traversal for switching between editor areas and workspaces. |
 | **Cursor** | `Ctrl + Num5` | Precise 3D cursor placement, axial movements, and geometry snapping. |
-| **Walk / Fly** | `Alt + Q` | First-person WASD + HJKL camera traversal with collision and gravity. |
+| **Walk / Fly** | Mode Search | First-person WASD + HJKL camera traversal with collision and gravity. |
 | **Tablet** | `Ctrl + W` | Hardware evdev multi-touch navigation (pinch zoom, pan, orbit, gizmos). |
 | **Pen** | `Ctrl + Alt + P` / Edit Menu | Digitizer tablet mode with palm rejection, isolated 2-finger pinch zoom, and strict lock (only `Ctrl+Alt+P` or Edit menu exits). |
 | **Mode Search** | `AltGr + <` | Quick popup menu to search and jump to any Vimender or Blender mode. |
@@ -148,7 +148,7 @@ Immersive first-person camera traversal suitable for architectural visualization
 | `H / J / K / L` | Turn / Look | Smooth yaw (look left/right) and pitch (look up/down). |
 | `Shift` | Sprint | Doubles forward and strafe travel speeds. |
 | `+ / -` | Adjust Sensitivity | Scales walking and looking speed. |
-| `Esc` / `Enter` / `Alt + Q` | Exit Walk Mode | Exits first-person controller and locks viewpoint. |
+| `Esc` / `Enter` / `LMB` | Exit Walk Mode | Exits first-person controller and locks viewpoint. |
 
 ---
 

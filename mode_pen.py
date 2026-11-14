@@ -230,7 +230,6 @@ def apply_pen_mmb_navigation(context, win, area, dx, dy, is_pan):
     d = rv3d.view_distance
 
     if is_pan:
-        # AUTO PERSPECTIVE: switch from CAMERA (unlocked) to PERSP so pan works
         if getattr(rv3d, 'view_perspective', 'PERSP') == 'CAMERA' and not getattr(space, 'lock_camera', False):
             rv3d.view_perspective = 'PERSP'
 
@@ -241,7 +240,6 @@ def apply_pen_mmb_navigation(context, win, area, dx, dy, is_pan):
         up = rot @ Vector((0.0, 1.0, 0.0))
         rv3d.view_location = rv3d.view_location - (right * dx + up * dy) * u
     else:
-        # AUTO PERSPECTIVE: switch from ORTHO / unlocked CAMERA to PERSP when orbiting
         if getattr(rv3d, 'view_perspective', 'PERSP') != 'PERSP' and not (getattr(rv3d, 'view_perspective', 'PERSP') == 'CAMERA' and getattr(space, 'lock_camera', False)):
             rv3d.view_perspective = 'PERSP'
 
@@ -322,7 +320,6 @@ def handle_pen_event(op, context, event, win, area):
         if is_stylus:
             return {'RUNNING_MODAL'}
 
-        # Physical mouse MMB in VIEW_3D: Auto-perspective protection
         if v == 'PRESS':
             target = area if (area and area.type == 'VIEW_3D') else None
             if not target and win and win.screen:
@@ -332,8 +329,6 @@ def handle_pen_event(op, context, event, win, area):
                 if rv:
                     persp = getattr(rv, 'view_perspective', 'PERSP')
                     lock_cam = getattr(target.spaces.active, 'lock_camera', False)
-                    # Orbit (no shift): ORTHO → PERSP
-                    # Pan (shift): CAMERA (unlocked) → PERSP so pan works
                     if not event.shift and persp == 'ORTHO':
                         rv.view_perspective = 'PERSP'
                         target.tag_redraw()

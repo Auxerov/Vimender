@@ -375,7 +375,7 @@ KEY_PREFIXES = (
     ("pen", "Pen Mode Toggle (Ctrl+Alt+P)", "P", True, False, True),
     ("nav", "Navigation Mode Toggle (Ctrl+B)", "B", True, False, False),
     ("cursor", "Cursor Mode Toggle (Ctrl+Num5)", "NUMPAD_5", True, False, False),
-    ("walk", "Walk Mode Toggle (Alt+Q)", "Q", False, False, True),
+    ("walk", "Walk Mode Toggle", "NONE", False, False, False),
     ("tablet", "Tablet Mode Toggle (Ctrl+W)", "W", True, False, False),
     ("orbit_pan", "Orbit / Pan Mode Toggle (U)", "U", False, False, False),
     ("editor_pie", "Editor Pie Menu", "NONE", False, False, False),
@@ -509,10 +509,10 @@ class VimenderPreferences(bpy.types.AddonPreferences):
     shift_cursor: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
     alt_cursor: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
-    key_walk: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='Q', update=_on_keymap_change)
+    key_walk: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='NONE', update=_on_keymap_change)
     ctrl_walk: bpy.props.BoolProperty(name="Ctrl", default=False, update=_on_keymap_change)
     shift_walk: bpy.props.BoolProperty(name="Shift", default=False, update=_on_keymap_change)
-    alt_walk: bpy.props.BoolProperty(name="Alt", default=True, update=_on_keymap_change)
+    alt_walk: bpy.props.BoolProperty(name="Alt", default=False, update=_on_keymap_change)
 
     key_tablet: bpy.props.EnumProperty(name="Key", items=KEY_ITEMS, default='W', update=_on_keymap_change)
     ctrl_tablet: bpy.props.BoolProperty(name="Ctrl", default=True, update=_on_keymap_change)
@@ -856,7 +856,7 @@ class VimenderPreferences(bpy.types.AddonPreferences):
             self._draw_shortcut(box, "Pen Mode Toggle (Ctrl+Alt+P)", "pen")
             self._draw_shortcut(box, "Navigation Mode Toggle (Ctrl+B)", "nav")
             self._draw_shortcut(box, "Cursor Mode Toggle (Ctrl+Num5)", "cursor")
-            self._draw_shortcut(box, "Walk Mode Toggle (Alt+Q)", "walk")
+            self._draw_shortcut(box, "Walk Mode Toggle", "walk")
             self._draw_shortcut(box, "Tablet Mode Toggle (Ctrl+W)", "tablet")
             self._draw_shortcut(box, "Orbit / Pan Mode Toggle (U)", "orbit_pan")
 

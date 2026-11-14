@@ -1786,10 +1786,7 @@ def handle_tablet_event(op, context, event, win, area):
                 return {'RUNNING_MODAL'}
 
 
-    is_walk_shortcut = (
-        check_shortcut(prefs, 'walk', event, 'Q', fallback_alt=True) or
-        ((t == 'Q' or getattr(event, 'unicode', '') in {'q', 'Q'}) and event.alt and not (event.ctrl or event.oskey or event.shift))
-    )
+    is_walk_shortcut = check_shortcut(prefs, 'walk', event, 'NONE')
     if is_walk_shortcut:
         if v == 'RELEASE':
             return {'RUNNING_MODAL'}
