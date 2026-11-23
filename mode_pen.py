@@ -358,20 +358,7 @@ def handle_pen_event(op, context, event, win, area):
                                     a.tag_redraw()
             return {'RUNNING_MODAL'}
 
-    if getattr(_stylus_tracker, 'active', False):
-        if getattr(_stylus_tracker, 'btn_orbit_down', False) or getattr(_stylus_tracker, 'btn_pan_down', False):
-            if t == 'LEFTMOUSE':
-                return {'RUNNING_MODAL'}
-
     if t == 'MIDDLEMOUSE':
-        is_stylus = (
-            getattr(_stylus_tracker, 'active', False) and (
-                getattr(_stylus_tracker, 'btn_orbit_down', False) or
-                getattr(_stylus_tracker, 'btn_pan_down', False)
-            )
-        )
-        if is_stylus:
-            return {'RUNNING_MODAL'}
 
         if v == 'PRESS':
             target = area if (area and area.type == 'VIEW_3D') else None

@@ -939,20 +939,11 @@ class EvdevStylusTracker:
                                 self.last_x = curr_x
                                 self.last_y = curr_y
 
-                        if btn_orbit and curr_x is not None and curr_y is not None:
-                            with self.lock:
-                                if self.last_orbit_x is not None and self.last_orbit_y is not None:
-                                    dx = (curr_x - self.last_orbit_x) / self.x_rng
-                                    dy = (curr_y - self.last_orbit_y) / self.y_rng
-                                    if abs(dx) < 0.12 and abs(dy) < 0.12:
-                                        self.orbit_delta[0] += dx
-                                        self.orbit_delta[1] += dy
-                                self.last_orbit_x = curr_x
-                                self.last_orbit_y = curr_y
-                        else:
-                            with self.lock:
-                                self.last_orbit_x = None
-                                self.last_orbit_y = None
+                        # Lower button (Middle Click) is passed cleanly to native Blender view3d.rotate.
+                        # Do not synthesize conflicting Euler rotations in parallel.
+                        with self.lock:
+                            self.last_orbit_x = curr_x
+                            self.last_orbit_y = curr_y
             except BlockingIOError:
                 time.sleep(0.003)
             except Exception:
