@@ -3,7 +3,7 @@ import time
 import bpy
 from mathutils import Vector, Quaternion
 from .state import (
-    S, get_preferences,
+    S, get_preferences, check_shortcut,
     set_active_mode, area_at, area_by_ptr, window_region, SENS_LEVELS
 )
 
