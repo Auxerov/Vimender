@@ -51,7 +51,6 @@ class _PenNavigator:
         H = max(float(win.height), 1.0)
 
         with _tracker.lock:
-            _tracker.orbit_delta[0] = _tracker.orbit_delta[1] = 0.0
             _tracker.transform_delta[0] = _tracker.transform_delta[1] = 0.0
             _tracker.twist = 0.0
             _tracker.pending_undo = False
@@ -60,11 +59,25 @@ class _PenNavigator:
             fingers = _tracker.finger_count
             pdx, pdy = _tracker.pan_delta
             _tracker.pan_delta[0] = _tracker.pan_delta[1] = 0.0
+            odx, ody = _tracker.orbit_delta
+            _tracker.orbit_delta[0] = _tracker.orbit_delta[1] = 0.0
             zlog = _tracker.zoom_log
             _tracker.zoom_log = 0.0
             mid_n = _tracker.mid_n
 
-        if fingers != 2:
+        # Palm rejection: Only allow 1-finger orbit if pen is NOT touching or hovering near the screen
+        is_pen_active = False
+        if getattr(_stylus_tracker, 'active', False):
+            is_pen_active = _stylus_tracker.is_pen_touching(0.30) or _stylus_tracker.is_pen_in_proximity(0.50)
+
+        if fingers == 1:
+            if is_pen_active:
+                odx = ody = 0.0
+                return False
+            pdx = pdy = zlog = 0.0
+        elif fingers == 2:
+            odx = ody = 0.0
+        else:
             self._anchor = (0.0, 0.0)
             return False
 
@@ -175,6 +188,34 @@ class _PenNavigator:
             rv3d.view_distance = d_new
             changed = True
 
+        if odx or ody:
+            sens = SENS_LEVELS[S.sens_idx] if hasattr(S, 'sens_idx') else 1.0
+            yaw = -odx * (math.pi * 1.6) * sens
+            pitch = -ody * (math.pi * 1.6) * sens
+
+            if getattr(rv3d, 'view_perspective', 'PERSP') != 'PERSP' and not (getattr(rv3d, 'view_perspective', 'PERSP') == 'CAMERA' and getattr(space, 'lock_camera', False)):
+                rv3d.view_perspective = 'PERSP'
+
+            rot = rv3d.view_rotation
+            d = rv3d.view_distance
+            up_vec = rot @ Vector((0.0, 1.0, 0.0))
+            right = rot @ Vector((1.0, 0.0, 0.0))
+            eye = rv3d.view_location + (rot @ Vector((0.0, 0.0, d)))
+            q_pitch = Quaternion(right, pitch)
+            if up_vec.z > 0.05:
+                q_yaw = Quaternion(Vector((0.0, 0.0, 1.0)), yaw)
+                test_rot = (q_pitch @ rot).normalized()
+                if (test_rot @ Vector((0.0, 1.0, 0.0))).z > 0.02:
+                    new_rot = (q_yaw @ test_rot).normalized()
+                else:
+                    new_rot = (q_yaw @ rot).normalized()
+            else:
+                q_yaw = Quaternion(up_vec, yaw)
+                new_rot = (q_yaw @ q_pitch @ rot).normalized()
+            rv3d.view_rotation = new_rot
+            rv3d.view_location = eye - (new_rot @ Vector((0.0, 0.0, d)))
+            changed = True
+
         return changed
 
 
@@ -268,6 +309,16 @@ def handle_pen_event(op, context, event, win, area):
     t, v = event.type, event.value
     prefs = get_preferences(context)
 
+    # Allow ESC or Ctrl+Alt+P to exit Pen Mode back to PREVIEW
+    if (t == 'ESC' and v == 'PRESS') or \
+       check_shortcut(prefs, 'pen', event, 'P', fallback_ctrl=True, fallback_alt=True) or \
+       ((t == 'P' or getattr(event, 'unicode', '') in {'p', 'P'}) and event.ctrl and event.alt and not (getattr(event, 'oskey', False) or event.shift)):
+        if v == 'RELEASE':
+            return {'RUNNING_MODAL'}
+        if v == 'PRESS':
+            exit_pen_mode(context, op.report)
+            return {'RUNNING_MODAL'}
+
     try:
         from .mode_tablet import _tracker, _stylus_tracker
     except Exception:
@@ -275,7 +326,7 @@ def handle_pen_event(op, context, event, win, area):
 
     is_stylus_touching = False
     if getattr(_stylus_tracker, 'active', False):
-        is_stylus_touching = _stylus_tracker.is_pen_touching(window_seconds=0.10)
+        is_stylus_touching = _stylus_tracker.is_pen_touching(window_seconds=0.40)
     else:
         is_stylus_touching = getattr(event, 'is_tablet', False)
 
@@ -286,12 +337,16 @@ def handle_pen_event(op, context, event, win, area):
     is_stylus_event = (
         getattr(event, 'is_tablet', False) or
         (getattr(_stylus_tracker, 'active', False) and (
-            _stylus_tracker.is_pen_in_proximity(0.35) or
+            _stylus_tracker.is_pen_in_proximity(0.80) or
             _stylus_tracker.is_any_button_down()
         ))
     )
+
+    # Only swallow touch-synthesized mouse events when multi-finger gestures (pinch-zoom / 2-finger pan) are active
+    # and the stylus is NOT actively touching or hovering
     if touch_active and not is_stylus_touching and not is_stylus_event:
-        if t in MOUSE_TOUCH_SWALLOW_EVENTS:
+        finger_count = getattr(_tracker, 'finger_count', 0) if getattr(_tracker, 'active', False) else 0
+        if finger_count >= 2 and t in MOUSE_TOUCH_SWALLOW_EVENTS:
             if t in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
                 if getattr(S, 'pen_nav', None):
                     if S.pen_nav.tick(context, win):
@@ -305,17 +360,15 @@ def handle_pen_event(op, context, event, win, area):
 
     if getattr(_stylus_tracker, 'active', False):
         if getattr(_stylus_tracker, 'btn_orbit_down', False) or getattr(_stylus_tracker, 'btn_pan_down', False):
-            if t in {'LEFTMOUSE', 'MIDDLEMOUSE', 'RIGHTMOUSE'}:
+            if t == 'LEFTMOUSE':
                 return {'RUNNING_MODAL'}
 
     if t == 'MIDDLEMOUSE':
         is_stylus = (
-            getattr(event, 'is_tablet', False) or
-            (getattr(_stylus_tracker, 'active', False) and (
-                _stylus_tracker.is_pen_in_proximity(0.35) or
+            getattr(_stylus_tracker, 'active', False) and (
                 getattr(_stylus_tracker, 'btn_orbit_down', False) or
                 getattr(_stylus_tracker, 'btn_pan_down', False)
-            ))
+            )
         )
         if is_stylus:
             return {'RUNNING_MODAL'}

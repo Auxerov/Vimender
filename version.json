@@ -1,5 +1,5 @@
 {
-  "version": "1.0.17",
-  "commit": "a9efb9f",
-  "message": "fix(walk): remove Alt+Q shortcut and support Walk Mode via Mode Search"
+  "version": "1.0.18",
+  "commit": "HEAD",
+  "message": "fix(pen): 1-finger touch orbit when pen away, eliminate pen freeze & restore ESC exit"
 }
